@@ -1,0 +1,82 @@
+# Physical MCP Configuration
+# Copy to ~/.physical-mcp/config.yaml and edit
+
+server:
+  transport: "stdio"         # "stdio" | "streamable-http"
+  host: "127.0.0.1"          # Only for streamable-http
+  port: 8400                 # Only for streamable-http
+
+# Cameras — the AI sees what each camera shows and picks the right one(s)
+cameras:
+  - id: "usb:0"
+    type: "usb"
+    device_index: 0           # 0 = built-in webcam, 1 = external USB
+    width: 1280
+    height: 720
+
+  # Uncomment to add more cameras:
+  # - id: "usb:1"
+  #   type: "usb"
+  #   device_index: 1
+
+  # - id: "usb:2"
+  #   type: "usb"
+  #   device_index: 2
+
+  # Wireless cameras (RTSP streams):
+  # - id: "wireless:1"
+  #   type: "rtsp"
+  #   url: "rtsp://192.168.1.100:554/stream"
+
+# Configure your vision model provider (BYOK — bring your own key)
+# Physical MCP does NOT include any API key. You must provide your own.
+reasoning:
+  # Option 1: Anthropic (Claude)
+  provider: "anthropic"
+  api_key: "${ANTHROPIC_API_KEY}"
+  model: "claude-haiku-4-20250414"
+
+  # Option 2: OpenAI
+  # provider: "openai"
+  # api_key: "${OPENAI_API_KEY}"
+  # model: "gpt-4o-mini"
+
+  # Option 3: Google Gemini
+  # provider: "google"
+  # api_key: "${GOOGLE_API_KEY}"
+  # model: "gemini-2.0-flash"
+
+  # Option 4: OpenAI-compatible (Kimi, DeepSeek, Together, Groq, etc.)
+  # provider: "openai-compatible"
+  # base_url: "https://api.moonshot.cn/v1"
+  # api_key: "${KIMI_API_KEY}"
+  # model: "moonshot-v1-128k-vision"
+
+  image_quality: 60            # JPEG quality for API calls (lower = cheaper)
+  max_thumbnail_dim: 640       # Max image dimension sent to API
+
+perception:
+  buffer_size: 300             # Max frames in ring buffer (per camera)
+  capture_fps: 2               # Frames captured per second for analysis
+  change_detection:
+    minor_threshold: 5         # Perceptual hash distance thresholds
+    moderate_threshold: 12
+    major_threshold: 25
+  sampling:
+    heartbeat_interval: 60     # Seconds between forced analyses
+    debounce_seconds: 2        # Wait for scene to stabilize
+    cooldown_seconds: 5        # Min gap between LLM calls
+
+cost_control:
+  daily_budget_usd: 5.00       # 0 = unlimited
+  max_analyses_per_hour: 120
+
+notifications:
+  default_type: "local"        # "local" | "webhook" | "desktop" | "ntfy"
+  webhook_url: ""
+  desktop_enabled: true        # macOS / Linux / Windows native notifications
+  ntfy_topic: ""               # e.g. "physical-mcp-abc123" (empty = disabled)
+  ntfy_server_url: "https://ntfy.sh"  # or your self-hosted ntfy instance
+
+rules_file: "~/.physical-mcp/rules.yaml"
+memory_file: "~/.physical-mcp/memory.md"

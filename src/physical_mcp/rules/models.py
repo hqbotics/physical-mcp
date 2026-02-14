@@ -1,0 +1,71 @@
+"""Pydantic models for watch rules, evaluations, and alerts."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+class RulePriority(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class NotificationTarget(BaseModel):
+    type: str = "local"
+    url: Optional[str] = None
+    channel: Optional[str] = None
+
+
+class WatchRule(BaseModel):
+    id: str
+    name: str
+    condition: str  # Natural language
+    camera_id: str = ""  # Empty = LLM picks the right camera
+    priority: RulePriority = RulePriority.MEDIUM
+    enabled: bool = True
+    notification: NotificationTarget = Field(default_factory=NotificationTarget)
+    cooldown_seconds: int = 60
+    created_at: datetime = Field(default_factory=datetime.now)
+    last_triggered: Optional[datetime] = None
+
+
+class RuleEvaluation(BaseModel):
+    rule_id: str
+    triggered: bool
+    confidence: float
+    reasoning: str
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+
+class AlertEvent(BaseModel):
+    rule: WatchRule
+    evaluation: RuleEvaluation
+    scene_summary: str
+    frame_base64: Optional[str] = None
+
+
+class PendingAlert(BaseModel):
+    """A scene change event queued for client-side evaluation.
+
+    When no server-side vision provider is configured, the perception loop
+    queues these alerts for the MCP client to poll via check_camera_alerts().
+    The client (Claude Desktop, ChatGPT, etc.) visually analyzes the frame
+    and evaluates the watch rules using its own built-in intelligence.
+    """
+
+    id: str
+    camera_id: str = ""
+    camera_name: str = ""
+    timestamp: datetime = Field(default_factory=datetime.now)
+    change_level: str  # "minor" | "moderate" | "major"
+    change_description: str
+    frame_base64: str  # Raw base64 JPEG (no data: prefix)
+    scene_context: str  # SceneState.to_context_string() snapshot
+    active_rules: list[dict]  # [{id, name, condition, priority}]
+    expires_at: datetime
