@@ -47,9 +47,7 @@ Camera -> Frame Buffer -> Change Detection (perceptual hash, <5ms, free)
 
 ## Setup Guide
 
-### Claude Desktop
-
-The setup wizard auto-configures Claude Desktop for you:
+Run one command. Physical MCP auto-detects your cameras AND every installed AI app, then configures each one automatically:
 
 ```
 $ physical-mcp
@@ -63,37 +61,27 @@ Detecting cameras...
 Found 1 camera(s):
   Index 0: 1280x720
 
-Which AI app will you use?
-  1. Claude Desktop (Mac/Windows/Linux app)
-  2. ChatGPT, Gemini, or other (phone or web)
-Choice [1]: 1
+Detecting AI apps...
+  ✓ Claude Desktop — auto-configured
+  ✓ Cursor — auto-configured
+  → ChatGPT — paste URL (shown below)
 
-Auto-configure Claude Desktop? [Y/n]: Y
-  Done! Restart Claude Desktop to connect.
+Config saved to ~/.physical-mcp/config.yaml
+
+Restart Claude Desktop and Cursor to start using camera features!
+
+For ChatGPT / Gemini / phone apps:
+  http://192.168.1.42:8400/mcp
+
+  █████████████████
+  █   QR CODE     █
+  █████████████████
+  Scan with your phone to connect.
 ```
 
-Restart Claude Desktop and start chatting about what your camera sees.
+**Supported apps (auto-configured):** Claude Desktop, Cursor, Windsurf, VS Code
 
-### Phone & Web Apps (ChatGPT, Gemini, etc.)
-
-Choose option 2 during setup. The wizard shows a QR code you can scan with your phone:
-
-```
-$ physical-mcp
-
-Which AI app will you use?
-Choice [1]: 2
-
-Connect from this computer:  http://127.0.0.1:8400/mcp
-Connect from your phone:     http://192.168.1.42:8400/mcp
-
-█████████████████
-█ QR CODE HERE  █
-█████████████████
-Scan this QR code with your phone to connect.
-```
-
-Point your AI app's MCP settings at the URL and you're connected.
+**HTTP apps (paste URL or scan QR):** ChatGPT, Gemini, Qwen, any MCP-compatible app
 
 ### Run in Background
 

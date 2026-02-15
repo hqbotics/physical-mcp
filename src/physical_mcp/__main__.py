@@ -75,7 +75,8 @@ def setup(config_path: str | None, advanced: bool) -> None:
         PhysicalMCPConfig, CameraConfig, ServerConfig, ReasoningConfig,
         NotificationsConfig, save_config,
     )
-    from .platform import configure_claude_desktop, get_claude_config_path, get_lan_ip, print_qr_code
+    from .ai_apps import configure_all
+    from .platform import get_lan_ip, print_qr_code
 
     config_file = Path(config_path or "~/.physical-mcp/config.yaml").expanduser()
     click.echo("Physical MCP Setup")
@@ -101,13 +102,12 @@ def setup(config_path: str | None, advanced: bool) -> None:
         click.echo("No cameras detected. You can configure one manually later.")
         camera_configs.append(CameraConfig(id="usb:0", device_index=0))
 
-    # ── 2. Choose AI app (simple) or provider (advanced) ─
+    # ── 2. Auto-detect AI apps (simple) or provider (advanced) ─
     provider = ""
     api_key = ""
     model = ""
     base_url = ""
     ntfy_topic = ""
-    transport_mode = "stdio"
 
     if advanced:
         # Full provider selection
@@ -173,16 +173,33 @@ def setup(config_path: str | None, advanced: bool) -> None:
             click.echo("  2. Open it and subscribe to your topic")
             ntfy_topic = click.prompt("  Topic name", default=suggested_topic)
             click.echo(f"\n  Subscribe to '{ntfy_topic}' in the ntfy app to receive alerts.")
-    else:
-        # Simple flow — one question
-        click.echo("\nWhich AI app will you use?")
-        click.echo("  1. Claude Desktop (Mac/Windows/Linux app)")
-        click.echo("  2. ChatGPT, Gemini, or other (phone or web)")
-        app_choice = click.prompt("Choice", type=int, default=1)
-        if app_choice == 2:
-            transport_mode = "streamable-http"
 
-    # ── 3. Save config ───────────────────────────────────
+    # ── 3. Auto-detect and configure all AI apps ─────────
+    click.echo("\nDetecting AI apps...")
+    statuses = configure_all()
+
+    configured_apps: list[str] = []
+    needs_http = False
+
+    for s in statuses:
+        if not s.installed:
+            continue  # Silently skip apps not installed
+        if s.already_configured:
+            click.echo(f"  \u2713 {s.app.name} \u2014 already configured")
+            configured_apps.append(s.app.name)
+        elif s.newly_configured:
+            click.echo(f"  \u2713 {s.app.name} \u2014 auto-configured")
+            configured_apps.append(s.app.name)
+        elif s.needs_url:
+            needs_http = True
+        elif s.error:
+            click.echo(f"  \u2717 {s.app.name} \u2014 error: {s.error}")
+
+    # Determine transport: stdio if any desktop app configured, http if needed
+    any_stdio = len(configured_apps) > 0
+    transport_mode = "stdio" if any_stdio else "streamable-http"
+
+    # ── 4. Save config ───────────────────────────────────
     config = PhysicalMCPConfig(
         server=ServerConfig(transport=transport_mode),
         cameras=camera_configs,
@@ -200,46 +217,31 @@ def setup(config_path: str | None, advanced: bool) -> None:
 
     saved_path = save_config(config, config_file)
     click.echo(f"\nConfig saved to {saved_path}")
-    click.echo(f"Cameras: {len(camera_configs)}")
 
     if not advanced:
-        click.echo("  Run 'physical-mcp setup --advanced' for provider & notification options.")
+        click.echo("Run 'physical-mcp setup --advanced' for provider & notification options.")
 
-    # ── 4. Auto-configure or show connection info ────────
-    claude_configured = False
-    if transport_mode == "stdio":
-        claude_configured = configure_claude_desktop()
-
+    # ── 5. Show results ──────────────────────────────────
     click.echo("\n" + "=" * 40)
-    if transport_mode == "stdio":
-        if claude_configured:
-            click.echo("Restart Claude Desktop and start chatting!")
-        else:
-            path = get_claude_config_path()
-            path_str = str(path) if path else "claude_desktop_config.json"
-            click.echo(f"Add to {path_str}:")
-            click.echo("""{
-  "mcpServers": {
-    "physical-mcp": {
-      "command": "physical-mcp"
-    }
-  }
-}""")
-            click.echo("\nThen restart Claude Desktop.")
-    else:
-        # HTTP mode — show connection info with QR code
-        click.echo("Start the server:")
-        click.echo("  physical-mcp")
+    if configured_apps:
+        apps_str = " and ".join(configured_apps) if len(configured_apps) <= 2 else ", ".join(configured_apps)
+        click.echo(f"Restart {apps_str} to start using camera features!")
+
+    if needs_http:
         lan_ip = get_lan_ip()
         port = config.server.port
-        click.echo(f"\nConnect from this computer:  http://127.0.0.1:{port}/mcp")
+        url = f"http://{lan_ip or '127.0.0.1'}:{port}/mcp"
+        click.echo(f"\nFor ChatGPT / Gemini / phone apps:")
+        click.echo(f"  {url}")
         if lan_ip:
-            phone_url = f"http://{lan_ip}:{port}/mcp"
-            click.echo(f"Connect from your phone:     {phone_url}")
             click.echo("")
-            print_qr_code(phone_url)
-            click.echo("Scan this QR code with your phone to connect.")
-        click.echo("\nTip: Run 'physical-mcp install' to start automatically on login.")
+            print_qr_code(f"http://{lan_ip}:{port}/mcp")
+            click.echo("Scan with your phone to connect.")
+        click.echo("\nTip: Run 'physical-mcp install' to start the server on login.")
+
+    if not configured_apps and not needs_http:
+        click.echo("No AI apps detected. Install Claude Desktop, Cursor, or another MCP client.")
+        click.echo("Then run 'physical-mcp setup' again.")
 
     click.echo("")
 

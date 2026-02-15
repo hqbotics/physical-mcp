@@ -6,7 +6,6 @@ Pattern matches notifications/desktop.py which already does this.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import shutil
@@ -61,63 +60,6 @@ def get_lan_ip() -> str | None:
 def open_url(url: str) -> None:
     """Open a URL in the default browser."""
     webbrowser.open(url)
-
-
-# ── Claude Desktop config ──────────────────────────────────
-
-
-def get_claude_config_path() -> Path | None:
-    """Return the Claude Desktop config file path for this OS."""
-    if sys.platform == "darwin":
-        return Path("~/Library/Application Support/Claude/claude_desktop_config.json").expanduser()
-    elif sys.platform == "win32":
-        appdata = os.environ.get("APPDATA", "")
-        return Path(appdata) / "Claude" / "claude_desktop_config.json" if appdata else None
-    elif sys.platform == "linux":
-        return Path("~/.config/Claude/claude_desktop_config.json").expanduser()
-    return None
-
-
-def configure_claude_desktop() -> bool:
-    """Offer to auto-configure Claude Desktop. Returns True if configured."""
-    import click
-
-    config_path = get_claude_config_path()
-    if config_path is None:
-        return False
-
-    # Build the MCP server entry
-    if shutil.which("uv"):
-        mcp_entry = {"command": "uv", "args": ["run", "physical-mcp"]}
-    else:
-        mcp_entry = {"command": "physical-mcp"}
-
-    # Read existing config
-    existing: dict = {}
-    if config_path.exists():
-        try:
-            existing = json.loads(config_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            existing = {}
-
-    servers = existing.get("mcpServers", {})
-    if "physical-mcp" in servers:
-        click.echo("\n  Claude Desktop already configured.")
-        return True
-
-    if not click.confirm("\nAuto-configure Claude Desktop?", default=True):
-        return False
-
-    # Back up existing config
-    if config_path.exists():
-        config_path.with_suffix(".json.bak").write_bytes(config_path.read_bytes())
-
-    servers["physical-mcp"] = mcp_entry
-    existing["mcpServers"] = servers
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(existing, indent=2) + "\n")
-    click.echo("  Done! Restart Claude Desktop to connect.")
-    return True
 
 
 # ── QR code ─────────────────────────────────────────────────
