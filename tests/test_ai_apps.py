@@ -61,6 +61,30 @@ class TestKnownApps:
             if app.transport == "stdio":
                 assert len(app.config_paths) > 0, f"{app.name} is stdio but has no config_paths"
 
+    def test_trae_in_known_apps(self):
+        trae = next((a for a in KNOWN_APPS if a.name == "Trae"), None)
+        assert trae is not None
+        assert trae.transport == "stdio"
+        assert trae.server_key == "mcpServers"
+        assert "darwin" in trae.config_paths
+
+    def test_codebuddy_in_known_apps(self):
+        cb = next((a for a in KNOWN_APPS if a.name == "CodeBuddy"), None)
+        assert cb is not None
+        assert cb.transport == "stdio"
+        assert cb.server_key == "mcpServers"
+
+    def test_chatgpt_has_setup_hint(self):
+        chatgpt = next((a for a in KNOWN_APPS if a.name == "ChatGPT"), None)
+        assert chatgpt is not None
+        assert chatgpt.setup_hint != ""
+        assert "tunnel" in chatgpt.setup_hint.lower()
+
+    def test_setup_hint_empty_for_stdio_apps(self):
+        for app in KNOWN_APPS:
+            if app.transport == "stdio":
+                assert app.setup_hint == "", f"{app.name} is stdio but has setup_hint"
+
 
 # ── AIApp methods ───────────────────────────────────────────
 
@@ -188,6 +212,27 @@ class TestConfigureApp:
         assert result is True
         # Should NOT create a backup (no changes made)
         assert not config_path.with_suffix(".json.bak").exists()
+
+    def test_configure_trae_format(self, tmp_path: Path):
+        """Trae uses mcpServers key — verify the written format."""
+        config_path = tmp_path / "Trae" / "User" / "mcp.json"
+        # Pre-populate with existing Trae servers
+        config_path.parent.mkdir(parents=True)
+        existing = {"mcpServers": {"GitHub": {"command": "npx", "args": ["-y", "@mcp/server-github"]}}}
+        config_path.write_text(json.dumps(existing))
+
+        app = AIApp(
+            name="Trae", transport="stdio",
+            config_paths={},
+            server_key="mcpServers",
+        )
+        with patch.object(app, "get_config_path", return_value=config_path):
+            result = configure_app(app)
+
+        assert result is True
+        data = json.loads(config_path.read_text())
+        assert "GitHub" in data["mcpServers"]  # Preserved
+        assert "physical-mcp" in data["mcpServers"]  # Added
 
     def test_idempotent_no_duplicate(self, tmp_path: Path):
         config_path = tmp_path / "config.json"

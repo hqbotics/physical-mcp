@@ -64,24 +64,39 @@ Found 1 camera(s):
 Detecting AI apps...
   ✓ Claude Desktop — auto-configured
   ✓ Cursor — auto-configured
-  → ChatGPT — paste URL (shown below)
+  ✓ VS Code — auto-configured
+  ✓ Trae — auto-configured
 
 Config saved to ~/.physical-mcp/config.yaml
 
-Restart Claude Desktop and Cursor to start using camera features!
+Restart Claude Desktop, Cursor, VS Code and Trae to start using camera features!
 
-For ChatGPT / Gemini / phone apps:
+For phone / LAN apps:
   http://192.168.1.42:8400/mcp
+  [QR CODE]
 
-  █████████████████
-  █   QR CODE     █
-  █████████████████
-  Scan with your phone to connect.
+For ChatGPT (requires HTTPS):
+  Run: physical-mcp tunnel
+  Then paste the HTTPS URL into ChatGPT → Settings → Connectors
 ```
 
-**Supported apps (auto-configured):** Claude Desktop, Cursor, Windsurf, VS Code
+**Supported apps (auto-configured):** Claude Desktop, Cursor, Windsurf, VS Code, Trae, CodeBuddy
 
-**HTTP apps (paste URL or scan QR):** ChatGPT, Gemini, Qwen, any MCP-compatible app
+**HTTP apps (paste URL or scan QR):** Gemini, Qwen, any MCP-compatible app
+
+### ChatGPT
+
+ChatGPT requires an HTTPS connection (can't connect to localhost directly).
+
+```bash
+# Option A: Built-in tunnel
+pip install 'physical-mcp[tunnel]'
+physical-mcp tunnel
+# Paste the HTTPS URL into ChatGPT → Settings → Connectors → Developer Mode → Create
+
+# Option B: ngrok CLI
+ngrok http 8400
+```
 
 ### Run in Background
 
@@ -91,6 +106,7 @@ Don't want to keep a terminal open? Install as a background service:
 physical-mcp install      # Start on login, runs automatically
 physical-mcp uninstall    # Remove background service
 physical-mcp status       # Check if running, show QR code
+physical-mcp tunnel       # HTTPS tunnel for ChatGPT
 ```
 
 Works on macOS (launchd), Linux (systemd), and Windows (Task Scheduler).
@@ -146,6 +162,7 @@ Key settings:
 
 ```bash
 pip install physical-mcp              # Client-side only (no API key needed)
+pip install physical-mcp[tunnel]      # + HTTPS tunnel for ChatGPT
 pip install physical-mcp[anthropic]   # + Anthropic Claude
 pip install physical-mcp[openai]      # + OpenAI / OpenAI-compatible
 pip install physical-mcp[google]      # + Google Gemini

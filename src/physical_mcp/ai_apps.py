@@ -49,6 +49,7 @@ class AIApp:
     config_paths: dict[str, str] = field(default_factory=dict)
     server_key: str = "mcpServers"  # JSON key for MCP servers dict
     mcp_entry_key: str = "physical-mcp"
+    setup_hint: str = ""  # Displayed during setup for HTTP apps
 
     def get_config_path(self) -> Path | None:
         """Return config file path for the current OS, or None."""
@@ -134,9 +135,37 @@ KNOWN_APPS: list[AIApp] = [
         },
         server_key="servers",
     ),
+    AIApp(
+        name="Trae",
+        transport="stdio",
+        config_paths={
+            "darwin": "~/Library/Application Support/Trae/User/mcp.json",
+            "win32": "%APPDATA%/Trae/User/mcp.json",
+            "linux": "~/.config/Trae/User/mcp.json",
+        },
+        server_key="mcpServers",
+    ),
+    AIApp(
+        name="CodeBuddy",
+        transport="stdio",
+        config_paths={
+            "darwin": "~/Library/Application Support/CodeBuddy/User/globalStorage/tencent.planning-genie/settings/codebuddy_mcp_settings.json",
+            "win32": "%APPDATA%/CodeBuddy/User/globalStorage/tencent.planning-genie/settings/codebuddy_mcp_settings.json",
+            "linux": "~/.config/CodeBuddy/User/globalStorage/tencent.planning-genie/settings/codebuddy_mcp_settings.json",
+        },
+        server_key="mcpServers",
+    ),
     # HTTP-only apps — user pastes URL or scans QR code
-    AIApp(name="ChatGPT", transport="http"),
-    AIApp(name="Gemini", transport="http"),
+    AIApp(
+        name="ChatGPT",
+        transport="http",
+        setup_hint="Requires HTTPS tunnel. Run: physical-mcp tunnel",
+    ),
+    AIApp(
+        name="Gemini",
+        transport="http",
+        setup_hint="Paste the HTTP URL into Gemini's MCP settings",
+    ),
 ]
 
 

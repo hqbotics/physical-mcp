@@ -230,13 +230,19 @@ def setup(config_path: str | None, advanced: bool) -> None:
     if needs_http:
         lan_ip = get_lan_ip()
         port = config.server.port
-        url = f"http://{lan_ip or '127.0.0.1'}:{port}/mcp"
-        click.echo(f"\nFor ChatGPT / Gemini / phone apps:")
-        click.echo(f"  {url}")
+        local_url = f"http://{lan_ip or '127.0.0.1'}:{port}/mcp"
+
+        click.echo(f"\nFor phone / LAN apps:")
+        click.echo(f"  {local_url}")
         if lan_ip:
             click.echo("")
             print_qr_code(f"http://{lan_ip}:{port}/mcp")
             click.echo("Scan with your phone to connect.")
+
+        click.echo(f"\nFor ChatGPT (requires HTTPS):")
+        click.echo(f"  Run: physical-mcp tunnel")
+        click.echo(f"  Then paste the HTTPS URL into ChatGPT \u2192 Settings \u2192 Connectors")
+
         click.echo("\nTip: Run 'physical-mcp install' to start the server on login.")
 
     if not configured_apps and not needs_http:
@@ -275,6 +281,38 @@ def uninstall() -> None:
         click.echo("Background service removed.")
     else:
         click.echo("No background service found to remove.")
+
+
+@main.command()
+@click.option("--port", default=8400, type=int, help="Local port to tunnel")
+def tunnel(port: int) -> None:
+    """Expose physical-mcp over HTTPS for ChatGPT (uses ngrok)."""
+    try:
+        from pyngrok import ngrok  # type: ignore[import-untyped]
+    except ImportError:
+        click.echo("Install ngrok support: pip install 'physical-mcp[tunnel]'")
+        click.echo("Or manually: pip install pyngrok")
+        click.echo(f"\nAlternative: install ngrok CLI and run:")
+        click.echo(f"  ngrok http {port}")
+        return
+
+    click.echo(f"Starting HTTPS tunnel to localhost:{port}...")
+    public_url = ngrok.connect(port, "http").public_url
+    https_url = public_url.replace("http://", "https://")
+    click.echo(f"\n  ChatGPT URL: {https_url}/mcp")
+    click.echo(f"\nPaste this into ChatGPT \u2192 Settings \u2192 Connectors \u2192 Developer Mode \u2192 Create")
+    click.echo("Press Ctrl+C to stop the tunnel.\n")
+
+    from .platform import print_qr_code
+    print_qr_code(f"{https_url}/mcp")
+
+    import time
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        ngrok.kill()
+        click.echo("\nTunnel closed.")
 
 
 @main.command()
