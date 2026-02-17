@@ -1013,3 +1013,25 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_700"
+
+    @pytest.mark.asyncio
+    async def test_camera_id_filter_trims_stored_values(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_710",
+                "event_type": "provider_error",
+                "camera_id": " usb:0 ",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "whitespace camera id",
+                "timestamp": "2026-02-18T02:32:00",
+            }
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/alerts?camera_id=usb:0")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_710"

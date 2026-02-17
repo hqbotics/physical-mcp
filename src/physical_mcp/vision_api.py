@@ -426,7 +426,9 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         if since:
             events = [e for e in events if e.get("timestamp", "") > since]
         if camera_id:
-            events = [e for e in events if e.get("camera_id", "") == camera_id]
+            events = [
+                e for e in events if e.get("camera_id", "").strip() == camera_id
+            ]
         if event_type:
             events = [
                 e for e in events if e.get("event_type", "").strip().lower() == event_type

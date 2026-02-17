@@ -331,6 +331,19 @@ paths:
                     events: []
                     count: 0
                     timestamp: 1771381045.70
+                normalized_stored_values:
+                  value:
+                    events:
+                      - event_id: evt_e7f8a9b0c1
+                        event_type: provider_error
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: Legacy replay row had space-padded fields
+                        timestamp: "2026-02-18T02:18:10.000000"
+                    count: 1
+                    timestamp: 1771381090.33
 components:
   schemas:
     CameraScene:
