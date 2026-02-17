@@ -568,6 +568,14 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
 
             if state.get("_fallback_warning_pending"):
                 state["_fallback_warning_pending"] = False
+                event_id = _record_alert_event(
+                    state,
+                    event_type="startup_warning",
+                    message=(
+                        "Server is running in fallback client-side reasoning mode. "
+                        "Recommended: configure provider for server-side monitoring."
+                    ),
+                )
                 asyncio.create_task(
                     _send_mcp_log(
                         state,
@@ -578,6 +586,7 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
                             "to enable non-blocking server-side monitoring."
                         ),
                         event_type="startup_warning",
+                        event_id=event_id,
                     )
                 )
 

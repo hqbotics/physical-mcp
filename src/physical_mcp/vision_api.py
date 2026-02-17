@@ -29,6 +29,14 @@ from aiohttp import web
 logger = logging.getLogger("physical-mcp")
 
 
+def _json_error(status: int, code: str, message: str, camera_id: str = "") -> web.Response:
+    """Consistent JSON error payload for API + GPT Action compatibility."""
+    payload = {"code": code, "message": message}
+    if camera_id:
+        payload["camera_id"] = camera_id
+    return web.json_response(payload, status=status)
+
+
 def create_vision_routes(state: dict[str, Any]) -> web.Application:
     """Create aiohttp app with vision API routes.
 
@@ -70,7 +78,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         buffers = state.get("frame_buffers", {})
 
         if not buffers:
-            return web.Response(status=503, text="No cameras active")
+            return _json_error(503, "no_cameras_active", "No cameras active")
 
         # Get specific or first camera
         if camera_id and camera_id in buffers:
@@ -78,13 +86,16 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         elif not camera_id:
             buf = next(iter(buffers.values()))
         else:
-            return web.Response(
-                status=404, text=f"Camera '{camera_id}' not found"
+            return _json_error(
+                404,
+                "camera_not_found",
+                f"Camera '{camera_id}' not found",
+                camera_id=camera_id,
             )
 
         frame = await buf.latest()
         if frame is None:
-            return web.Response(status=503, text="No frame available yet")
+            return _json_error(503, "no_frame_available", "No frame available yet")
 
         jpeg_bytes = frame.to_jpeg_bytes(quality=quality)
         return web.Response(
@@ -114,15 +125,18 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         buffers = state.get("frame_buffers", {})
 
         if not buffers:
-            return web.Response(status=503, text="No cameras active")
+            return _json_error(503, "no_cameras_active", "No cameras active")
 
         if camera_id and camera_id in buffers:
             buf = buffers[camera_id]
         elif not camera_id:
             buf = next(iter(buffers.values()))
         else:
-            return web.Response(
-                status=404, text=f"Camera '{camera_id}' not found"
+            return _json_error(
+                404,
+                "camera_not_found",
+                f"Camera '{camera_id}' not found",
+                camera_id=camera_id,
             )
 
         boundary = "frame"
@@ -263,8 +277,11 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         camera_id = request.match_info["camera_id"]
         scenes = state.get("scene_states", {})
         if camera_id not in scenes:
-            return web.Response(
-                status=404, text=f"Camera '{camera_id}' not found"
+            return _json_error(
+                404,
+                "camera_not_found",
+                f"Camera '{camera_id}' not found",
+                camera_id=camera_id,
             )
         result = scenes[camera_id].to_dict()
         cam_cfg = state.get("camera_configs", {}).get(camera_id)
