@@ -27,6 +27,18 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
 - Use `/alerts` for replay after reconnects or missed turns
 - Keep polling interval >= 10s to reduce load
 
+## Troubleshooting
+
+- **No events in `/alerts` after reconnect**
+  - Check `since` cursor isn't in the future.
+  - Retry without `since` to confirm baseline replay works.
+- **Monitoring appears stale**
+  - Call `/health` and check `status`, `consecutive_errors`, `backoff_until`.
+  - If degraded/backoff persists, verify provider key/model/network in MCP config.
+- **Frame fetch fails for a camera**
+  - Verify camera id from `/scene` keys.
+  - Expect JSON errors like `camera_not_found` when ids mismatch.
+
 ## Notes
 
 - This wrapper is read-only by design for safety.

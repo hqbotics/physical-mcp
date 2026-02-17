@@ -1,5 +1,8 @@
 # v1.0 Hardening Changelog (Feb 18, 2026)
 
+## Operator release blurb
+v1 hardening makes physical-mcp safer to run unattended: fallback-mode startup is explicitly surfaced, alert logs are structured + replayable, health telemetry is queryable per camera, and GPT Action contracts now match runtime behavior more closely.
+
 ## Server-side default posture
 - Added startup fallback warnings when provider is not configured.
 - Added in-chat startup warning emission once MCP session is available.

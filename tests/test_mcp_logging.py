@@ -34,6 +34,22 @@ class TestMcpLogFormatting:
         )
 
     @pytest.mark.asyncio
+    async def test_send_mcp_log_generates_event_id_when_missing(self):
+        session = AsyncMock()
+        shared_state = {"_session": session}
+
+        await _send_mcp_log(
+            shared_state,
+            "info",
+            "hello",
+            event_type="startup_warning",
+        )
+
+        kwargs = session.send_log_message.await_args.kwargs
+        assert "PMCP[STARTUP_WARNING]" in kwargs["data"]
+        assert "event_id=evt_" in kwargs["data"]
+
+    @pytest.mark.asyncio
     async def test_send_mcp_log_without_session_is_noop(self):
         shared_state = {}
         # Should not raise
@@ -53,3 +69,14 @@ class TestAlertEventRecording:
         assert events[0]["message"] == "b"
         assert events[1]["message"] == "c"
         assert all(e["event_id"].startswith("evt_") for e in events)
+
+    def test_record_alert_event_includes_timestamp_and_type(self):
+        state = {"alert_events": [], "alert_events_max": 10}
+
+        _record_alert_event(state, event_type="startup_warning", message="fallback")
+        evt = state["alert_events"][0]
+
+        assert evt["event_type"] == "startup_warning"
+        assert evt["message"] == "fallback"
+        # ISO-like timestamp from datetime.now().isoformat()
+        assert "T" in evt["timestamp"]
