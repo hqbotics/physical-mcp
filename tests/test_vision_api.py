@@ -435,6 +435,33 @@ class TestHealthAndAlerts:
             assert data["health"]["status"] == "unknown"
 
     @pytest.mark.asyncio
+    async def test_health_single_degraded_payload_fields(self, state_with_data):
+        state_with_data["camera_health"] = {
+            "usb:0": {
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "consecutive_errors": 4,
+                "backoff_until": "2026-02-18T02:35:00",
+                "last_success_at": "2026-02-18T02:30:00",
+                "last_error": "provider timeout",
+                "last_frame_at": "2026-02-18T02:34:10",
+                "status": "degraded",
+            }
+        }
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/health/usb:0")
+            assert resp.status == 200
+            data = await resp.json()
+            health = data["health"]
+            assert data["camera_id"] == "usb:0"
+            assert health["status"] == "degraded"
+            assert health["consecutive_errors"] == 4
+            assert health["backoff_until"]
+            assert health["last_success_at"]
+            assert health["last_error"] == "provider timeout"
+
+    @pytest.mark.asyncio
     async def test_alerts_replay_filters(self, state_with_data):
         state_with_data["alert_events"] = [
             {
