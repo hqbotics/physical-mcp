@@ -269,6 +269,19 @@ paths:
                         timestamp: "2026-02-18T02:13:02.000000"
                     count: 1
                     timestamp: 1771380782.45
+                compound_filter_provider_error:
+                  value:
+                    events:
+                      - event_id: evt_b4c5d6e7f8
+                        event_type: provider_error
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: Vision provider timeout
+                        timestamp: "2026-02-18T02:14:10.000000"
+                    count: 1
+                    timestamp: 1771380850.12
 components:
   schemas:
     CameraScene:

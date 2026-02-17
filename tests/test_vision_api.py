@@ -396,6 +396,21 @@ class TestLongPollChanges:
             changes = data["changes"].get("usb:0", [])
             assert len(changes) == 0
 
+    @pytest.mark.asyncio
+    async def test_invalid_since_is_ignored(self, state_with_data):
+        """Invalid since cursor should be ignored (fallback to unfiltered)."""
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp_all = await client.get("/changes")
+            assert resp_all.status == 200
+            data_all = await resp_all.json()
+
+            resp_bad = await client.get("/changes?since=not-a-time")
+            assert resp_bad.status == 200
+            data_bad = await resp_bad.json()
+
+            assert data_bad["changes"] == data_all["changes"]
+
 
 # ── Health + alerts replay endpoints ─────────────────────────
 
@@ -727,3 +742,25 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 0
             assert data["events"] == []
+
+    @pytest.mark.asyncio
+    async def test_invalid_since_is_ignored(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_100",
+                "event_type": "startup_warning",
+                "camera_id": "",
+                "camera_name": "",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "fallback",
+                "timestamp": "2026-02-18T02:12:00",
+            }
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/alerts?since=not-a-time")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_100"

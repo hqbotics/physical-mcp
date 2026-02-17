@@ -69,6 +69,20 @@ def _parse_float(
     return parsed
 
 
+def _validated_since(value: str) -> str:
+    """Return ISO timestamp when valid, else empty string (ignore bad cursor)."""
+    if not value:
+        return ""
+    candidate = value.strip()
+    if not candidate:
+        return ""
+    try:
+        datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    return candidate
+
+
 def create_vision_routes(state: dict[str, Any]) -> web.Application:
     """Create aiohttp app with vision API routes.
 
@@ -336,7 +350,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         camera_id = request.query.get("camera_id", "")
         wait = request.query.get("wait", "").lower() == "true"
         timeout = _parse_float(request.query.get("timeout", "30"), default=30.0, minimum=1.0, maximum=120.0)
-        since = request.query.get("since", "")
+        since = _validated_since(request.query.get("since", ""))
 
         def _get_changes() -> dict:
             scenes = state.get("scene_states", {})
@@ -404,7 +418,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             event_type: filter by event type
         """
         limit = _parse_int(request.query.get("limit", "50"), default=50, minimum=1, maximum=500)
-        since = request.query.get("since", "")
+        since = _validated_since(request.query.get("since", ""))
         camera_id = request.query.get("camera_id", "")
         event_type = request.query.get("event_type", "")
 

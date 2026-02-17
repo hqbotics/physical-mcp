@@ -32,6 +32,7 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
 - **No events in `/alerts` after reconnect**
   - Check `since` cursor isn't in the future.
   - Retry without `since` to confirm baseline replay works.
+  - Invalid `since` values are ignored by the API (treated as no cursor).
   - Example: `GET /alerts?event_type=startup_warning` to confirm fallback-mode warnings are being recorded.
 - **Monitoring appears stale**
   - Call `/health` and check `status`, `consecutive_errors`, `backoff_until`.
