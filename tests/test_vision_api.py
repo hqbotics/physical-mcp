@@ -444,6 +444,16 @@ class TestHealthAndAlerts:
                 "message": "Timeout",
                 "timestamp": "2026-02-18T02:11:00",
             },
+            {
+                "event_id": "evt_ccc",
+                "event_type": "startup_warning",
+                "camera_id": "",
+                "camera_name": "",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "Running in fallback mode",
+                "timestamp": "2026-02-18T02:12:00",
+            },
         ]
         app = create_vision_routes(state_with_data)
         async with TestClient(TestServer(app)) as client:
@@ -452,6 +462,12 @@ class TestHealthAndAlerts:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_aaa"
+
+            resp2 = await client.get("/alerts?event_type=startup_warning")
+            assert resp2.status == 200
+            data2 = await resp2.json()
+            assert data2["count"] == 1
+            assert data2["events"][0]["event_id"] == "evt_ccc"
 
 
 # ── JSON error contract ─────────────────────────────────────

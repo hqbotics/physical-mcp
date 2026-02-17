@@ -184,10 +184,17 @@ class TestNtfyNotifier:
     @pytest.mark.asyncio
     async def test_error_does_not_crash(self):
         """Network error returns False, no exception."""
+        from contextlib import asynccontextmanager
+
         notifier = NtfyNotifier("test-topic")
 
+        @asynccontextmanager
+        async def mock_post(url, data=None, headers=None):
+            raise Exception("Connection refused")
+            yield  # pragma: no cover
+
         mock_session = AsyncMock()
-        mock_session.post = AsyncMock(side_effect=Exception("Connection refused"))
+        mock_session.post = mock_post
         notifier._session = mock_session
 
         result = await notifier.notify(_make_alert())

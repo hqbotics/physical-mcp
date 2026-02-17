@@ -74,10 +74,17 @@ class TestWebhookNotifier:
     @pytest.mark.asyncio
     async def test_notify_error_does_not_crash(self):
         """Network error returns False, no exception."""
+        from contextlib import asynccontextmanager
+
         notifier = WebhookNotifier("http://localhost:1/nonexistent")
 
+        @asynccontextmanager
+        async def mock_post(url, json=None):
+            raise Exception("Connection refused")
+            yield  # pragma: no cover
+
         mock_session = AsyncMock()
-        mock_session.post = AsyncMock(side_effect=Exception("Connection refused"))
+        mock_session.post = mock_post
         notifier._session = mock_session
 
         result = await notifier.notify(_make_alert())
