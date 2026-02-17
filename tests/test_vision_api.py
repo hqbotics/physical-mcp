@@ -904,3 +904,34 @@ class TestAlertsSinceAndLimit:
             assert resp2.status == 200
             data2 = await resp2.json()
             assert [e["event_id"] for e in data2["events"]] == ["evt_200", "evt_300"]
+
+    @pytest.mark.asyncio
+    async def test_since_boundary_is_exclusive(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_401",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "at boundary",
+                "timestamp": "2026-02-18T02:11:00",
+            },
+            {
+                "event_id": "evt_402",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "same second but later fraction",
+                "timestamp": "2026-02-18T02:11:00.500000",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/alerts?since=2026-02-18T02:11:00&event_type=provider_error")
+            assert resp.status == 200
+            data = await resp.json()
+            assert [e["event_id"] for e in data["events"]] == ["evt_402"]

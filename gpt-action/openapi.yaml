@@ -132,6 +132,12 @@ paths:
                       usb:0: []
                     minutes: 5
                     timeout: true
+                long_poll_timeout_wait_true:
+                  value:
+                    changes:
+                      usb:0: []
+                    minutes: 5
+                    timeout: true
                 invalid_since_ignored_with_camera_filter:
                   value:
                     changes:
