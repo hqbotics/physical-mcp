@@ -780,3 +780,47 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_100"
+
+    @pytest.mark.asyncio
+    async def test_invalid_since_with_compound_filters_and_limit(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_200",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "old timeout",
+                "timestamp": "2026-02-18T02:10:00",
+            },
+            {
+                "event_id": "evt_201",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "new timeout",
+                "timestamp": "2026-02-18T02:12:00",
+            },
+            {
+                "event_id": "evt_202",
+                "event_type": "startup_warning",
+                "camera_id": "",
+                "camera_name": "",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "fallback",
+                "timestamp": "2026-02-18T02:13:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/alerts?since=bad-cursor&camera_id=%20usb:0%20&event_type=PROVIDER_ERROR&limit=1"
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_201"

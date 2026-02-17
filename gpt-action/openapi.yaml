@@ -234,6 +234,7 @@ paths:
           schema:
             type: string
             format: date-time
+          description: ISO timestamp cursor. Invalid values are ignored (treated as no cursor).
         - in: query
           name: camera_id
           schema:
@@ -297,6 +298,19 @@ paths:
                         timestamp: "2026-02-18T02:15:12.000000"
                     count: 1
                     timestamp: 1771380912.50
+                invalid_since_ignored:
+                  value:
+                    events:
+                      - event_id: evt_d4e5f6a7b8
+                        event_type: provider_error
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: Timeout after reconnect
+                        timestamp: "2026-02-18T02:16:40.000000"
+                    count: 1
+                    timestamp: 1771381000.21
 components:
   schemas:
     CameraScene:
