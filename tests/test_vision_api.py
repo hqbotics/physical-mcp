@@ -382,3 +382,94 @@ class TestLongPollChanges:
             data = await resp.json()
             changes = data["changes"].get("usb:0", [])
             assert len(changes) == 0
+
+
+# ── Health + alerts replay endpoints ─────────────────────────
+
+
+class TestHealthAndAlerts:
+    @pytest.mark.asyncio
+    async def test_health_all(self, state_with_data):
+        state_with_data["camera_health"] = {
+            "usb:0": {
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "consecutive_errors": 0,
+                "backoff_until": None,
+                "last_success_at": "2026-02-18T02:10:45",
+                "last_error": "",
+                "last_frame_at": "2026-02-18T02:10:46",
+                "status": "running",
+            }
+        }
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/health")
+            assert resp.status == 200
+            data = await resp.json()
+            assert "cameras" in data
+            assert data["cameras"]["usb:0"]["status"] == "running"
+
+    @pytest.mark.asyncio
+    async def test_health_single_unknown(self, state_with_data):
+        state_with_data["camera_health"] = {}
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/health/usb:9")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["camera_id"] == "usb:9"
+            assert data["health"]["status"] == "unknown"
+
+    @pytest.mark.asyncio
+    async def test_alerts_replay_filters(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_aaa",
+                "event_type": "watch_rule_triggered",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "r_1",
+                "rule_name": "Door watch",
+                "message": "Person detected",
+                "timestamp": "2026-02-18T02:10:00",
+            },
+            {
+                "event_id": "evt_bbb",
+                "event_type": "provider_error",
+                "camera_id": "usb:1",
+                "camera_name": "Lab",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "Timeout",
+                "timestamp": "2026-02-18T02:11:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/alerts?camera_id=usb:0&event_type=watch_rule_triggered")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_aaa"
+
+
+# ── JSON error contract ─────────────────────────────────────
+
+
+class TestJsonErrorContract:
+    @pytest.mark.asyncio
+    async def test_frame_unknown_camera_error_shape(self, client_with_data):
+        resp = await client_with_data.get("/frame/usb:99")
+        assert resp.status == 404
+        data = await resp.json()
+        assert data["code"] == "camera_not_found"
+        assert data["camera_id"] == "usb:99"
+
+    @pytest.mark.asyncio
+    async def test_scene_unknown_camera_error_shape(self, client_with_data):
+        resp = await client_with_data.get("/scene/usb:99")
+        assert resp.status == 404
+        data = await resp.json()
+        assert data["code"] == "camera_not_found"
+        assert data["camera_id"] == "usb:99"
