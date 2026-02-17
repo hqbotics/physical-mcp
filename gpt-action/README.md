@@ -32,9 +32,11 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
 - **No events in `/alerts` after reconnect**
   - Check `since` cursor isn't in the future.
   - Retry without `since` to confirm baseline replay works.
+  - Example: `GET /alerts?event_type=startup_warning` to confirm fallback-mode warnings are being recorded.
 - **Monitoring appears stale**
   - Call `/health` and check `status`, `consecutive_errors`, `backoff_until`.
   - If degraded/backoff persists, verify provider key/model/network in MCP config.
+  - Example: `GET /alerts?event_type=provider_error&limit=5` to correlate health degradation with provider failures.
 - **Frame fetch fails for a camera**
   - Verify camera id from `/scene` keys.
   - Expect JSON errors like `camera_not_found` when ids mismatch.

@@ -115,3 +115,18 @@ class TestStartupFallbackWarning:
         emitted2 = await _emit_startup_fallback_warning(state)
         assert emitted2 is False
         assert len(state["alert_events"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_without_session_records_event_but_no_log(self):
+        state = {
+            "_fallback_warning_pending": True,
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+
+        emitted = await _emit_startup_fallback_warning(state)
+        assert emitted is True
+        assert state["_fallback_warning_pending"] is False
+        assert len(state["alert_events"]) == 1
+        evt = state["alert_events"][0]
+        assert evt["event_type"] == "startup_warning"
