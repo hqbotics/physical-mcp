@@ -91,6 +91,38 @@ async def _send_mcp_log(
         pass
 
 
+def _record_alert_event(
+    shared_state: dict[str, Any] | None,
+    *,
+    event_type: str,
+    camera_id: str = "",
+    camera_name: str = "",
+    rule_id: str = "",
+    rule_name: str = "",
+    message: str = "",
+) -> str:
+    """Record alert-like events for replay endpoints (bounded in-memory)."""
+    event_id = _new_event_id()
+    if not shared_state:
+        return event_id
+
+    events = shared_state.setdefault("alert_events", [])
+    events.append({
+        "event_id": event_id,
+        "event_type": event_type,
+        "camera_id": camera_id,
+        "camera_name": camera_name,
+        "rule_id": rule_id,
+        "rule_name": rule_name,
+        "message": message,
+        "timestamp": datetime.now().isoformat(),
+    })
+    max_events = int(shared_state.get("alert_events_max", 200))
+    if len(events) > max_events:
+        del events[: len(events) - max_events]
+    return event_id
+
+
 def _create_provider(config: PhysicalMCPConfig) -> VisionProvider | None:
     """Create the configured vision provider, or None if not configured."""
     r = config.reasoning
@@ -206,6 +238,15 @@ async def _evaluate_via_sampling(
                     f"ALERT: {alert.rule.name} triggered — "
                     f"{alert.evaluation.reasoning}"
                 )
+            event_id = _record_alert_event(
+                shared_state,
+                event_type="watch_rule_triggered",
+                camera_id=camera_id,
+                camera_name=camera_name,
+                rule_id=alert.rule.id,
+                rule_name=alert.rule.name,
+                message=alert.evaluation.reasoning,
+            )
             await _send_mcp_log(
                 shared_state,
                 "warning",
@@ -216,6 +257,7 @@ async def _evaluate_via_sampling(
                 event_type="watch_rule_triggered",
                 camera_id=camera_id,
                 rule_id=alert.rule.id,
+                event_id=event_id,
             )
     except Exception as e:
         logger.error(f"Sampling evaluation parse error: {e}")
@@ -253,10 +295,30 @@ async def _perception_loop(
 
     cam_label = f"{camera_name} ({camera_id})" if camera_name else camera_id
 
+    health = None
+    if shared_state is not None:
+        health = shared_state.setdefault("camera_health", {}).setdefault(
+            camera_id,
+            {
+                "camera_id": camera_id,
+                "camera_name": camera_name,
+                "consecutive_errors": 0,
+                "backoff_until": None,
+                "last_success_at": None,
+                "last_error": "",
+                "last_frame_at": None,
+                "status": "starting",
+            },
+        )
+
     while True:
         try:
             frame = await camera.grab_frame()
             await frame_buffer.push(frame)
+            if health is not None:
+                health["last_frame_at"] = datetime.now().isoformat()
+                if health.get("status") == "starting":
+                    health["status"] = "running"
 
             has_active_rules = len(rules_engine.get_active_rules()) > 0
             should_analyze, change = sampler.should_analyze(frame, has_active_rules)
@@ -269,6 +331,8 @@ async def _perception_loop(
                 now = time.monotonic()
                 if now < backoff_until:
                     remaining = backoff_until - now
+                    if health is not None:
+                        health["status"] = "backoff"
                     if consecutive_errors <= 3:
                         logger.info(f"[{cam_label}] In backoff, retry in {remaining:.0f}s")
                     await asyncio.sleep(interval)
@@ -280,6 +344,13 @@ async def _perception_loop(
                     consecutive_errors += 1
                     wait = min(5.0 * (2 ** (consecutive_errors - 1)), max_backoff)
                     backoff_until = time.monotonic() + wait
+                    if health is not None:
+                        health["consecutive_errors"] = consecutive_errors
+                        health["backoff_until"] = (
+                            datetime.now() + timedelta(seconds=wait)
+                        ).isoformat()
+                        health["last_error"] = str(e)[:300]
+                        health["status"] = "degraded"
                     logger.error(
                         f"[{cam_label}] Scene analysis error #{consecutive_errors}, "
                         f"backing off {wait:.0f}s: {str(e)[:150]}"
@@ -305,6 +376,12 @@ async def _perception_loop(
                 )
                 stats.record_analysis()
                 consecutive_errors = 0
+                if health is not None:
+                    health["consecutive_errors"] = 0
+                    health["backoff_until"] = None
+                    health["last_success_at"] = datetime.now().isoformat()
+                    health["last_error"] = ""
+                    health["status"] = "running"
                 logger.info(f"[{cam_label}] Scene: {scene_data.get('summary', '')[:100]}")
 
                 active_rules = rules_engine.get_active_rules()
@@ -341,6 +418,15 @@ async def _perception_loop(
                                 f"ALERT [{cam_label}]: {alert.rule.name} triggered — "
                                 f"{alert.evaluation.reasoning}"
                             )
+                        event_id = _record_alert_event(
+                            shared_state,
+                            event_type="watch_rule_triggered",
+                            camera_id=camera_id,
+                            camera_name=camera_name,
+                            rule_id=alert.rule.id,
+                            rule_name=alert.rule.name,
+                            message=alert.evaluation.reasoning,
+                        )
                         await _send_mcp_log(
                             shared_state,
                             "warning",
@@ -351,6 +437,7 @@ async def _perception_loop(
                             event_type="watch_rule_triggered",
                             camera_id=camera_id,
                             rule_id=alert.rule.id,
+                            event_id=event_id,
                         )
                     stats.record_analysis()
 
@@ -641,6 +728,9 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             "notifier": notifier,
             "_session": None,
             "_fallback_warning_pending": not bool(provider),
+            "camera_health": {},
+            "alert_events": [],
+            "alert_events_max": 200,
         })
 
         # ── Start Vision API (HTTP endpoints for non-MCP systems) ──
@@ -1080,12 +1170,20 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             memory_inst.append_event(
                 f"ALERT: {alert.rule.name} triggered — {alert.evaluation.reasoning}"
             )
+            event_id = _record_alert_event(
+                state,
+                event_type="watch_rule_triggered",
+                rule_id=alert.rule.id,
+                rule_name=alert.rule.name,
+                message=alert.evaluation.reasoning,
+            )
             await _send_mcp_log(
                 state,
                 "warning",
                 f"WATCH RULE TRIGGERED: {alert.rule.name} — {alert.evaluation.reasoning}",
                 event_type="watch_rule_triggered",
                 rule_id=alert.rule.id,
+                event_id=event_id,
             )
 
         return {
@@ -1238,6 +1336,24 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             "pending_alerts": await queue.size(),
             "active_cameras": len(state.get("cameras", {})),
         }
+
+    @mcp.tool()
+    async def get_camera_health(camera_id: str = "") -> dict:
+        """Get per-camera health snapshot: errors, backoff window, last success.
+
+        Args:
+            camera_id: Optional camera id filter (empty = all cameras).
+        """
+        health_map = state.get("camera_health", {})
+        if camera_id:
+            return {
+                "camera_id": camera_id,
+                "health": health_map.get(camera_id, {
+                    "status": "unknown",
+                    "message": "No health data yet. Start monitoring first.",
+                }),
+            }
+        return {"cameras": health_map}
 
     @mcp.tool()
     async def configure_provider(

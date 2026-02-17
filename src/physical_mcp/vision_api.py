@@ -56,6 +56,8 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
                 "GET /scene": "Current scene summaries (JSON)",
                 "GET /scene/{camera_id}": "Scene for specific camera",
                 "GET /changes": "Recent changes (?wait=true for long-poll)",
+                "GET /health": "Per-camera health (errors/backoff/last success)",
+                "GET /alerts": "Replay recent alert events",
             },
         })
 
@@ -325,6 +327,54 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         return web.json_response(
             {"changes": result, "minutes": minutes, "timeout": True}
         )
+
+    @routes.get("/health")
+    @routes.get("/health/{camera_id}")
+    async def get_health(request: web.Request) -> web.Response:
+        """Return per-camera health state (errors/backoff/last success)."""
+        camera_id = request.match_info.get("camera_id", "")
+        health = state.get("camera_health", {})
+        if camera_id:
+            return web.json_response({
+                "camera_id": camera_id,
+                "health": health.get(camera_id, {
+                    "status": "unknown",
+                    "message": "No health data yet.",
+                }),
+            })
+        return web.json_response({"cameras": health, "timestamp": time.time()})
+
+    @routes.get("/alerts")
+    async def get_alerts(request: web.Request) -> web.Response:
+        """Replay recent alert events.
+
+        Query params:
+            limit: max events to return (default 50, max 500)
+            since: ISO timestamp filter (exclusive)
+            camera_id: filter by camera id
+            event_type: filter by event type
+        """
+        limit = min(int(request.query.get("limit", "50")), 500)
+        since = request.query.get("since", "")
+        camera_id = request.query.get("camera_id", "")
+        event_type = request.query.get("event_type", "")
+
+        events = list(state.get("alert_events", []))
+        if since:
+            events = [e for e in events if e.get("timestamp", "") > since]
+        if camera_id:
+            events = [e for e in events if e.get("camera_id", "") == camera_id]
+        if event_type:
+            events = [e for e in events if e.get("event_type", "") == event_type]
+
+        if limit > 0:
+            events = events[-limit:]
+
+        return web.json_response({
+            "events": events,
+            "count": len(events),
+            "timestamp": time.time(),
+        })
 
     # ── CORS middleware (no extra deps) ────────────────────────
 
