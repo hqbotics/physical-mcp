@@ -254,7 +254,7 @@ paths:
           name: camera_id
           schema:
             type: string
-          description: Camera id filter (leading/trailing whitespace is ignored).
+          description: Camera id filter (leading/trailing whitespace is ignored; replayed stored camera_id values are normalized too).
         - in: query
           name: event_type
           schema:
@@ -265,7 +265,7 @@ paths:
               - rule_eval_error
               - startup_warning
               - system
-          description: Event type filter (case-insensitive).
+          description: Event type filter (case-insensitive; replayed stored event_type values are normalized too).
       responses:
         '200':
           description: Recent alert events

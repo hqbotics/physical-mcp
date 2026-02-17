@@ -1035,3 +1035,47 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_710"
+
+    @pytest.mark.asyncio
+    async def test_invalid_since_with_normalized_stored_fields_and_limit(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_801",
+                "event_type": " PROVIDER_ERROR ",
+                "camera_id": " usb:0 ",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "older normalized row",
+                "timestamp": "2026-02-18T02:40:00",
+            },
+            {
+                "event_id": "evt_802",
+                "event_type": " provider_error ",
+                "camera_id": " usb:0 ",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "newer normalized row",
+                "timestamp": "2026-02-18T02:41:00",
+            },
+            {
+                "event_id": "evt_803",
+                "event_type": "startup_warning",
+                "camera_id": "",
+                "camera_name": "",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "non-matching",
+                "timestamp": "2026-02-18T02:42:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/alerts?since=not-a-time&camera_id=%20usb:0%20&event_type=PROVIDER_ERROR&limit=1"
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_802"
