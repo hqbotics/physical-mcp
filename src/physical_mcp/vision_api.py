@@ -83,6 +83,11 @@ def _validated_since(value: str) -> str:
     return candidate
 
 
+def _norm_token(value: str) -> str:
+    """Normalize filter/replay tokens for resilient matching."""
+    return str(value or "").strip().lower()
+
+
 def create_vision_routes(state: dict[str, Any]) -> web.Application:
     """Create aiohttp app with vision API routes.
 
@@ -420,18 +425,18 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         limit = _parse_int(request.query.get("limit", "50"), default=50, minimum=1, maximum=500)
         since = _validated_since(request.query.get("since", ""))
         camera_id = request.query.get("camera_id", "").strip()
-        event_type = request.query.get("event_type", "").strip().lower()
+        event_type = _norm_token(request.query.get("event_type", ""))
 
         events = list(state.get("alert_events", []))
         if since:
             events = [e for e in events if e.get("timestamp", "") > since]
         if camera_id:
             events = [
-                e for e in events if e.get("camera_id", "").strip() == camera_id
+                e for e in events if str(e.get("camera_id", "")).strip() == camera_id
             ]
         if event_type:
             events = [
-                e for e in events if e.get("event_type", "").strip().lower() == event_type
+                e for e in events if _norm_token(e.get("event_type", "")) == event_type
             ]
 
         # Deterministic replay ordering for clients:

@@ -1079,3 +1079,36 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_802"
+
+    @pytest.mark.asyncio
+    async def test_boundary_since_excludes_equal_with_normalized_stored_fields(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_811",
+                "event_type": " PROVIDER_ERROR ",
+                "camera_id": " usb:0 ",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "boundary normalized row",
+                "timestamp": "2026-02-18T02:45:00",
+            },
+            {
+                "event_id": "evt_812",
+                "event_type": " provider_error ",
+                "camera_id": " usb:0 ",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "later normalized row",
+                "timestamp": "2026-02-18T02:45:00.250000",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/alerts?since=2026-02-18T02:45:00&camera_id=%20usb:0%20&event_type=PROVIDER_ERROR"
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert [e["event_id"] for e in data["events"]] == ["evt_812"]

@@ -344,6 +344,19 @@ paths:
                         timestamp: "2026-02-18T02:18:10.000000"
                     count: 1
                     timestamp: 1771381090.33
+                mixed_edge_normalized_limit:
+                  value:
+                    events:
+                      - event_id: evt_f1a2b3c4d5
+                        event_type: provider_error
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: Newest matching replay row after invalid cursor fallback
+                        timestamp: "2026-02-18T02:41:00.000000"
+                    count: 1
+                    timestamp: 1771382460.11
 components:
   schemas:
     CameraScene:

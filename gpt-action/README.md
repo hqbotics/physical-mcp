@@ -42,6 +42,7 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
   - Replay order is deterministic: oldest→newest by `timestamp` (tie-break by `event_id`).
   - `since` is exclusive: events exactly at the cursor timestamp are not returned.
   - Normalized-input example: `GET /alerts?camera_id=%20usb:0%20&event_type=PROVIDER_ERROR&limit=1`
+  - Mixed-edge example: `GET /alerts?since=not-a-time&camera_id=%20usb:0%20&event_type=PROVIDER_ERROR&limit=1`
   - `event_type` matching is case-insensitive (including replayed events with uppercase or space-padded stored types), and surrounding spaces in `camera_id` are ignored.
   - Replay filtering also tolerates legacy stored rows where `camera_id` or `event_type` were space-padded/mixed-case.
   - `/changes` has the same camera-id normalization; invalid `since` values are ignored there too.
