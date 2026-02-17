@@ -421,7 +421,9 @@ class TestHealthAndAlerts:
             assert resp.status == 200
             data = await resp.json()
             assert "cameras" in data
+            assert isinstance(data.get("timestamp"), float)
             assert data["cameras"]["usb:0"]["status"] == "running"
+            assert data["cameras"]["usb:0"]["consecutive_errors"] == 0
 
     @pytest.mark.asyncio
     async def test_health_single_unknown(self, state_with_data):
@@ -435,17 +437,27 @@ class TestHealthAndAlerts:
             assert data["health"]["status"] == "unknown"
 
     @pytest.mark.asyncio
-    async def test_health_single_degraded_payload_fields(self, state_with_data):
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "status,errors,backoff,last_error",
+        [
+            ("degraded", 4, "2026-02-18T02:35:00", "provider timeout"),
+            ("running", 0, None, ""),
+        ],
+    )
+    async def test_health_single_payload_matrix(
+        self, state_with_data, status, errors, backoff, last_error
+    ):
         state_with_data["camera_health"] = {
             "usb:0": {
                 "camera_id": "usb:0",
                 "camera_name": "Office",
-                "consecutive_errors": 4,
-                "backoff_until": "2026-02-18T02:35:00",
+                "consecutive_errors": errors,
+                "backoff_until": backoff,
                 "last_success_at": "2026-02-18T02:30:00",
-                "last_error": "provider timeout",
+                "last_error": last_error,
                 "last_frame_at": "2026-02-18T02:34:10",
-                "status": "degraded",
+                "status": status,
             }
         }
         app = create_vision_routes(state_with_data)
@@ -455,11 +467,11 @@ class TestHealthAndAlerts:
             data = await resp.json()
             health = data["health"]
             assert data["camera_id"] == "usb:0"
-            assert health["status"] == "degraded"
-            assert health["consecutive_errors"] == 4
-            assert health["backoff_until"]
+            assert health["status"] == status
+            assert health["consecutive_errors"] == errors
+            assert health["backoff_until"] == backoff
             assert health["last_success_at"]
-            assert health["last_error"] == "provider timeout"
+            assert health["last_error"] == last_error
 
     @pytest.mark.asyncio
     async def test_alerts_replay_filters(self, state_with_data):
@@ -582,3 +594,25 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_003"
+
+    @pytest.mark.asyncio
+    async def test_since_in_future_returns_empty(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_100",
+                "event_type": "startup_warning",
+                "camera_id": "",
+                "camera_name": "",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "fallback",
+                "timestamp": "2026-02-18T02:12:00",
+            }
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/alerts?since=2099-01-01T00:00:00")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 0
+            assert data["events"] == []
