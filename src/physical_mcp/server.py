@@ -123,6 +123,34 @@ def _record_alert_event(
     return event_id
 
 
+async def _emit_startup_fallback_warning(shared_state: dict[str, Any] | None) -> bool:
+    """Emit one-shot startup warning for fallback mode and record replay event."""
+    if not shared_state or not shared_state.get("_fallback_warning_pending"):
+        return False
+
+    shared_state["_fallback_warning_pending"] = False
+    event_id = _record_alert_event(
+        shared_state,
+        event_type="startup_warning",
+        message=(
+            "Server is running in fallback client-side reasoning mode. "
+            "Recommended: configure provider for server-side monitoring."
+        ),
+    )
+    await _send_mcp_log(
+        shared_state,
+        "warning",
+        (
+            "Server is running in fallback client-side reasoning mode. "
+            "Recommended: call configure_provider(provider, api_key, model) "
+            "to enable non-blocking server-side monitoring."
+        ),
+        event_type="startup_warning",
+        event_id=event_id,
+    )
+    return True
+
+
 def _create_provider(config: PhysicalMCPConfig) -> VisionProvider | None:
     """Create the configured vision provider, or None if not configured."""
     r = config.reasoning
@@ -567,28 +595,7 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             state["_session"] = ctx.session
 
             if state.get("_fallback_warning_pending"):
-                state["_fallback_warning_pending"] = False
-                event_id = _record_alert_event(
-                    state,
-                    event_type="startup_warning",
-                    message=(
-                        "Server is running in fallback client-side reasoning mode. "
-                        "Recommended: configure provider for server-side monitoring."
-                    ),
-                )
-                asyncio.create_task(
-                    _send_mcp_log(
-                        state,
-                        "warning",
-                        (
-                            "Server is running in fallback client-side reasoning mode. "
-                            "Recommended: call configure_provider(provider, api_key, model) "
-                            "to enable non-blocking server-side monitoring."
-                        ),
-                        event_type="startup_warning",
-                        event_id=event_id,
-                    )
-                )
+                asyncio.create_task(_emit_startup_fallback_warning(state))
 
     async def _ensure_cameras() -> dict:
         """Open ALL enabled cameras. Lazy — only opens cameras not yet open."""

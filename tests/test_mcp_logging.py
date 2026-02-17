@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from physical_mcp.server import _record_alert_event, _send_mcp_log
+from physical_mcp.server import (
+    _emit_startup_fallback_warning,
+    _record_alert_event,
+    _send_mcp_log,
+)
 
 
 class TestMcpLogFormatting:
@@ -80,3 +84,34 @@ class TestAlertEventRecording:
         assert evt["message"] == "fallback"
         # ISO-like timestamp from datetime.now().isoformat()
         assert "T" in evt["timestamp"]
+
+
+class TestStartupFallbackWarning:
+    @pytest.mark.asyncio
+    async def test_emits_once_and_records_replay_event(self):
+        session = AsyncMock()
+        state = {
+            "_session": session,
+            "_fallback_warning_pending": True,
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+
+        emitted = await _emit_startup_fallback_warning(state)
+        assert emitted is True
+        assert state["_fallback_warning_pending"] is False
+
+        # Replay event recorded
+        assert len(state["alert_events"]) == 1
+        evt = state["alert_events"][0]
+        assert evt["event_type"] == "startup_warning"
+        assert "fallback" in evt["message"].lower()
+
+        # MCP log sent with same event id
+        kwargs = session.send_log_message.await_args.kwargs
+        assert f"event_id={evt['event_id']}" in kwargs["data"]
+
+        # Second call should no-op
+        emitted2 = await _emit_startup_fallback_warning(state)
+        assert emitted2 is False
+        assert len(state["alert_events"]) == 1
