@@ -452,7 +452,6 @@ class TestHealthAndAlerts:
             assert data["health"]["status"] == "unknown"
 
     @pytest.mark.asyncio
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "status,errors,backoff,last_error",
         [
@@ -663,6 +662,15 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_012"
+
+            # case/spacing normalization in query filters
+            resp2 = await client.get(
+                "/alerts?camera_id=%20usb:0%20&event_type=PROVIDER_ERROR&limit=1"
+            )
+            assert resp2.status == 200
+            data2 = await resp2.json()
+            assert data2["count"] == 1
+            assert data2["events"][0]["event_id"] == "evt_012"
 
     @pytest.mark.asyncio
     async def test_since_camera_event_and_limit_combined(self, state_with_data):

@@ -347,7 +347,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             since:     ISO timestamp — only return changes after this time
         """
         minutes = _parse_int(request.query.get("minutes", "5"), default=5, minimum=1, maximum=120)
-        camera_id = request.query.get("camera_id", "")
+        camera_id = request.query.get("camera_id", "").strip()
         wait = request.query.get("wait", "").lower() == "true"
         timeout = _parse_float(request.query.get("timeout", "30"), default=30.0, minimum=1.0, maximum=120.0)
         since = _validated_since(request.query.get("since", ""))
@@ -419,8 +419,8 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         """
         limit = _parse_int(request.query.get("limit", "50"), default=50, minimum=1, maximum=500)
         since = _validated_since(request.query.get("since", ""))
-        camera_id = request.query.get("camera_id", "")
-        event_type = request.query.get("event_type", "")
+        camera_id = request.query.get("camera_id", "").strip()
+        event_type = request.query.get("event_type", "").strip().lower()
 
         events = list(state.get("alert_events", []))
         if since:
