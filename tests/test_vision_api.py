@@ -530,6 +530,16 @@ class TestHealthAndAlerts:
             data3 = await resp3.json()
             assert data3["count"] == 3
 
+            # provider_error filter returns expected payload shape
+            resp4 = await client.get("/alerts?event_type=provider_error")
+            assert resp4.status == 200
+            data4 = await resp4.json()
+            assert data4["count"] == 1
+            evt = data4["events"][0]
+            assert evt["event_type"] == "provider_error"
+            assert evt["camera_id"] == "usb:1"
+            assert evt["message"] == "Timeout"
+
 
 # ── JSON error contract ─────────────────────────────────────
 

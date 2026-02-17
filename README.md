@@ -898,6 +898,7 @@ Recent reliability and operability upgrades shipped in this sprint:
 
 - [v1 hardening changelog](docs/v1-hardening-changelog.md)
 - [migration guide: client-side polling → server-side monitoring](docs/migration-client-to-server-side.md)
+- [health + alerts debug playbook](docs/health-alerts-debug-playbook.md)
 - [ChatGPT GPT Action wrapper docs](gpt-action/README.md)
 
 ## Troubleshooting
