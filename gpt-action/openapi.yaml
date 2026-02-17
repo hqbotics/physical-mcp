@@ -162,6 +162,113 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /health:
+    get:
+      operationId: getHealthAll
+      summary: Get per-camera health snapshots
+      responses:
+        '200':
+          description: Health state for all cameras
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthAllResponse'
+              examples:
+                default:
+                  value:
+                    cameras:
+                      usb:0:
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        consecutive_errors: 0
+                        backoff_until: null
+                        last_success_at: "2026-02-18T02:10:45.000000"
+                        last_error: ""
+                        last_frame_at: "2026-02-18T02:10:46.000000"
+                        status: running
+                    timestamp: 1771380646.12
+  /health/{camera_id}:
+    get:
+      operationId: getHealthByCamera
+      summary: Get per-camera health for one camera
+      parameters:
+        - in: path
+          name: camera_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Health state for one camera
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthSingleResponse'
+              examples:
+                degraded:
+                  value:
+                    camera_id: usb:0
+                    health:
+                      camera_id: usb:0
+                      camera_name: Front Door
+                      consecutive_errors: 3
+                      backoff_until: "2026-02-18T02:12:30.000000"
+                      last_success_at: "2026-02-18T02:11:40.000000"
+                      last_error: Provider timeout
+                      last_frame_at: "2026-02-18T02:12:00.000000"
+                      status: degraded
+  /alerts:
+    get:
+      operationId: replayAlerts
+      summary: Replay recent alert events
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+        - in: query
+          name: since
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: camera_id
+          schema:
+            type: string
+        - in: query
+          name: event_type
+          schema:
+            type: string
+            enum:
+              - watch_rule_triggered
+              - provider_error
+              - rule_eval_error
+              - startup_warning
+              - system
+      responses:
+        '200':
+          description: Recent alert events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertsResponse'
+              examples:
+                triggered:
+                  value:
+                    events:
+                      - event_id: evt_a1b2c3d4e5
+                        event_type: watch_rule_triggered
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: r_12ab34cd
+                        rule_name: Front Door Watch
+                        message: Person detected at door
+                        timestamp: "2026-02-18T02:13:02.000000"
+                    count: 1
+                    timestamp: 1771380782.45
 components:
   schemas:
     CameraScene:
@@ -238,3 +345,91 @@ components:
       required:
         - code
         - message
+    CameraHealth:
+      type: object
+      properties:
+        camera_id:
+          type: string
+        camera_name:
+          type: string
+        consecutive_errors:
+          type: integer
+        backoff_until:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        last_success_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        last_error:
+          type: string
+        last_frame_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        status:
+          type: string
+          enum: [starting, running, backoff, degraded, unknown]
+    HealthAllResponse:
+      type: object
+      properties:
+        cameras:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CameraHealth'
+        timestamp:
+          type: number
+      required:
+        - cameras
+    HealthSingleResponse:
+      type: object
+      properties:
+        camera_id:
+          type: string
+        health:
+          $ref: '#/components/schemas/CameraHealth'
+      required:
+        - camera_id
+        - health
+    AlertEvent:
+      type: object
+      properties:
+        event_id:
+          type: string
+        event_type:
+          type: string
+        camera_id:
+          type: string
+        camera_name:
+          type: string
+        rule_id:
+          type: string
+        rule_name:
+          type: string
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - event_id
+        - event_type
+        - timestamp
+    AlertsResponse:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertEvent'
+        count:
+          type: integer
+        timestamp:
+          type: number
+      required:
+        - events
+        - count
