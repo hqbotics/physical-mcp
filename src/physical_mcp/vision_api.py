@@ -37,6 +37,38 @@ def _json_error(status: int, code: str, message: str, camera_id: str = "") -> we
     return web.json_response(payload, status=status)
 
 
+def _parse_int(value: str, *, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
+    """Parse integer query params with clamping and fallback default."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    if minimum is not None:
+        parsed = max(parsed, minimum)
+    if maximum is not None:
+        parsed = min(parsed, maximum)
+    return parsed
+
+
+def _parse_float(
+    value: str,
+    *,
+    default: float,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float:
+    """Parse float query params with clamping and fallback default."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if minimum is not None:
+        parsed = max(parsed, minimum)
+    if maximum is not None:
+        parsed = min(parsed, maximum)
+    return parsed
+
+
 def create_vision_routes(state: dict[str, Any]) -> web.Application:
     """Create aiohttp app with vision API routes.
 
@@ -74,7 +106,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
     async def get_frame(request: web.Request) -> web.Response:
         """Return latest camera frame as JPEG image."""
         camera_id = request.match_info.get("camera_id", "")
-        quality = int(request.query.get("quality", "80"))
+        quality = _parse_int(request.query.get("quality", "80"), default=80, minimum=1, maximum=100)
         buffers = state.get("frame_buffers", {})
 
         if not buffers:
@@ -120,8 +152,8 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             quality: JPEG quality 1-100 (default: 60)
         """
         camera_id = request.match_info.get("camera_id", "")
-        fps = min(int(request.query.get("fps", "5")), 30)
-        quality = int(request.query.get("quality", "60"))
+        fps = _parse_int(request.query.get("fps", "5"), default=5, minimum=1, maximum=30)
+        quality = _parse_int(request.query.get("quality", "60"), default=60, minimum=1, maximum=100)
         buffers = state.get("frame_buffers", {})
 
         if not buffers:
@@ -300,10 +332,10 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             timeout:   Max wait time in seconds for long-poll (default: 30)
             since:     ISO timestamp — only return changes after this time
         """
-        minutes = int(request.query.get("minutes", "5"))
+        minutes = _parse_int(request.query.get("minutes", "5"), default=5, minimum=1, maximum=120)
         camera_id = request.query.get("camera_id", "")
         wait = request.query.get("wait", "").lower() == "true"
-        timeout = min(float(request.query.get("timeout", "30")), 120)
+        timeout = _parse_float(request.query.get("timeout", "30"), default=30.0, minimum=1.0, maximum=120.0)
         since = request.query.get("since", "")
 
         def _get_changes() -> dict:
@@ -371,7 +403,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             camera_id: filter by camera id
             event_type: filter by event type
         """
-        limit = min(int(request.query.get("limit", "50")), 500)
+        limit = _parse_int(request.query.get("limit", "50"), default=50, minimum=1, maximum=500)
         since = request.query.get("since", "")
         camera_id = request.query.get("camera_id", "")
         event_type = request.query.get("event_type", "")

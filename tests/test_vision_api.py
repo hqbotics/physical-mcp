@@ -135,6 +135,12 @@ class TestFrame:
             resp = await client.get("/frame")
             assert resp.status == 503
 
+    @pytest.mark.asyncio
+    async def test_invalid_quality_does_not_crash(self, client_with_data):
+        resp = await client_with_data.get("/frame?quality=not-a-number")
+        assert resp.status == 200
+        assert resp.content_type == "image/jpeg"
+
 
 # ── Scene endpoint ────────────────────────────────────────────
 
@@ -193,6 +199,13 @@ class TestChanges:
         assert resp.status == 200
         data = await resp.json()
         assert data["minutes"] == 10
+
+    @pytest.mark.asyncio
+    async def test_invalid_minutes_uses_default(self, client_with_data):
+        resp = await client_with_data.get("/changes?minutes=abc")
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["minutes"] == 5
 
     @pytest.mark.asyncio
     async def test_filter_by_camera(self, client_with_data):
@@ -468,6 +481,12 @@ class TestHealthAndAlerts:
             data2 = await resp2.json()
             assert data2["count"] == 1
             assert data2["events"][0]["event_id"] == "evt_ccc"
+
+            # invalid limit should fall back safely
+            resp3 = await client.get("/alerts?limit=bad-value")
+            assert resp3.status == 200
+            data3 = await resp3.json()
+            assert data3["count"] == 3
 
 
 # ── JSON error contract ─────────────────────────────────────
