@@ -428,7 +428,9 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         if camera_id:
             events = [e for e in events if e.get("camera_id", "") == camera_id]
         if event_type:
-            events = [e for e in events if e.get("event_type", "") == event_type]
+            events = [
+                e for e in events if e.get("event_type", "").strip().lower() == event_type
+            ]
 
         # Deterministic replay ordering for clients:
         # oldest → newest by timestamp, tie-broken by event_id.

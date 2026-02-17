@@ -249,7 +249,7 @@ paths:
           schema:
             type: string
             format: date-time
-          description: ISO timestamp cursor. Invalid values are ignored (treated as no cursor).
+          description: ISO timestamp cursor (exclusive). Invalid values are ignored (treated as no cursor).
         - in: query
           name: camera_id
           schema:
