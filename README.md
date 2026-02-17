@@ -126,6 +126,61 @@ cameras:
 
 Ask your AI "list cameras" to see what each one currently shows.
 
+## Works with Every AI Chat App
+
+Physical MCP works with **every** AI chat app — not just MCP-enabled ones.
+
+### Snap to Clipboard
+
+Capture a camera frame to your clipboard, then paste into any chat app:
+
+```bash
+physical-mcp snap              # Camera → clipboard. Cmd+V to paste.
+physical-mcp snap --paste      # Camera → clipboard → auto-paste into focused app
+```
+
+### Continuous Monitoring
+
+Auto-snap when the scene changes or at regular intervals:
+
+```bash
+# Auto-paste into chat app when camera detects changes
+physical-mcp watch --on-change --paste
+
+# Auto-paste every 30 seconds for polling
+physical-mcp watch --interval 30 --paste
+
+# Global hotkey mode (Cmd+Shift+C / Ctrl+Shift+C)
+pip install 'physical-mcp[hotkey]'
+physical-mcp watch --paste
+```
+
+### HTTP Vision API
+
+Any system can access camera data via simple HTTP endpoints:
+
+```bash
+curl localhost:8090/frame -o latest.jpg     # Latest camera frame (JPEG)
+curl localhost:8090/scene | jq .            # Scene summaries (JSON)
+curl localhost:8090/changes?minutes=5       # Recent changes
+```
+
+The Vision API starts automatically on port 8090. Access from mobile devices on the same WiFi via your computer's LAN IP.
+
+### Compatibility
+
+| App | MCP | Snap/Paste | HTTP API |
+|-----|-----|------------|----------|
+| Claude Desktop | Full | Yes | Yes |
+| Claude Web/Mobile | Remote MCP | Yes | Yes |
+| ChatGPT | Paid only | Yes | Yes |
+| Gemini | No | Yes | Yes |
+| Copilot | No | Yes | Yes |
+| Perplexity | No | Yes | Yes |
+| Qwen / Grok | No | Yes | Yes |
+| OpenClaw / custom | No | No | Yes |
+| Cursor / VS Code | Full | Yes | Yes |
+
 ## Watch Rules & Monitoring
 
 The killer feature. Set up monitoring rules in natural language:
@@ -157,11 +212,14 @@ Key settings:
 | `cost_control.daily_budget_usd` | Daily spending cap for server-side mode |
 | `notifications.desktop_enabled` | Native desktop notifications |
 | `notifications.ntfy_topic` | Phone push notifications via ntfy.sh |
+| `vision_api.enabled` | HTTP Vision API on/off (default: true) |
+| `vision_api.port` | Vision API port (default: 8090) |
 
 ## Install with Provider Support
 
 ```bash
 pip install physical-mcp              # Client-side only (no API key needed)
+pip install physical-mcp[hotkey]      # + Global hotkey for snap/watch
 pip install physical-mcp[tunnel]      # + HTTPS tunnel for ChatGPT
 pip install physical-mcp[anthropic]   # + Anthropic Claude
 pip install physical-mcp[openai]      # + OpenAI / OpenAI-compatible
@@ -198,7 +256,10 @@ physical_mcp/
 ├── server.py              # MCP server — 15 tools, multi-camera state
 ├── config.py              # Pydantic config models
 ├── platform.py            # Cross-platform: autostart, paths, Claude config
-├── __main__.py            # CLI: setup, install, status, cameras
+├── __main__.py            # CLI: setup, install, status, snap, watch
+├── vision_api.py          # HTTP Vision API (/frame, /scene, /changes)
+├── snap.py                # Sync camera capture for CLI snap command
+├── clipboard.py           # Cross-platform clipboard image copy + paste
 ├── camera/
 │   ├── base.py            # CameraSource ABC + Frame dataclass
 │   ├── usb.py             # USB camera (OpenCV)

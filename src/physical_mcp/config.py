@@ -69,6 +69,12 @@ class NotificationsConfig(BaseModel):
     ntfy_server_url: str = "https://ntfy.sh"
 
 
+class VisionAPIConfig(BaseModel):
+    enabled: bool = True  # ON by default — the whole point
+    host: str = "0.0.0.0"  # Listen on all interfaces (LAN + mobile access)
+    port: int = 8090
+
+
 class PhysicalMCPConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     cameras: list[CameraConfig] = Field(default_factory=lambda: [CameraConfig()])
@@ -76,6 +82,7 @@ class PhysicalMCPConfig(BaseModel):
     reasoning: ReasoningConfig = Field(default_factory=ReasoningConfig)
     cost_control: CostControlConfig = Field(default_factory=CostControlConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
+    vision_api: VisionAPIConfig = Field(default_factory=VisionAPIConfig)
     rules_file: str = "~/.physical-mcp/rules.yaml"
     memory_file: str = "~/.physical-mcp/memory.md"
 

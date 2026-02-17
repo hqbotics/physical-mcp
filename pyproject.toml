@@ -24,6 +24,7 @@ openai = ["openai>=1.30"]
 google = ["google-genai>=1.0"]
 all = ["anthropic>=0.40", "openai>=1.30", "google-genai>=1.0"]
 tunnel = ["pyngrok>=7.0"]
+hotkey = ["pynput>=1.7"]
 dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "ruff>=0.1"]
 
 [project.scripts]

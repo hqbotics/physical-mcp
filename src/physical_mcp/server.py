@@ -549,9 +549,35 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             "_session": None,
         })
 
+        # ── Start Vision API (HTTP endpoints for non-MCP systems) ──
+        vision_runner = None
+        if config.vision_api.enabled:
+            try:
+                from aiohttp import web as aio_web
+                from .vision_api import create_vision_routes
+
+                vision_app = create_vision_routes(state)
+                vision_runner = aio_web.AppRunner(vision_app)
+                await vision_runner.setup()
+                site = aio_web.TCPSite(
+                    vision_runner,
+                    config.vision_api.host,
+                    config.vision_api.port,
+                )
+                await site.start()
+                logger.info(
+                    f"Vision API: http://{config.vision_api.host}:"
+                    f"{config.vision_api.port}"
+                )
+            except Exception as e:
+                logger.warning(f"Vision API failed to start: {e}")
+                vision_runner = None
+
         try:
             yield
         finally:
+            if vision_runner:
+                await vision_runner.cleanup()
             for task in state.get("_loop_tasks", {}).values():
                 if task and not task.done():
                     task.cancel()

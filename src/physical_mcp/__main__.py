@@ -395,5 +395,152 @@ def cameras(config_path: str | None) -> None:
         click.echo(f"  Index {cam['index']}: {cam['width']}x{cam['height']}{label}")
 
 
+@main.command()
+@click.option("--camera", "camera_index", default=0, type=int, help="Camera index")
+@click.option("--paste", "-p", is_flag=True, help="Auto-paste into focused app after capture")
+@click.option("--save", "save_path", default=None, help="Also save frame to file")
+def snap(camera_index: int, paste: bool, save_path: str | None) -> None:
+    """Snap camera to clipboard. Paste into any AI chat app.
+
+    Works with ChatGPT, Claude, Gemini, Copilot, Perplexity, Qwen, Grok —
+    any app that accepts image paste.
+    """
+    from .snap import snap as do_snap
+
+    try:
+        result = do_snap(device_index=camera_index, paste=paste, save_path=save_path)
+        click.echo(f"\U0001f4f8 {result}")
+        if not paste:
+            import sys as _sys
+            key = "Cmd+V" if _sys.platform == "darwin" else "Ctrl+V"
+            click.echo(f"Paste into any chat app with {key}")
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
+
+
+@main.command()
+@click.option("--camera", "camera_index", default=0, type=int, help="Camera index")
+@click.option("--paste", "-p", is_flag=True, help="Auto-paste after each capture")
+@click.option("--interval", default=None, type=float, help="Auto-snap every N seconds")
+@click.option("--on-change", "on_change", is_flag=True, help="Auto-snap when scene changes")
+def watch(camera_index: int, paste: bool, interval: float | None, on_change: bool) -> None:
+    """Continuous camera monitoring with auto-snap.
+
+    Three modes:
+
+      Default:     Global hotkey trigger (Cmd+Shift+C / Ctrl+Shift+C)
+
+      --interval:  Auto-snap every N seconds (polling)
+
+      --on-change: Auto-snap when the camera detects scene changes
+
+    Combine with --paste to auto-paste into the focused chat app.
+
+    Works with every AI chat app — ChatGPT, Claude, Gemini, Copilot,
+    Perplexity, Qwen, Grok — on any platform.
+    """
+    import sys as _sys
+    import time
+
+    from .snap import snap as do_snap
+
+    snap_count = 0
+
+    def do_capture() -> None:
+        nonlocal snap_count
+        try:
+            result = do_snap(device_index=camera_index, paste=paste)
+            snap_count += 1
+            click.echo(f"\U0001f4f8 [{snap_count}] {result}")
+        except Exception as e:
+            click.echo(f"Error: {e}")
+
+    # ── Interval mode ─────────────────────────────────────────
+    if interval is not None:
+        click.echo(
+            f"\u23f1\ufe0f  Auto-snapping every {interval}s | "
+            f"Camera: {camera_index} | Paste: {'ON' if paste else 'OFF'}"
+        )
+        click.echo("   Press Ctrl+C to stop\n")
+        try:
+            while True:
+                do_capture()
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            click.echo(f"\nStopped after {snap_count} snaps.")
+        return
+
+    # ── On-change mode ────────────────────────────────────────
+    if on_change:
+        click.echo(
+            f"\U0001f504 Auto-snapping on scene changes | "
+            f"Camera: {camera_index} | Paste: {'ON' if paste else 'OFF'}"
+        )
+        click.echo("   Press Ctrl+C to stop\n")
+
+        import cv2
+        from .perception.change_detector import ChangeDetector, ChangeLevel
+
+        detector = ChangeDetector()
+        cap = cv2.VideoCapture(camera_index)
+        if not cap.isOpened():
+            click.echo("Error: Cannot open camera", err=True)
+            raise SystemExit(1)
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    time.sleep(0.5)
+                    continue
+                result = detector.detect(frame)
+                if result.level != ChangeLevel.NONE:
+                    click.echo(f"   Change detected: {result.level.value}")
+                    do_capture()
+                time.sleep(0.5)  # Check 2x per second
+        except KeyboardInterrupt:
+            click.echo(f"\nStopped after {snap_count} snaps.")
+        finally:
+            cap.release()
+        return
+
+    # ── Hotkey mode (default) ─────────────────────────────────
+    try:
+        from pynput import keyboard  # type: ignore[import-untyped]
+    except ImportError:
+        click.echo("Install hotkey support: pip install 'physical-mcp[hotkey]'")
+        click.echo("Or manually: pip install pynput")
+        return
+
+    if _sys.platform == "darwin":
+        mod_key = keyboard.Key.cmd
+        hotkey_display = "Cmd+Shift+C"
+    else:
+        mod_key = keyboard.Key.ctrl
+        hotkey_display = "Ctrl+Shift+C"
+
+    combo = {mod_key, keyboard.Key.shift, keyboard.KeyCode.from_char("c")}
+    pressed: set = set()
+
+    click.echo(f"\U0001f441\ufe0f  Press {hotkey_display} to snap | Ctrl+C to stop")
+    click.echo(
+        f"   Camera: {camera_index} | Paste: {'ON' if paste else 'OFF'}\n"
+    )
+
+    def on_press(key: Any) -> None:
+        pressed.add(key)
+        if combo.issubset(pressed):
+            do_capture()
+
+    def on_release(key: Any) -> None:
+        pressed.discard(key)
+
+    with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+        try:
+            listener.join()
+        except KeyboardInterrupt:
+            click.echo(f"\nStopped after {snap_count} snaps.")
+
+
 if __name__ == "__main__":
     main()
