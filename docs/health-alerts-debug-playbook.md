@@ -48,3 +48,15 @@ Then re-apply cursor:
 After remediation:
 - `GET /health` should trend to `status=running`, `consecutive_errors=0`
 - `GET /alerts?event_type=provider_error&limit=5` should stop accumulating new errors
+
+## Degraded → Recovered walkthrough (example)
+
+1. **Symptom**
+   - `/health/usb:0` shows `status=degraded`, `consecutive_errors=5`, non-null `backoff_until`
+2. **Correlate**
+   - `/alerts?camera_id=usb:0&event_type=provider_error&limit=10` shows recent provider timeouts
+3. **Fix**
+   - update provider config (`configure_provider(...)`) or restore network/API key
+4. **Verify recovery**
+   - `/health/usb:0` returns `status=running`, `consecutive_errors=0`, updated `last_success_at`
+   - new `/alerts?camera_id=usb:0&event_type=provider_error&limit=5` no longer grows

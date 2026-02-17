@@ -606,6 +606,50 @@ class TestAlertsSinceAndLimit:
             assert data["events"][0]["event_id"] == "evt_003"
 
     @pytest.mark.asyncio
+    async def test_compound_filters_with_limit(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_010",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "timeout A",
+                "timestamp": "2026-02-18T02:10:00",
+            },
+            {
+                "event_id": "evt_011",
+                "event_type": "provider_error",
+                "camera_id": "usb:1",
+                "camera_name": "Lab",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "timeout B",
+                "timestamp": "2026-02-18T02:11:00",
+            },
+            {
+                "event_id": "evt_012",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "timeout C",
+                "timestamp": "2026-02-18T02:12:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/alerts?camera_id=usb:0&event_type=provider_error&limit=1"
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_012"
+
+    @pytest.mark.asyncio
     async def test_since_in_future_returns_empty(self, state_with_data):
         state_with_data["alert_events"] = [
             {
