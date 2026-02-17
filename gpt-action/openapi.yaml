@@ -238,6 +238,7 @@ paths:
           name: camera_id
           schema:
             type: string
+          description: Camera id filter (leading/trailing whitespace is ignored).
         - in: query
           name: event_type
           schema:
@@ -248,6 +249,7 @@ paths:
               - rule_eval_error
               - startup_warning
               - system
+          description: Event type filter (case-insensitive).
       responses:
         '200':
           description: Recent alert events
@@ -282,6 +284,19 @@ paths:
                         timestamp: "2026-02-18T02:14:10.000000"
                     count: 1
                     timestamp: 1771380850.12
+                normalized_query_inputs:
+                  value:
+                    events:
+                      - event_id: evt_c9d0e1f2a3
+                        event_type: provider_error
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: Timeout after 30s
+                        timestamp: "2026-02-18T02:15:12.000000"
+                    count: 1
+                    timestamp: 1771380912.50
 components:
   schemas:
     CameraScene:

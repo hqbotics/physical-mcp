@@ -214,6 +214,14 @@ class TestChanges:
         data = await resp.json()
         assert "usb:0" in data["changes"]
 
+    @pytest.mark.asyncio
+    async def test_filter_by_camera_trims_spaces(self, client_with_data):
+        resp = await client_with_data.get("/changes?camera_id=%20usb:0%20")
+        assert resp.status == 200
+        data = await resp.json()
+        assert "usb:0" in data["changes"]
+        assert len(data["changes"]) == 1
+
 
 # ── CORS ──────────────────────────────────────────────────────
 
