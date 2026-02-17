@@ -41,6 +41,8 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
   - Per-camera drilldown example: `GET /alerts?since=<last_seen>&camera_id=usb:0&event_type=provider_error&limit=10`
   - Normalized-input example: `GET /alerts?camera_id=%20usb:0%20&event_type=PROVIDER_ERROR&limit=1`
   - `event_type` matching is case-insensitive and surrounding spaces in `camera_id` are ignored.
+  - `/changes` has the same camera-id normalization; invalid `since` values are ignored there too.
+  - Example: `GET /changes?since=bad-cursor&camera_id=%20usb:0%20`
 - **Frame fetch fails for a camera**
   - Verify camera id from `/scene` keys.
   - Expect JSON errors like `camera_not_found` when ids mismatch.

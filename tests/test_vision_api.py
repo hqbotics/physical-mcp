@@ -419,6 +419,25 @@ class TestLongPollChanges:
 
             assert data_bad["changes"] == data_all["changes"]
 
+    @pytest.mark.asyncio
+    async def test_invalid_since_with_trimmed_camera_filter(self, state_with_data):
+        """Invalid since should still apply normalized camera_id filtering."""
+        second = SceneState()
+        second.update(
+            summary="Empty hallway",
+            objects=["hallway"],
+            people_count=0,
+            change_desc="Lights turned off",
+        )
+        state_with_data["scene_states"]["usb:1"] = second
+
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/changes?since=bad-cursor&camera_id=%20usb:0%20")
+            assert resp.status == 200
+            data = await resp.json()
+            assert list(data["changes"].keys()) == ["usb:0"]
+
 
 # ── Health + alerts replay endpoints ─────────────────────────
 

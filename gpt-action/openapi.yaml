@@ -91,6 +91,7 @@ paths:
           name: camera_id
           schema:
             type: string
+          description: Camera id filter (leading/trailing whitespace is ignored).
         - in: query
           name: wait
           schema:
@@ -108,7 +109,7 @@ paths:
           schema:
             type: string
             format: date-time
-            description: Return only changes after this timestamp
+          description: Return only changes after this timestamp. Invalid values are ignored (treated as no cursor).
       responses:
         '200':
           description: Recent changes grouped by camera
@@ -131,6 +132,13 @@ paths:
                       usb:0: []
                     minutes: 5
                     timeout: true
+                invalid_since_ignored_with_camera_filter:
+                  value:
+                    changes:
+                      usb:0:
+                        - timestamp: "2026-02-18T01:24:58.000000"
+                          description: major scene change
+                    minutes: 5
   /frame/{camera_id}:
     get:
       operationId: getFrameByCamera

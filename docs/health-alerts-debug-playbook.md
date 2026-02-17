@@ -29,11 +29,18 @@ Interpretation:
 
 If you use `since`, ensure it is not in the future.
 
+Important behavior:
+- Invalid `since` values are ignored (treated as no cursor) on both `/alerts` and `/changes`.
+
 Quick baseline check:
 - `GET /alerts?limit=20`
 
 Then re-apply cursor:
 - `GET /alerts?since=<last_seen_timestamp>&limit=20`
+
+Normalization check examples:
+- `GET /alerts?since=bad-cursor&camera_id=%20usb:0%20&event_type=PROVIDER_ERROR&limit=1`
+- `GET /changes?since=bad-cursor&camera_id=%20usb:0%20`
 
 ## 4) Recovery actions
 
