@@ -357,6 +357,19 @@ paths:
                         timestamp: "2026-02-18T02:41:00.000000"
                     count: 1
                     timestamp: 1771382460.11
+                boundary_exclusive_normalized_limit:
+                  value:
+                    events:
+                      - event_id: evt_g6h7i8j9k0
+                        event_type: provider_error
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: Boundary-equal row excluded; newest later row selected by limit
+                        timestamp: "2026-02-18T02:50:00.200000"
+                    count: 1
+                    timestamp: 1771383000.55
 components:
   schemas:
     CameraScene:
