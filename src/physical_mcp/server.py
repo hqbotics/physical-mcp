@@ -1,10 +1,10 @@
 """FastMCP server — tool registrations and lifespan management.
 
 Dual-mode architecture:
-  - Client-side reasoning (DEFAULT): No API key needed. Camera frames returned
-    as ImageContent for the MCP client (Claude Desktop, ChatGPT) to analyze.
-  - Server-side reasoning (BYOK): User provides API key, server calls external
-    LLM API directly for scene analysis and rule evaluation.
+  - Server-side reasoning (RECOMMENDED): User provides API key, server calls
+    external LLM API directly for scene analysis and rule evaluation.
+  - Client-side reasoning (fallback): No API key needed. Camera frames returned
+    as ImageContent for the MCP client to analyze.
 
 Multi-camera: Each camera gets its own FrameBuffer, SceneState, and perception
 loop. The LLM picks which camera to use based on room names in the instructions.
@@ -52,6 +52,26 @@ def _cam_label(cam_config: CameraConfig | None, camera_id: str = "") -> str:
     return camera_id or "unknown"
 
 
+async def _send_mcp_log(
+    shared_state: dict[str, Any] | None,
+    level: str,
+    message: str,
+) -> None:
+    """Best-effort MCP log emission to surface background alerts in chat clients."""
+    if not shared_state:
+        return
+    session = shared_state.get("_session")
+    if not session:
+        return
+    try:
+        await session.send_log_message(
+            level=level,
+            data=message,
+            logger="physical-mcp",
+        )
+    except Exception:
+        pass
+
 
 def _create_provider(config: PhysicalMCPConfig) -> VisionProvider | None:
     """Create the configured vision provider, or None if not configured."""
@@ -87,6 +107,7 @@ async def _evaluate_via_sampling(
     config: "PhysicalMCPConfig",
     notifier: "NotificationDispatcher | None",
     memory: "MemoryStore | None",
+    shared_state: dict[str, Any] | None = None,
     camera_id: str = "",
     camera_name: str = "",
 ) -> None:
@@ -167,17 +188,14 @@ async def _evaluate_via_sampling(
                     f"ALERT: {alert.rule.name} triggered — "
                     f"{alert.evaluation.reasoning}"
                 )
-            try:
-                await session.send_log_message(
-                    level="warning",
-                    data=(
-                        f"WATCH RULE TRIGGERED [{cam_label}]: {alert.rule.name} — "
-                        f"{alert.evaluation.reasoning}"
-                    ),
-                    logger="physical-mcp",
-                )
-            except Exception:
-                pass
+            await _send_mcp_log(
+                shared_state,
+                "warning",
+                (
+                    f"WATCH RULE TRIGGERED [{cam_label}]: {alert.rule.name} — "
+                    f"{alert.evaluation.reasoning}"
+                ),
+            )
     except Exception as e:
         logger.error(f"Sampling evaluation parse error: {e}")
 
@@ -207,7 +225,7 @@ async def _perception_loop(
     - No watch rules = zero API calls / zero alerts (just local monitoring)
     """
     interval = 1.0 / config.perception.capture_fps
-    max_backoff = 120.0
+    max_backoff = 45.0
     consecutive_errors = 0
     backoff_until = 0.0
     import time
@@ -237,47 +255,76 @@ async def _perception_loop(
 
                 try:
                     scene_data = await analyzer.analyze_scene(frame, scene_state, config)
-                    scene_state.update(
-                        summary=scene_data.get("summary", ""),
-                        objects=scene_data.get("objects", []),
-                        people_count=scene_data.get("people_count", 0),
-                        change_desc=change.description,
-                    )
-                    stats.record_analysis()
-                    consecutive_errors = 0
-                    logger.info(f"[{cam_label}] Scene: {scene_data.get('summary', '')[:100]}")
-
-                    active_rules = rules_engine.get_active_rules()
-                    if active_rules:
-                        evaluations = await analyzer.evaluate_rules(
-                            frame, scene_state, active_rules, config
-                        )
-                        frame_b64 = frame.to_base64(quality=config.reasoning.image_quality)
-                        alerts = rules_engine.process_evaluations(
-                            evaluations, scene_state, frame_base64=frame_b64,
-                        )
-                        for alert in alerts:
-                            stats.record_alert()
-                            logger.info(
-                                f"ALERT [{cam_label}]: {alert.rule.name} — {alert.evaluation.reasoning}"
-                            )
-                            if notifier:
-                                await notifier.dispatch(alert)
-                            if memory:
-                                memory.append_event(
-                                    f"ALERT [{cam_label}]: {alert.rule.name} triggered — "
-                                    f"{alert.evaluation.reasoning}"
-                                )
-                        stats.record_analysis()
-
                 except Exception as e:
                     consecutive_errors += 1
                     wait = min(5.0 * (2 ** (consecutive_errors - 1)), max_backoff)
                     backoff_until = time.monotonic() + wait
                     logger.error(
-                        f"[{cam_label}] API error #{consecutive_errors}, backing off {wait:.0f}s: "
-                        f"{str(e)[:150]}"
+                        f"[{cam_label}] Scene analysis error #{consecutive_errors}, "
+                        f"backing off {wait:.0f}s: {str(e)[:150]}"
                     )
+                    await _send_mcp_log(
+                        shared_state,
+                        "error",
+                        (
+                            f"[{cam_label}] Vision provider error (retry in {wait:.0f}s): "
+                            f"{str(e)[:120]}"
+                        ),
+                    )
+                    await asyncio.sleep(interval)
+                    continue
+
+                scene_state.update(
+                    summary=scene_data.get("summary", ""),
+                    objects=scene_data.get("objects", []),
+                    people_count=scene_data.get("people_count", 0),
+                    change_desc=change.description,
+                )
+                stats.record_analysis()
+                consecutive_errors = 0
+                logger.info(f"[{cam_label}] Scene: {scene_data.get('summary', '')[:100]}")
+
+                active_rules = rules_engine.get_active_rules()
+                if active_rules:
+                    try:
+                        evaluations = await analyzer.evaluate_rules(
+                            frame, scene_state, active_rules, config
+                        )
+                    except Exception as e:
+                        logger.error(f"[{cam_label}] Rule evaluation error: {str(e)[:150]}")
+                        await _send_mcp_log(
+                            shared_state,
+                            "warning",
+                            f"[{cam_label}] Rule evaluation failed: {str(e)[:120]}",
+                        )
+                        await asyncio.sleep(interval)
+                        continue
+
+                    frame_b64 = frame.to_base64(quality=config.reasoning.image_quality)
+                    alerts = rules_engine.process_evaluations(
+                        evaluations, scene_state, frame_base64=frame_b64,
+                    )
+                    for alert in alerts:
+                        stats.record_alert()
+                        logger.info(
+                            f"ALERT [{cam_label}]: {alert.rule.name} — {alert.evaluation.reasoning}"
+                        )
+                        if notifier:
+                            await notifier.dispatch(alert)
+                        if memory:
+                            memory.append_event(
+                                f"ALERT [{cam_label}]: {alert.rule.name} triggered — "
+                                f"{alert.evaluation.reasoning}"
+                            )
+                        await _send_mcp_log(
+                            shared_state,
+                            "warning",
+                            (
+                                f"WATCH RULE TRIGGERED [{cam_label}]: {alert.rule.name} — "
+                                f"{alert.evaluation.reasoning}"
+                            ),
+                        )
+                    stats.record_analysis()
 
             # ── Client-side reasoning mode ───────────────────────
             elif should_analyze and not analyzer.has_provider:
@@ -299,7 +346,7 @@ async def _perception_loop(
                         await _evaluate_via_sampling(
                             session, frame, change, active_rules,
                             scene_state, rules_engine, stats, config,
-                            notifier, memory,
+                            notifier, memory, shared_state=shared_state,
                             camera_id=camera_id, camera_name=camera_name,
                         )
                     else:
@@ -378,26 +425,24 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
     if has_provider:
         instructions_text = (
             "Physical MCP — Ambient perception server with camera access. "
-            "Server-side reasoning is active with a configured vision provider. "
-            "Use capture_frame to see what the camera sees. "
-            "Use analyze_now for on-demand LLM analysis. "
-            "Use add_watch_rule for continuous monitoring."
+            "RECOMMENDED MODE: server-side reasoning (active). "
+            "Monitoring runs in the background and alert notifications appear in-chat "
+            "without blocking normal conversation. "
+            "Use capture_frame for live view, analyze_now for on-demand analysis, "
+            "and add_watch_rule for continuous monitoring."
         )
     else:
         instructions_text = (
             "Physical MCP — Ambient perception server with camera access. "
-            "You are the reasoning engine for this camera system.\n\n"
-            "CRITICAL MONITORING PROTOCOL:\n"
+            "Current mode: client-side reasoning (fallback mode).\n\n"
+            "IMPORTANT: For best UX, switch to server-side reasoning by calling "
+            "configure_provider(provider, api_key, model). This avoids polling loops "
+            "and keeps chat free while monitoring runs in background.\n\n"
+            "Fallback monitoring protocol (only when no provider key is available):\n"
             "1. When the user asks you to watch/monitor/alert, call add_watch_rule().\n"
-            "2. After creating a rule, IMMEDIATELY start polling by calling "
-            "check_camera_alerts() in a loop.\n"
-            "3. After each check_camera_alerts() call, evaluate the rules and "
-            "call report_rule_evaluation() with your findings.\n"
-            "4. Then IMMEDIATELY call check_camera_alerts() AGAIN. Keep polling "
-            "every 10-15 seconds in a continuous loop until the user tells you to stop.\n"
-            "5. Do NOT wait for the user to ask — poll autonomously and continuously.\n"
-            "6. If you see log notifications saying 'CAMERA ALERT', call "
-            "check_camera_alerts() immediately.\n\n"
+            "2. Poll check_camera_alerts() every 10-15 seconds while rules are active.\n"
+            "3. For each alert frame, evaluate rules and call report_rule_evaluation().\n"
+            "4. If log notifications say 'CAMERA ALERT', check immediately.\n\n"
             "For one-time viewing, use capture_frame() or analyze_now()."
         )
 
@@ -986,6 +1031,11 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             memory_inst.append_event(
                 f"ALERT: {alert.rule.name} triggered — {alert.evaluation.reasoning}"
             )
+            await _send_mcp_log(
+                state,
+                "warning",
+                f"WATCH RULE TRIGGERED: {alert.rule.name} — {alert.evaluation.reasoning}",
+            )
 
         return {
             "processed": len(eval_list),
@@ -1152,8 +1202,9 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         model: Model name (optional, uses provider default)
         base_url: API base URL (required for openai-compatible)
 
-        Set provider to "" and api_key to "" to switch to client-side
-        reasoning mode (you analyze frames, no external API needed).
+        Server-side reasoning is the recommended mode for continuous monitoring.
+        Set provider to "" and api_key to "" only when you need fallback
+        client-side reasoning (you analyze frames, no external API needed).
         """
         cfg: PhysicalMCPConfig = state["config"]
         cfg.reasoning.provider = provider
