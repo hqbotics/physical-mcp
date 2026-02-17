@@ -507,7 +507,10 @@ class TestHealthAndAlerts:
             assert resp2.status == 200
             data2 = await resp2.json()
             assert data2["count"] == 1
-            assert data2["events"][0]["event_id"] == "evt_ccc"
+            startup_event = data2["events"][0]
+            assert startup_event["event_id"] == "evt_ccc"
+            assert startup_event["event_type"] == "startup_warning"
+            assert "fallback mode" in startup_event["message"].lower()
 
             # invalid limit should fall back safely
             resp3 = await client.get("/alerts?limit=bad-value")
@@ -535,3 +538,47 @@ class TestJsonErrorContract:
         data = await resp.json()
         assert data["code"] == "camera_not_found"
         assert data["camera_id"] == "usb:99"
+
+
+class TestAlertsSinceAndLimit:
+    @pytest.mark.asyncio
+    async def test_since_then_limit_returns_most_recent_filtered_events(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_001",
+                "event_type": "watch_rule_triggered",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "r_1",
+                "rule_name": "Door",
+                "message": "old",
+                "timestamp": "2026-02-18T02:10:00",
+            },
+            {
+                "event_id": "evt_002",
+                "event_type": "watch_rule_triggered",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "r_1",
+                "rule_name": "Door",
+                "message": "mid",
+                "timestamp": "2026-02-18T02:11:00",
+            },
+            {
+                "event_id": "evt_003",
+                "event_type": "watch_rule_triggered",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "r_1",
+                "rule_name": "Door",
+                "message": "new",
+                "timestamp": "2026-02-18T02:12:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/alerts?since=2026-02-18T02:10:30&limit=1")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_003"

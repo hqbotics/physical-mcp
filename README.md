@@ -28,6 +28,7 @@ Physical MCP turns any USB camera into an ambient perception system for your AI.
 - [Development Guide](#development-guide)
 - [Test Coverage](#test-coverage)
 - [Troubleshooting](#troubleshooting)
+- [v1.0 Hardening Notes](#v10-hardening-notes)
 
 ---
 
@@ -69,8 +70,8 @@ Camera -> Frame Buffer -> Change Detection (perceptual hash, <5ms, free)
 
 **Two reasoning modes:**
 
-1. **Client-side (default, free)** — Your AI app (Claude, ChatGPT) analyzes camera frames directly. No API key needed.
-2. **Server-side (BYOK)** — Bring your own API key. The server calls Anthropic, OpenAI, Google, or any OpenAI-compatible provider.
+1. **Server-side (recommended default)** — Bring your own API key. The server monitors in the background and pushes alerts/logs without blocking chat.
+2. **Client-side (fallback, free)** — Your AI app analyzes camera frames directly. Useful when no API key is available, but requires polling in MCP clients.
 
 ---
 
@@ -890,6 +891,14 @@ pip install physical-mcp[all]         # All providers
 ```
 
 ---
+
+## v1.0 Hardening Notes
+
+Recent reliability and operability upgrades shipped in this sprint:
+
+- [v1 hardening changelog](docs/v1-hardening-changelog.md)
+- [migration guide: client-side polling → server-side monitoring](docs/migration-client-to-server-side.md)
+- [ChatGPT GPT Action wrapper docs](gpt-action/README.md)
 
 ## Troubleshooting
 
