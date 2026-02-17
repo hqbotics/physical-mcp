@@ -4,18 +4,24 @@ Simple REST endpoints that serve live camera frames and scene summaries.
 Runs alongside the MCP server, sharing the same state dict.
 
 Endpoints:
-    GET /           → API overview
-    GET /frame      → Latest camera frame (JPEG)
-    GET /frame/{id} → Frame from specific camera
-    GET /scene      → All camera scene summaries (JSON)
-    GET /scene/{id} → Scene for specific camera
-    GET /changes    → Recent scene changes
+    GET /             → API overview
+    GET /frame        → Latest camera frame (JPEG)
+    GET /frame/{id}   → Frame from specific camera
+    GET /stream       → MJPEG video stream (works in <img> tags)
+    GET /stream/{id}  → MJPEG stream from specific camera
+    GET /events       → SSE stream of scene changes
+    GET /scene        → All camera scene summaries (JSON)
+    GET /scene/{id}   → Scene for specific camera
+    GET /changes      → Recent scene changes (supports long-poll)
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import time
+from datetime import datetime
 from typing import Any
 
 from aiohttp import web
@@ -44,9 +50,12 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             "endpoints": {
                 "GET /frame": "Latest camera frame (JPEG)",
                 "GET /frame/{camera_id}": "Frame from specific camera",
+                "GET /stream": "MJPEG video stream (use in <img> tags)",
+                "GET /stream/{camera_id}": "MJPEG stream from specific camera",
+                "GET /events": "SSE stream of scene changes (real-time)",
                 "GET /scene": "Current scene summaries (JSON)",
                 "GET /scene/{camera_id}": "Scene for specific camera",
-                "GET /changes": "Recent scene changes",
+                "GET /changes": "Recent changes (?wait=true for long-poll)",
             },
         })
 
@@ -82,6 +91,155 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             headers={"Cache-Control": "no-cache"},
         )
 
+    # ── MJPEG Stream ────────────────────────────────────────
+
+    @routes.get("/stream")
+    @routes.get("/stream/{camera_id}")
+    async def mjpeg_stream(request: web.Request) -> web.StreamResponse:
+        """Continuous MJPEG video stream — works in any <img> tag or browser.
+
+        Usage:
+            <img src="http://localhost:8090/stream" />
+            curl http://localhost:8090/stream --output -
+
+        Query params:
+            fps:     Target frame rate (default: 5, max: 30)
+            quality: JPEG quality 1-100 (default: 60)
+        """
+        camera_id = request.match_info.get("camera_id", "")
+        fps = min(int(request.query.get("fps", "5")), 30)
+        quality = int(request.query.get("quality", "60"))
+        buffers = state.get("frame_buffers", {})
+
+        if not buffers:
+            return web.Response(status=503, text="No cameras active")
+
+        if camera_id and camera_id in buffers:
+            buf = buffers[camera_id]
+        elif not camera_id:
+            buf = next(iter(buffers.values()))
+        else:
+            return web.Response(
+                status=404, text=f"Camera '{camera_id}' not found"
+            )
+
+        boundary = "frame"
+        resp = web.StreamResponse(
+            status=200,
+            headers={
+                "Content-Type": f"multipart/x-mixed-replace; boundary={boundary}",
+                "Cache-Control": "no-cache, no-store",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+            },
+        )
+        await resp.prepare(request)
+
+        interval = 1.0 / fps
+        try:
+            while True:
+                frame = await buf.wait_for_frame(timeout=interval)
+                if frame is None:
+                    await asyncio.sleep(interval)
+                    continue
+
+                jpeg_bytes = frame.to_jpeg_bytes(quality=quality)
+                await resp.write(
+                    f"--{boundary}\r\n"
+                    f"Content-Type: image/jpeg\r\n"
+                    f"Content-Length: {len(jpeg_bytes)}\r\n\r\n"
+                    .encode()
+                    + jpeg_bytes
+                    + b"\r\n"
+                )
+                await asyncio.sleep(interval)
+        except (asyncio.CancelledError, ConnectionResetError):
+            pass  # Client disconnected
+        return resp
+
+    # ── Server-Sent Events ────────────────────────────────
+
+    @routes.get("/events")
+    async def sse_events(request: web.Request) -> web.StreamResponse:
+        """Real-time Server-Sent Events stream of scene changes.
+
+        Usage:
+            const es = new EventSource('http://localhost:8090/events');
+            es.addEventListener('scene', (e) => console.log(JSON.parse(e.data)));
+            es.addEventListener('change', (e) => console.log(JSON.parse(e.data)));
+
+        Events emitted:
+            scene  — full scene update (summary, objects, people)
+            change — scene change detected (timestamp, description)
+            ping   — keepalive every 15s
+
+        Query params:
+            camera_id: Filter to specific camera (default: all)
+        """
+        camera_id = request.query.get("camera_id", "")
+
+        resp = web.StreamResponse(
+            status=200,
+            headers={
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+            },
+        )
+        await resp.prepare(request)
+
+        # Track what we've already sent to avoid duplicates
+        last_update_counts: dict[str, int] = {}
+        last_change_times: dict[str, str] = {}
+
+        try:
+            while True:
+                scenes = state.get("scene_states", {})
+                for cid, scene in scenes.items():
+                    if camera_id and cid != camera_id:
+                        continue
+
+                    # Emit scene event when update_count changes
+                    if scene.update_count != last_update_counts.get(cid, -1):
+                        last_update_counts[cid] = scene.update_count
+                        scene_data = scene.to_dict()
+                        cam_cfg = state.get("camera_configs", {}).get(cid)
+                        if cam_cfg and cam_cfg.name:
+                            scene_data["name"] = cam_cfg.name
+                        scene_data["camera_id"] = cid
+                        await resp.write(
+                            f"event: scene\n"
+                            f"data: {json.dumps(scene_data)}\n\n"
+                            .encode()
+                        )
+
+                    # Emit change events from the change log
+                    recent = scene.get_change_log(minutes=1)
+                    if recent:
+                        latest_ts = recent[-1]["timestamp"]
+                        if latest_ts != last_change_times.get(cid, ""):
+                            last_change_times[cid] = latest_ts
+                            for entry in recent:
+                                if entry["timestamp"] > last_change_times.get(
+                                    cid + "_sent", ""
+                                ):
+                                    await resp.write(
+                                        f"event: change\n"
+                                        f"data: {json.dumps({'camera_id': cid, **entry})}\n\n"
+                                        .encode()
+                                    )
+                            last_change_times[cid + "_sent"] = latest_ts
+
+                # Keepalive ping
+                await resp.write(b": ping\n\n")
+                await asyncio.sleep(1.0)
+        except (asyncio.CancelledError, ConnectionResetError):
+            pass  # Client disconnected
+        return resp
+
+    # ── Scene endpoints ───────────────────────────────────
+
     @routes.get("/scene")
     async def get_scene(request: web.Request) -> web.Response:
         """Return all camera scene summaries as JSON."""
@@ -114,16 +272,59 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
 
     @routes.get("/changes")
     async def get_changes(request: web.Request) -> web.Response:
-        """Return recent scene changes across cameras."""
+        """Return recent scene changes across cameras.
+
+        Query params:
+            minutes:   How far back to look (default: 5)
+            camera_id: Filter to specific camera
+            wait:      If "true", long-poll until a new change occurs
+            timeout:   Max wait time in seconds for long-poll (default: 30)
+            since:     ISO timestamp — only return changes after this time
+        """
         minutes = int(request.query.get("minutes", "5"))
         camera_id = request.query.get("camera_id", "")
-        scenes = state.get("scene_states", {})
-        result = {}
-        for cid, scene in scenes.items():
-            if camera_id and cid != camera_id:
-                continue
-            result[cid] = scene.get_change_log(minutes)
-        return web.json_response({"changes": result, "minutes": minutes})
+        wait = request.query.get("wait", "").lower() == "true"
+        timeout = min(float(request.query.get("timeout", "30")), 120)
+        since = request.query.get("since", "")
+
+        def _get_changes() -> dict:
+            scenes = state.get("scene_states", {})
+            result = {}
+            for cid, scene in scenes.items():
+                if camera_id and cid != camera_id:
+                    continue
+                changes = scene.get_change_log(minutes)
+                if since:
+                    changes = [c for c in changes if c["timestamp"] > since]
+                result[cid] = changes
+            return result
+
+        if not wait:
+            result = _get_changes()
+            return web.json_response(
+                {"changes": result, "minutes": minutes}
+            )
+
+        # Long-poll: wait for new changes
+        start = time.monotonic()
+        # Snapshot current state to detect new changes
+        initial = _get_changes()
+        initial_count = sum(len(v) for v in initial.values())
+
+        while time.monotonic() - start < timeout:
+            await asyncio.sleep(0.5)
+            current = _get_changes()
+            current_count = sum(len(v) for v in current.values())
+            if current_count > initial_count:
+                return web.json_response(
+                    {"changes": current, "minutes": minutes}
+                )
+
+        # Timeout — return whatever we have
+        result = _get_changes()
+        return web.json_response(
+            {"changes": result, "minutes": minutes, "timeout": True}
+        )
 
     # ── CORS middleware (no extra deps) ────────────────────────
 

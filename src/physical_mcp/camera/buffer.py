@@ -16,10 +16,22 @@ class FrameBuffer:
     def __init__(self, max_frames: int = 300):
         self._buffer: deque[Frame] = deque(maxlen=max_frames)
         self._lock = asyncio.Lock()
+        self._new_frame_event = asyncio.Event()
 
     async def push(self, frame: Frame) -> None:
         async with self._lock:
             self._buffer.append(frame)
+        # Wake up anyone waiting for a new frame (MJPEG stream, SSE, etc.)
+        self._new_frame_event.set()
+        self._new_frame_event.clear()
+
+    async def wait_for_frame(self, timeout: float = 5.0) -> Optional[Frame]:
+        """Wait for the next new frame, or return latest after timeout."""
+        try:
+            await asyncio.wait_for(self._new_frame_event.wait(), timeout)
+        except asyncio.TimeoutError:
+            pass
+        return await self.latest()
 
     async def latest(self) -> Optional[Frame]:
         async with self._lock:

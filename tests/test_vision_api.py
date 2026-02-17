@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
@@ -37,6 +38,7 @@ def _make_state(with_frame: bool = True, with_scene: bool = True) -> dict:
 
         mock_buffer = AsyncMock()
         mock_buffer.latest.return_value = mock_frame
+        mock_buffer.wait_for_frame.return_value = mock_frame
         state["frame_buffers"]["usb:0"] = mock_buffer
 
     if with_scene or with_frame:
@@ -214,3 +216,169 @@ class TestCORS:
         resp = await client_with_data.options("/scene")
         assert resp.status == 200
         assert resp.headers.get("Access-Control-Allow-Origin") == "*"
+
+
+# ── MJPEG stream endpoint ────────────────────────────────────
+
+
+class TestMJPEGStream:
+    @pytest.mark.asyncio
+    async def test_stream_returns_multipart(self, state_with_data):
+        """Stream endpoint returns multipart content with JPEG frames."""
+        # Set wait_for_frame to return frame then raise to stop loop
+        mock_frame = MagicMock()
+        mock_frame.to_jpeg_bytes.return_value = b"\xff\xd8\xff\xe0fakejpeg"
+
+        call_count = 0
+
+        async def _wait_for_frame(timeout=5.0):
+            nonlocal call_count
+            call_count += 1
+            if call_count > 2:
+                raise asyncio.CancelledError()
+            return mock_frame
+
+        state_with_data["frame_buffers"]["usb:0"].wait_for_frame = _wait_for_frame
+
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/stream")
+            assert resp.status == 200
+            assert "multipart/x-mixed-replace" in resp.content_type
+            body = await resp.read()
+            assert b"--frame" in body
+            assert b"\xff\xd8" in body
+
+    @pytest.mark.asyncio
+    async def test_stream_no_cameras_503(self, client_empty):
+        resp = await client_empty.get("/stream")
+        assert resp.status == 503
+
+    @pytest.mark.asyncio
+    async def test_stream_unknown_camera_404(self, state_with_data):
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/stream/usb:99")
+            assert resp.status == 404
+
+    @pytest.mark.asyncio
+    async def test_stream_specific_camera(self, state_with_data):
+        """Stream from a specific camera ID."""
+        call_count = 0
+        mock_frame = MagicMock()
+        mock_frame.to_jpeg_bytes.return_value = b"\xff\xd8\xff\xe0jpeg"
+
+        async def _wait(timeout=5.0):
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                raise asyncio.CancelledError()
+            return mock_frame
+
+        state_with_data["frame_buffers"]["usb:0"].wait_for_frame = _wait
+
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/stream/usb:0")
+            assert resp.status == 200
+
+
+# ── SSE events endpoint ──────────────────────────────────────
+
+
+class TestSSEEvents:
+    @pytest.mark.asyncio
+    async def test_events_returns_sse(self, state_with_data):
+        """Events endpoint returns text/event-stream with scene data."""
+
+        iteration = 0
+
+        # We need to make the SSE loop terminate after sending initial data
+        original_scenes = state_with_data["scene_states"]
+        original_get = dict.get
+
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            # Read with a short timeout — SSE is infinite
+            resp = await client.get("/events")
+            assert resp.status == 200
+            assert resp.content_type == "text/event-stream"
+
+            # Read first chunk (scene event + ping)
+            chunk = await resp.content.read(4096)
+            text = chunk.decode()
+            assert "event: scene" in text
+            assert "Two people at a desk with laptops" in text
+
+    @pytest.mark.asyncio
+    async def test_events_filter_by_camera(self, state_with_data):
+        """Filter SSE events to a specific camera."""
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/events?camera_id=usb:0")
+            assert resp.status == 200
+            chunk = await resp.content.read(4096)
+            text = chunk.decode()
+            assert "usb:0" in text
+
+
+# ── Long-poll changes endpoint ───────────────────────────────
+
+
+class TestLongPollChanges:
+    @pytest.mark.asyncio
+    async def test_normal_changes_still_work(self, client_with_data):
+        """Non-polling changes endpoint works as before."""
+        resp = await client_with_data.get("/changes")
+        assert resp.status == 200
+        data = await resp.json()
+        assert "changes" in data
+        assert "timeout" not in data
+
+    @pytest.mark.asyncio
+    async def test_long_poll_timeout(self, state_with_data):
+        """Long-poll returns timeout flag when no new changes arrive."""
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/changes?wait=true&timeout=1")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data.get("timeout") is True
+
+    @pytest.mark.asyncio
+    async def test_long_poll_returns_on_new_change(self, state_with_data):
+        """Long-poll returns immediately when a new change is recorded."""
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            # Record a new change after a short delay
+            async def add_change():
+                await asyncio.sleep(0.3)
+                state_with_data["scene_states"]["usb:0"].record_change(
+                    "New person entered"
+                )
+
+            task = asyncio.create_task(add_change())
+            resp = await client.get("/changes?wait=true&timeout=5")
+            await task
+            assert resp.status == 200
+            data = await resp.json()
+            # Should NOT have timeout since change arrived
+            assert "timeout" not in data
+            # Should contain the new change
+            all_changes = []
+            for cam_changes in data["changes"].values():
+                all_changes.extend(cam_changes)
+            descs = [c["description"] for c in all_changes]
+            assert "New person entered" in descs
+
+    @pytest.mark.asyncio
+    async def test_since_filter(self, state_with_data):
+        """The 'since' parameter filters changes by timestamp."""
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            # Use a future timestamp — should return no changes
+            resp = await client.get("/changes?since=2099-01-01T00:00:00")
+            assert resp.status == 200
+            data = await resp.json()
+            changes = data["changes"].get("usb:0", [])
+            assert len(changes) == 0
