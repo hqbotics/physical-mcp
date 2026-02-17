@@ -37,6 +37,7 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
   - Call `/health` and check `status`, `consecutive_errors`, `backoff_until`.
   - If degraded/backoff persists, verify provider key/model/network in MCP config.
   - Example: `GET /alerts?event_type=provider_error&limit=5` to correlate health degradation with provider failures.
+  - Per-camera drilldown example: `GET /alerts?since=<last_seen>&camera_id=usb:0&event_type=provider_error&limit=10`
 - **Frame fetch fails for a camera**
   - Verify camera id from `/scene` keys.
   - Expect JSON errors like `camera_not_found` when ids mismatch.
