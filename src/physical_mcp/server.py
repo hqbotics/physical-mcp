@@ -52,10 +52,19 @@ def _cam_label(cam_config: CameraConfig | None, camera_id: str = "") -> str:
     return camera_id or "unknown"
 
 
+def _new_event_id() -> str:
+    """Generate a short event id for MCP notifications."""
+    return f"evt_{uuid.uuid4().hex[:10]}"
+
+
 async def _send_mcp_log(
     shared_state: dict[str, Any] | None,
     level: str,
     message: str,
+    event_type: str = "system",
+    camera_id: str = "",
+    rule_id: str = "",
+    event_id: str = "",
 ) -> None:
     """Best-effort MCP log emission to surface background alerts in chat clients."""
     if not shared_state:
@@ -63,10 +72,19 @@ async def _send_mcp_log(
     session = shared_state.get("_session")
     if not session:
         return
+
+    eid = event_id or _new_event_id()
+    parts = [f"PMCP[{event_type.upper()}]", f"event_id={eid}"]
+    if camera_id:
+        parts.append(f"camera_id={camera_id}")
+    if rule_id:
+        parts.append(f"rule_id={rule_id}")
+    prefix = " | ".join(parts)
+
     try:
         await session.send_log_message(
             level=level,
-            data=message,
+            data=f"{prefix} | {message}",
             logger="physical-mcp",
         )
     except Exception:
@@ -195,6 +213,9 @@ async def _evaluate_via_sampling(
                     f"WATCH RULE TRIGGERED [{cam_label}]: {alert.rule.name} — "
                     f"{alert.evaluation.reasoning}"
                 ),
+                event_type="watch_rule_triggered",
+                camera_id=camera_id,
+                rule_id=alert.rule.id,
             )
     except Exception as e:
         logger.error(f"Sampling evaluation parse error: {e}")
@@ -270,6 +291,8 @@ async def _perception_loop(
                             f"[{cam_label}] Vision provider error (retry in {wait:.0f}s): "
                             f"{str(e)[:120]}"
                         ),
+                        event_type="provider_error",
+                        camera_id=camera_id,
                     )
                     await asyncio.sleep(interval)
                     continue
@@ -296,6 +319,8 @@ async def _perception_loop(
                             shared_state,
                             "warning",
                             f"[{cam_label}] Rule evaluation failed: {str(e)[:120]}",
+                            event_type="rule_eval_error",
+                            camera_id=camera_id,
                         )
                         await asyncio.sleep(interval)
                         continue
@@ -323,6 +348,9 @@ async def _perception_loop(
                                 f"WATCH RULE TRIGGERED [{cam_label}]: {alert.rule.name} — "
                                 f"{alert.evaluation.reasoning}"
                             ),
+                            event_type="watch_rule_triggered",
+                            camera_id=camera_id,
+                            rule_id=alert.rule.id,
                         )
                     stats.record_analysis()
 
@@ -451,6 +479,21 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         if state.get("_session") is None:
             state["_session"] = ctx.session
 
+            if state.get("_fallback_warning_pending"):
+                state["_fallback_warning_pending"] = False
+                asyncio.create_task(
+                    _send_mcp_log(
+                        state,
+                        "warning",
+                        (
+                            "Server is running in fallback client-side reasoning mode. "
+                            "Recommended: call configure_provider(provider, api_key, model) "
+                            "to enable non-blocking server-side monitoring."
+                        ),
+                        event_type="startup_warning",
+                    )
+                )
+
     async def _ensure_cameras() -> dict:
         """Open ALL enabled cameras. Lazy — only opens cameras not yet open."""
         cameras = state["cameras"]
@@ -556,6 +599,11 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
 
         mode = "server-side" if provider else "client-side"
         logger.info(f"Reasoning mode: {mode} (cameras deferred until first use)")
+        if not provider:
+            logger.warning(
+                "Startup in fallback mode (client-side reasoning). "
+                "Recommended default is server-side: configure_provider(...)"
+            )
 
         # Inject memory + camera roster into instructions
         nonlocal instructions_text
@@ -592,6 +640,7 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             "memory": memory,
             "notifier": notifier,
             "_session": None,
+            "_fallback_warning_pending": not bool(provider),
         })
 
         # ── Start Vision API (HTTP endpoints for non-MCP systems) ──
@@ -1035,6 +1084,8 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
                 state,
                 "warning",
                 f"WATCH RULE TRIGGERED: {alert.rule.name} — {alert.evaluation.reasoning}",
+                event_type="watch_rule_triggered",
+                rule_id=alert.rule.id,
             )
 
         return {

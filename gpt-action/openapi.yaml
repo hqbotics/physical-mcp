@@ -1,0 +1,240 @@
+openapi: 3.1.0
+info:
+  title: physical-mcp Vision API (ChatGPT GPT Action)
+  version: 1.1.0
+  description: |
+    GPT Action wrapper for physical-mcp HTTP Vision API.
+    Use this when ChatGPT cannot connect via MCP.
+servers:
+  - url: https://YOUR-PHYSICAL-MCP-HOST
+    description: Replace with your HTTPS endpoint (e.g., Cloudflare tunnel URL)
+paths:
+  /scene:
+    get:
+      operationId: getScene
+      summary: Get scene summary for all cameras
+      responses:
+        '200':
+          description: Scene summaries keyed by camera ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SceneResponse'
+              examples:
+                default:
+                  value:
+                    cameras:
+                      usb:0:
+                        name: Front Door
+                        summary: A closed front door and hallway are visible
+                        objects_present:
+                          - door
+                          - doormat
+                        people_count: 0
+                        last_updated: "2026-02-18T01:23:45.000000"
+                        update_count: 42
+                    timestamp: 1771377825.52
+  /scene/{camera_id}:
+    get:
+      operationId: getSceneByCamera
+      summary: Get scene summary for one camera
+      parameters:
+        - in: path
+          name: camera_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Scene summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CameraScene'
+              examples:
+                person_at_door:
+                  value:
+                    name: Front Door
+                    summary: One person is standing at the front door
+                    objects_present:
+                      - person
+                      - door
+                      - package
+                    people_count: 1
+                    last_updated: "2026-02-18T01:25:01.000000"
+                    update_count: 57
+        '404':
+          description: Camera not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                not_found:
+                  value:
+                    code: camera_not_found
+                    message: Camera 'usb:9' not found
+                    camera_id: usb:9
+  /changes:
+    get:
+      operationId: getRecentChanges
+      summary: Get recent scene changes (supports long-poll)
+      parameters:
+        - in: query
+          name: minutes
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 120
+            default: 5
+        - in: query
+          name: camera_id
+          schema:
+            type: string
+        - in: query
+          name: wait
+          schema:
+            type: boolean
+            default: false
+        - in: query
+          name: timeout
+          schema:
+            type: number
+            minimum: 1
+            maximum: 120
+            default: 30
+        - in: query
+          name: since
+          schema:
+            type: string
+            format: date-time
+            description: Return only changes after this timestamp
+      responses:
+        '200':
+          description: Recent changes grouped by camera
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangesResponse'
+              examples:
+                change_detected:
+                  value:
+                    changes:
+                      usb:0:
+                        - timestamp: "2026-02-18T01:24:58.000000"
+                          description: major scene change
+                      usb:1: []
+                    minutes: 5
+                timeout:
+                  value:
+                    changes:
+                      usb:0: []
+                    minutes: 5
+                    timeout: true
+  /frame/{camera_id}:
+    get:
+      operationId: getFrameByCamera
+      summary: Get latest frame as JPEG
+      parameters:
+        - in: path
+          name: camera_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: quality
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 80
+      responses:
+        '200':
+          description: JPEG frame
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Camera not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    CameraScene:
+      type: object
+      additionalProperties: true
+      properties:
+        name:
+          type: string
+        summary:
+          type: string
+        objects_present:
+          type: array
+          items:
+            type: string
+        people_count:
+          type: integer
+        last_updated:
+          type: string
+          format: date-time
+        update_count:
+          type: integer
+      required:
+        - summary
+        - objects_present
+        - people_count
+    SceneResponse:
+      type: object
+      properties:
+        cameras:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CameraScene'
+        timestamp:
+          type: number
+      required:
+        - cameras
+        - timestamp
+    ChangeEvent:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        description:
+          type: string
+      required:
+        - timestamp
+        - description
+    ChangesResponse:
+      type: object
+      properties:
+        changes:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/ChangeEvent'
+        minutes:
+          type: integer
+        timeout:
+          type: boolean
+      required:
+        - changes
+        - minutes
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        camera_id:
+          type: string
+      required:
+        - code
+        - message
