@@ -326,6 +326,11 @@ paths:
                         timestamp: "2026-02-18T02:16:40.000000"
                     count: 1
                     timestamp: 1771381000.21
+                boundary_equal_since_empty:
+                  value:
+                    events: []
+                    count: 0
+                    timestamp: 1771381045.70
 components:
   schemas:
     CameraScene:
