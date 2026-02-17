@@ -229,6 +229,7 @@ paths:
     get:
       operationId: replayAlerts
       summary: Replay recent alert events
+      description: Returns events in deterministic order (oldest to newest by timestamp, tie-break by event_id).
       parameters:
         - in: query
           name: limit

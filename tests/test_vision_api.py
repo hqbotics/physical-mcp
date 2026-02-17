@@ -843,3 +843,64 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_201"
+
+    @pytest.mark.asyncio
+    async def test_alerts_sorted_by_timestamp_then_event_id(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_300",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "latest",
+                "timestamp": "2026-02-18T02:12:00",
+            },
+            {
+                "event_id": "evt_100",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "same ts lower id",
+                "timestamp": "2026-02-18T02:11:00",
+            },
+            {
+                "event_id": "evt_200",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "same ts higher id",
+                "timestamp": "2026-02-18T02:11:00",
+            },
+            {
+                "event_id": "evt_050",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "earliest",
+                "timestamp": "2026-02-18T02:10:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/alerts?event_type=provider_error")
+            assert resp.status == 200
+            data = await resp.json()
+            assert [e["event_id"] for e in data["events"]] == [
+                "evt_050",
+                "evt_100",
+                "evt_200",
+                "evt_300",
+            ]
+
+            resp2 = await client.get("/alerts?event_type=provider_error&limit=2")
+            assert resp2.status == 200
+            data2 = await resp2.json()
+            assert [e["event_id"] for e in data2["events"]] == ["evt_200", "evt_300"]
