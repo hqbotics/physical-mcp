@@ -133,6 +133,90 @@ class TestAlertEventRecording:
         assert "T" in evt["timestamp"]
 
 
+class TestMcpReplayAndFanoutCorrelation:
+    @pytest.mark.asyncio
+    async def test_provider_error_replay_and_event_bus_share_event_id(self):
+        session = AsyncMock()
+        event_bus = AsyncMock()
+        state = {
+            "_session": session,
+            "event_bus": event_bus,
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+
+        evt_id = _record_alert_event(
+            state,
+            event_type="provider_error",
+            camera_id="usb:0",
+            camera_name="Office",
+            message="Vision provider timeout",
+        )
+
+        await _send_mcp_log(
+            state,
+            "error",
+            "[Office (usb:0)] Vision provider timeout",
+            event_type="provider_error",
+            camera_id="usb:0",
+            event_id=evt_id,
+        )
+
+        assert state["alert_events"][0]["event_id"] == evt_id
+
+        topic, payload = event_bus.publish.await_args.args
+        assert topic == "mcp_log"
+        assert payload["event_type"] == "provider_error"
+        assert payload["event_id"] == evt_id
+        assert payload["camera_id"] == "usb:0"
+
+        kwargs = session.send_log_message.await_args.kwargs
+        assert f"event_id={evt_id}" in kwargs["data"]
+
+    @pytest.mark.asyncio
+    async def test_watch_rule_triggered_replay_and_event_bus_share_event_id(self):
+        session = AsyncMock()
+        event_bus = AsyncMock()
+        state = {
+            "_session": session,
+            "event_bus": event_bus,
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+
+        evt_id = _record_alert_event(
+            state,
+            event_type="watch_rule_triggered",
+            camera_id="usb:0",
+            camera_name="Office",
+            rule_id="r_123",
+            rule_name="Front Door Watch",
+            message="Person detected at the door",
+        )
+
+        await _send_mcp_log(
+            state,
+            "warning",
+            "WATCH RULE TRIGGERED [Office (usb:0)]: Front Door Watch — Person detected",
+            event_type="watch_rule_triggered",
+            camera_id="usb:0",
+            rule_id="r_123",
+            event_id=evt_id,
+        )
+
+        assert state["alert_events"][0]["event_id"] == evt_id
+
+        topic, payload = event_bus.publish.await_args.args
+        assert topic == "mcp_log"
+        assert payload["event_type"] == "watch_rule_triggered"
+        assert payload["event_id"] == evt_id
+        assert payload["camera_id"] == "usb:0"
+        assert payload["rule_id"] == "r_123"
+
+        kwargs = session.send_log_message.await_args.kwargs
+        assert f"event_id={evt_id}" in kwargs["data"]
+
+
 class TestCameraAlertPendingEval:
     @pytest.mark.asyncio
     async def test_recorded_event_id_is_reused_in_standardized_log(self):

@@ -25,6 +25,7 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
 - Pull `/frame/{camera_id}` only when visual confirmation is required
 - Use `/health` if monitoring quality appears degraded (provider/backoff visibility)
 - Use `/alerts` for replay after reconnects or missed turns
+- PMCP logs are now mirrored to structured internal `mcp_log` events (same `event_id`) for subscriber integrations/observability.
 - Keep polling interval >= 10s to reduce load
 
 ## Troubleshooting
