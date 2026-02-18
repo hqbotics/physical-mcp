@@ -397,6 +397,71 @@ paths:
                         timestamp: "2026-02-18T03:31:00+00:00"
                     count: 1
                     timestamp: 1771385460.90
+                event_variant_watch_rule_triggered:
+                  value:
+                    events:
+                      - event_id: evt_wr_101
+                        event_type: watch_rule_triggered
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: r_12ab34cd
+                        rule_name: Front Door Watch
+                        message: Person detected at the front door
+                        timestamp: "2026-02-18T03:40:00.000000"
+                    count: 1
+                    timestamp: 1771386000.10
+                event_variant_provider_error:
+                  value:
+                    events:
+                      - event_id: evt_pe_101
+                        event_type: provider_error
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: Vision provider timeout (retry in 20s)
+                        timestamp: "2026-02-18T03:42:00.000000"
+                    count: 1
+                    timestamp: 1771386120.10
+                event_variant_rule_eval_error:
+                  value:
+                    events:
+                      - event_id: evt_re_101
+                        event_type: rule_eval_error
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: Rule evaluation failed: provider malformed JSON
+                        timestamp: "2026-02-18T03:43:00.000000"
+                    count: 1
+                    timestamp: 1771386180.10
+                event_variant_startup_warning:
+                  value:
+                    events:
+                      - event_id: evt_sw_101
+                        event_type: startup_warning
+                        camera_id: ""
+                        camera_name: ""
+                        rule_id: ""
+                        rule_name: ""
+                        message: Server is running in fallback client-side reasoning mode
+                        timestamp: "2026-02-18T03:44:00.000000"
+                    count: 1
+                    timestamp: 1771386240.10
+                event_variant_system:
+                  value:
+                    events:
+                      - event_id: evt_sys_101
+                        event_type: system
+                        camera_id: ""
+                        camera_name: ""
+                        rule_id: ""
+                        rule_name: ""
+                        message: Monitoring subsystem initialized
+                        timestamp: "2026-02-18T03:45:00.000000"
+                    count: 1
+                    timestamp: 1771386300.10
 components:
   schemas:
     CameraScene:

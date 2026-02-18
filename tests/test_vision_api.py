@@ -1379,3 +1379,47 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_tz_3"
+
+    @pytest.mark.asyncio
+    async def test_since_plus_limit_with_mixed_timezone_rows(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_mix_1",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "before cursor aware",
+                "timestamp": "2026-02-18T03:29:00+00:00",
+            },
+            {
+                "event_id": "evt_mix_2",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "after cursor naive",
+                "timestamp": "2026-02-18T03:30:30",
+            },
+            {
+                "event_id": "evt_mix_3",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "newest after cursor aware",
+                "timestamp": "2026-02-18T03:31:00+00:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/alerts?since=2026-02-18T03:30:00Z&camera_id=usb:0&event_type=provider_error&limit=1"
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_mix_3"
