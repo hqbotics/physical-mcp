@@ -1291,3 +1291,47 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_good_since"
+
+    @pytest.mark.asyncio
+    async def test_since_cursor_accepts_z_timezone_and_skips_malformed(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_bad_z",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "legacy bad ts",
+                "timestamp": "oops-not-time",
+            },
+            {
+                "event_id": "evt_good_z_old",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "before cursor",
+                "timestamp": "2026-02-18T03:29:00+00:00",
+            },
+            {
+                "event_id": "evt_good_z_new",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "after cursor",
+                "timestamp": "2026-02-18T03:31:00+00:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/alerts?since=2026-02-18T03:30:00Z&event_type=provider_error"
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_good_z_new"

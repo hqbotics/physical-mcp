@@ -21,7 +21,7 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from aiohttp import web
@@ -89,14 +89,20 @@ def _norm_token(value: str) -> str:
 
 
 def _parse_iso_datetime(value: str) -> datetime | None:
-    """Parse ISO datetime safely; return None on malformed values."""
+    """Parse ISO datetime safely; return UTC-normalized naive datetime."""
     candidate = str(value or "").strip()
     if not candidate:
         return None
     try:
-        return datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
     except ValueError:
         return None
+
+    # Normalize aware datetimes to naive UTC so comparisons/sorting remain
+    # stable across mixed legacy inputs (aware + naive).
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed
 
 
 def _event_sort_key(event: dict[str, Any]) -> tuple[datetime, str]:

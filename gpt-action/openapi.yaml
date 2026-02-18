@@ -384,6 +384,19 @@ paths:
                         timestamp: "2026-02-18T03:10:00.200000"
                     count: 1
                     timestamp: 1771384200.22
+                malformed_legacy_skipped_by_since:
+                  value:
+                    events:
+                      - event_id: evt_i6j7k8l9m0
+                        event_type: provider_error
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: Valid row after cursor; malformed legacy rows skipped
+                        timestamp: "2026-02-18T03:31:00+00:00"
+                    count: 1
+                    timestamp: 1771385460.90
 components:
   schemas:
     CameraScene:
@@ -610,6 +623,15 @@ components:
         - $ref: '#/components/schemas/RuleEvalErrorEvent'
         - $ref: '#/components/schemas/StartupWarningEvent'
         - $ref: '#/components/schemas/SystemEvent'
+      discriminator:
+        propertyName: event_type
+        mapping:
+          watch_rule_triggered: '#/components/schemas/WatchRuleTriggeredEvent'
+          camera_alert_pending_eval: '#/components/schemas/CameraAlertPendingEvalEvent'
+          provider_error: '#/components/schemas/ProviderErrorEvent'
+          rule_eval_error: '#/components/schemas/RuleEvalErrorEvent'
+          startup_warning: '#/components/schemas/StartupWarningEvent'
+          system: '#/components/schemas/SystemEvent'
     AlertsResponse:
       type: object
       properties:
