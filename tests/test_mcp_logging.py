@@ -789,3 +789,38 @@ class TestConfigureProviderContract:
         assert result["fallback_warning_emitted"] is True
         assert result["fallback_warning_reason"] == "runtime_switch"
         emit_mock.assert_awaited_once_with(closure_state, reason="runtime_switch")
+
+    @pytest.mark.asyncio
+    async def test_configure_provider_tool_fn_upgrade_has_empty_reason(self, monkeypatch):
+        mcp = create_server(PhysicalMCPConfig())
+        tool = mcp._tool_manager._tools["configure_provider"]
+        configure_provider_fn = tool.fn
+
+        closure_state = inspect.getclosurevars(configure_provider_fn).nonlocals["state"]
+        analyzer = MagicMock()
+        analyzer.has_provider = False
+        closure_state.update({
+            "config": PhysicalMCPConfig(),
+            "analyzer": analyzer,
+            "_fallback_warning_pending": True,
+        })
+
+        provider_obj = SimpleNamespace(model_name="gpt-4o-mini")
+        emit_mock = AsyncMock(return_value=True)
+        monkeypatch.setattr("physical_mcp.server._emit_fallback_mode_warning", emit_mock)
+        monkeypatch.setattr("physical_mcp.server._create_provider", lambda _cfg: provider_obj)
+
+        result = await configure_provider_fn(
+            provider="openai",
+            api_key="test-key",
+            model="gpt-4o-mini",
+        )
+
+        assert result["reasoning_mode"] == "server"
+        assert result["provider"] == "openai"
+        assert result["model"] == "gpt-4o-mini"
+        assert result["fallback_warning_emitted"] is False
+        assert result["fallback_warning_reason"] == ""
+        assert closure_state["_fallback_warning_pending"] is False
+        analyzer.set_provider.assert_called_once_with(provider_obj)
+        emit_mock.assert_not_awaited()

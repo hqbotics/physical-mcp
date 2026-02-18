@@ -1550,6 +1550,14 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         Server-side reasoning is the recommended mode for continuous monitoring.
         Set provider to "" and api_key to "" only when you need fallback
         client-side reasoning (you analyze frames, no external API needed).
+
+        Returns:
+            status: "configured"
+            provider: configured provider name or "none"
+            model: provider model name or "none"
+            reasoning_mode: "server" | "client"
+            fallback_warning_emitted: true when runtime switched server->fallback
+            fallback_warning_reason: "runtime_switch" when emitted, else ""
         """
         return await _apply_provider_configuration(
             state,
