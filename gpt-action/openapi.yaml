@@ -747,6 +747,8 @@ components:
         (emitted at startup and on runtime switches back to fallback mode).
         startup_warning keeps a stable event_type; distinguish startup vs runtime-switch
         variants using the message text and correlate with event_id across PMCP logs/replay.
+        EventBus mcp_log.data mirrors PMCP log prefix/message semantics
+        (`PMCP[STARTUP_WARNING] | event_id=...`) for both variants.
       properties:
         event_id:
           type: string
