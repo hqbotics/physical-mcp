@@ -478,6 +478,19 @@ paths:
                         timestamp: "2026-02-18T04:00:01+00:00"
                     count: 3
                     timestamp: 1771387201.20
+                equivalent_instant_since_limit:
+                  value:
+                    events:
+                      - event_id: evt_eqs_3
+                        event_type: provider_error
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: After equivalent-instant boundary cursor, latest row selected by limit
+                        timestamp: "2026-02-18T04:00:02+00:00"
+                    count: 1
+                    timestamp: 1771387202.20
                 event_variant_watch_rule_triggered:
                   value:
                     events:
