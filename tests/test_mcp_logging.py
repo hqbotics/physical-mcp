@@ -864,6 +864,7 @@ class TestConfigureProviderContract:
         assert topic == "mcp_log"
         assert payload["event_id"] == evt["event_id"]
         assert payload["message"].startswith("Runtime switched to fallback client-side reasoning mode")
+        assert payload["message"].lower().startswith("runtime switched to fallback client-side reasoning mode")
         assert "runtime switched to fallback client-side reasoning mode" in payload["message"].lower()
         assert payload["data"].lower().startswith("pmcp[startup_warning] | event_id=")
         assert "runtime switched to fallback client-side reasoning mode" in payload["data"].lower()
