@@ -506,7 +506,7 @@ paths:
                     timestamp: 1771387810.12
                 startup_warning_event_id_correlation:
                   summary: Startup fallback warning (initial startup path)
-                  description: Startup variant uses message text beginning with "Server is running in fallback..."; correlate event_id with PMCP startup_warning log line. PMCP log data for startup path should reflect the same startup wording and prefix pattern (`PMCP[STARTUP_WARNING] | event_id=...`). event_type remains "startup_warning" for both startup and runtime-switch variants; use message text to differentiate. Do not expect runtime-switch wording ("Runtime switched to fallback...") in this startup variant.
+                  description: Startup variant uses message text beginning with "Server is running in fallback..."; correlate event_id with PMCP startup_warning log line. PMCP log data for startup path should reflect the same startup wording and prefix pattern (`PMCP[STARTUP_WARNING] | event_id=...`). EventBus `mcp_log.data` mirrors the same startup wording/prefix semantics for startup path. event_type remains "startup_warning" for both startup and runtime-switch variants; use message text to differentiate. Do not expect runtime-switch wording ("Runtime switched to fallback...") in this startup variant.
                   value:
                     events:
                       - event_id: evt_start_100
