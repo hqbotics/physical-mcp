@@ -73,6 +73,7 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
   - PMCP log wording should mirror the same pattern split (startup logs should not contain runtime-switch phrasing, and vice versa).
   - PMCP prefix contract: startup_warning PMCP log lines begin with `PMCP[STARTUP_WARNING] | event_id=`.
   - EventBus mirror contract: `mcp_log.data` uses the same `PMCP[STARTUP_WARNING] | event_id=` prefix.
+  - EventBus `mcp_log.data` should mirror PMCP message wording semantics too (startup wording for startup path, runtime-switch wording for runtime-switch path).
   - OpenAPI references: `startup_warning_event_id_correlation` (startup) and `startup_warning_runtime_switch_variant` (runtime switch).
 
   Fallback startup warning diagnostics (quick table):
