@@ -419,6 +419,73 @@ class TestPerceptionLoopProviderErrorCorrelation:
         kwargs = session.send_log_message.await_args.kwargs
         assert f"event_id={replay_evt['event_id']}" in kwargs["data"]
 
+    @pytest.mark.asyncio
+    async def test_provider_error_mcp_log_payload_data_parity_with_session_log(self):
+        session = AsyncMock()
+        event_bus = AsyncMock()
+        state = {
+            "_session": session,
+            "event_bus": event_bus,
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+
+        evt_id = _record_alert_event(
+            state,
+            event_type="provider_error",
+            camera_id="usb:0",
+            camera_name="Office",
+            message="Vision provider timeout",
+        )
+
+        await _send_mcp_log(
+            state,
+            "error",
+            "[Office (usb:0)] Vision provider timeout",
+            event_type="provider_error",
+            camera_id="usb:0",
+            event_id=evt_id,
+        )
+
+        _, payload = event_bus.publish.await_args.args
+        session_kwargs = session.send_log_message.await_args.kwargs
+        assert payload["data"] == session_kwargs["data"]
+
+    @pytest.mark.asyncio
+    async def test_watch_rule_mcp_log_payload_data_parity_with_session_log(self):
+        session = AsyncMock()
+        event_bus = AsyncMock()
+        state = {
+            "_session": session,
+            "event_bus": event_bus,
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+
+        evt_id = _record_alert_event(
+            state,
+            event_type="watch_rule_triggered",
+            camera_id="usb:0",
+            camera_name="Office",
+            rule_id="r_123",
+            rule_name="Front Door Watch",
+            message="Person detected at the door",
+        )
+
+        await _send_mcp_log(
+            state,
+            "warning",
+            "WATCH RULE TRIGGERED [Office (usb:0)]: Front Door Watch — Person detected",
+            event_type="watch_rule_triggered",
+            camera_id="usb:0",
+            rule_id="r_123",
+            event_id=evt_id,
+        )
+
+        _, payload = event_bus.publish.await_args.args
+        session_kwargs = session.send_log_message.await_args.kwargs
+        assert payload["data"] == session_kwargs["data"]
+
 
 class TestStartupFallbackWarning:
     @pytest.mark.asyncio

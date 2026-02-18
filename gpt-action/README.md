@@ -43,6 +43,12 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
   - Correlation pattern: a `camera_alert_pending_eval` event often precedes a `watch_rule_triggered` event for the same camera.
   - Correlate by `event_id`: `/alerts` rows, PMCP logs, and internal `mcp_log` fanout now share the same id for key alert paths (e.g., `provider_error`, `watch_rule_triggered`).
   - Event-id-first triage flow: capture `event_id` from PMCP log, then query `/alerts?event_type=<type>&limit=50` and match the same `event_id` row for replay/context.
+
+  Correlation matrix:
+  - `provider_error` → fields: `event_id`, `camera_id`
+  - `watch_rule_triggered` → fields: `event_id`, `camera_id`, `rule_id`
+  - `camera_alert_pending_eval` → fields: `event_id`, `camera_id`
+  - `startup_warning` → fields: `event_id`
   - Per-camera drilldown example: `GET /alerts?since=<last_seen>&camera_id=usb:0&event_type=provider_error&limit=10`
   - Replay order is deterministic: oldest→newest by `timestamp` (tie-break by `event_id`).
   - `since` is exclusive: events exactly at the cursor timestamp are not returned.
