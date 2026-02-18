@@ -634,6 +634,7 @@ class TestStartupFallbackWarning:
         assert len(state["alert_events"]) == 1
         evt = state["alert_events"][0]
         assert evt["event_type"] == "startup_warning"
+        assert "runtime switched to fallback" not in evt["message"].lower()
 
         topic, payload = event_bus.publish.await_args.args
         assert topic == "mcp_log"
