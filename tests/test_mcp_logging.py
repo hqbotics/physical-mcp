@@ -10,6 +10,7 @@ import pytest
 
 from physical_mcp.config import PhysicalMCPConfig
 from physical_mcp.server import (
+    _emit_fallback_mode_warning,
     _emit_startup_fallback_warning,
     _perception_loop,
     _record_alert_event,
@@ -487,6 +488,45 @@ class TestPerceptionLoopProviderErrorCorrelation:
         assert payload["data"] == session_kwargs["data"]
 
 
+class TestStartupFallbackWarningLifespan:
+    @pytest.mark.asyncio
+    async def test_startup_warning_through_server_lifespan_emits_empty_field_event(self):
+        """Test startup warning as emitted through full server lifespan path.
+
+        Simulates state initialized during app_lifespan with _fallback_warning_pending
+        and verifies empty-field contract is maintained.
+        """
+        session = AsyncMock()
+        event_bus = AsyncMock()
+
+        # State structure mirrors what app_lifespan creates
+        state = {
+            "_session": session,
+            "event_bus": event_bus,
+            "_fallback_warning_pending": True,  # Set when no provider configured
+            "alert_events": [],
+            "alert_events_max": 50,
+            "camera_health": {},
+        }
+
+        await _emit_startup_fallback_warning(state)
+
+        assert state["_fallback_warning_pending"] is False
+        assert len(state["alert_events"]) == 1
+        evt = state["alert_events"][0]
+        assert evt["event_type"] == "startup_warning"
+        assert evt["camera_id"] == ""
+        assert evt["camera_name"] == ""
+        assert evt["rule_id"] == ""
+        assert evt["rule_name"] == ""
+        assert "fallback" in evt["message"].lower()
+
+        # Verify event_bus fanout has same event_id
+        topic, payload = event_bus.publish.await_args.args
+        assert topic == "mcp_log"
+        assert payload["event_id"] == evt["event_id"]
+
+
 class TestStartupFallbackWarning:
     @pytest.mark.asyncio
     async def test_emits_once_and_records_replay_event(self):
@@ -520,6 +560,34 @@ class TestStartupFallbackWarning:
         emitted2 = await _emit_startup_fallback_warning(state)
         assert emitted2 is False
         assert len(state["alert_events"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_runtime_switch_emits_fallback_warning(self):
+        session = AsyncMock()
+        event_bus = AsyncMock()
+        state = {
+            "_session": session,
+            "event_bus": event_bus,
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+
+        emitted = await _emit_fallback_mode_warning(state, reason="runtime_switch")
+        assert emitted is True
+        assert len(state["alert_events"]) == 1
+
+        evt = state["alert_events"][0]
+        assert evt["event_type"] == "startup_warning"
+        assert "runtime switched to fallback" in evt["message"].lower()
+
+        topic, payload = event_bus.publish.await_args.args
+        assert topic == "mcp_log"
+        assert payload["event_id"] == evt["event_id"]
+        assert payload["event_type"] == "startup_warning"
+
+        session_kwargs = session.send_log_message.await_args.kwargs
+        assert f"event_id={evt['event_id']}" in session_kwargs["data"]
+        assert "restore non-blocking server-side monitoring" in session_kwargs["data"].lower()
 
     @pytest.mark.asyncio
     async def test_startup_warning_event_bus_and_session_log_parity(self):

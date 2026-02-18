@@ -49,7 +49,7 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
   - `watch_rule_triggered` → fields: `event_id`, `camera_id`, `rule_id`
   - `camera_alert_pending_eval` → fields: `event_id`, `camera_id`
   - `startup_warning` → fields: `event_id`
-  - Startup warning triage: if PMCP startup warning appears, use that `event_id` to find the same `/alerts` row and confirm fallback-mode startup context.
+  - Startup warning triage: if PMCP startup warning appears, use that `event_id` to find the same `/alerts` row and confirm fallback-mode context (startup or runtime switch from server-side to fallback).
 
   Startup warning expected JSON shape:
   - ```json

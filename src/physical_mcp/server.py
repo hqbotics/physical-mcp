@@ -143,32 +143,65 @@ def _record_alert_event(
     return event_id
 
 
+async def _emit_fallback_mode_warning(
+    shared_state: dict[str, Any] | None,
+    *,
+    reason: str,
+) -> bool:
+    """Emit fallback-mode warning and record replay event.
+
+    reason:
+      - "startup": emitted once during startup when no provider is configured
+      - "runtime_switch": emitted when configure_provider switches from
+        server-side mode to client-side fallback mode
+    """
+    if not shared_state:
+        return False
+
+    if reason == "startup":
+        replay_message = (
+            "Server is running in fallback client-side reasoning mode. "
+            "Recommended: configure provider for server-side monitoring."
+        )
+        log_message = (
+            "Server is running in fallback client-side reasoning mode. "
+            "Recommended: call configure_provider(provider, api_key, model) "
+            "to enable non-blocking server-side monitoring."
+        )
+    else:
+        replay_message = (
+            "Runtime switched to fallback client-side reasoning mode. "
+            "Recommended default remains server-side: configure provider "
+            "for non-blocking continuous monitoring."
+        )
+        log_message = (
+            "Runtime switched to fallback client-side reasoning mode. "
+            "Recommended: call configure_provider(provider, api_key, model) "
+            "to restore non-blocking server-side monitoring."
+        )
+
+    event_id = _record_alert_event(
+        shared_state,
+        event_type="startup_warning",
+        message=replay_message,
+    )
+    await _send_mcp_log(
+        shared_state,
+        "warning",
+        log_message,
+        event_type="startup_warning",
+        event_id=event_id,
+    )
+    return True
+
+
 async def _emit_startup_fallback_warning(shared_state: dict[str, Any] | None) -> bool:
     """Emit one-shot startup warning for fallback mode and record replay event."""
     if not shared_state or not shared_state.get("_fallback_warning_pending"):
         return False
 
     shared_state["_fallback_warning_pending"] = False
-    event_id = _record_alert_event(
-        shared_state,
-        event_type="startup_warning",
-        message=(
-            "Server is running in fallback client-side reasoning mode. "
-            "Recommended: configure provider for server-side monitoring."
-        ),
-    )
-    await _send_mcp_log(
-        shared_state,
-        "warning",
-        (
-            "Server is running in fallback client-side reasoning mode. "
-            "Recommended: call configure_provider(provider, api_key, model) "
-            "to enable non-blocking server-side monitoring."
-        ),
-        event_type="startup_warning",
-        event_id=event_id,
-    )
-    return True
+    return await _emit_fallback_mode_warning(shared_state, reason="startup")
 
 
 def _create_provider(config: PhysicalMCPConfig) -> VisionProvider | None:
@@ -1487,7 +1520,14 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
 
         new_provider = _create_provider(cfg)
         analyzer_inst: FrameAnalyzer = state["analyzer"]
+        had_provider = analyzer_inst.has_provider
         analyzer_inst.set_provider(new_provider)
+
+        switched_to_fallback = had_provider and not new_provider
+        if switched_to_fallback:
+            await _emit_fallback_mode_warning(state, reason="runtime_switch")
+        if new_provider:
+            state["_fallback_warning_pending"] = False
 
         mode = "server" if new_provider else "client"
         return {
@@ -1495,6 +1535,7 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             "provider": provider or "none",
             "model": new_provider.model_name if new_provider else "none",
             "reasoning_mode": mode,
+            "fallback_warning_emitted": switched_to_fallback,
         }
 
     # ── Memory Tools ──────────────────────────────────────────
