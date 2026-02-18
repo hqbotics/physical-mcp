@@ -59,6 +59,53 @@ class TestMcpLogFormatting:
         # Should not raise
         await _send_mcp_log(shared_state, "info", "hello")
 
+    @pytest.mark.asyncio
+    async def test_send_mcp_log_publishes_structured_event_bus_payload(self):
+        session = AsyncMock()
+        event_bus = AsyncMock()
+        shared_state = {"_session": session, "event_bus": event_bus}
+
+        await _send_mcp_log(
+            shared_state,
+            "warning",
+            "Provider timeout",
+            event_type="provider_error",
+            camera_id="usb:0",
+            rule_id="r_42",
+            event_id="evt_struct",
+        )
+
+        event_bus.publish.assert_awaited_once()
+        topic, payload = event_bus.publish.await_args.args
+        assert topic == "mcp_log"
+        assert payload["event_type"] == "provider_error"
+        assert payload["event_id"] == "evt_struct"
+        assert payload["camera_id"] == "usb:0"
+        assert payload["rule_id"] == "r_42"
+        assert payload["level"] == "warning"
+        assert payload["logger"] == "physical-mcp"
+        assert payload["data"].startswith(
+            "PMCP[PROVIDER_ERROR] | event_id=evt_struct | camera_id=usb:0 | rule_id=r_42 |"
+        )
+
+    @pytest.mark.asyncio
+    async def test_send_mcp_log_without_session_still_fanouts_to_event_bus(self):
+        event_bus = AsyncMock()
+        shared_state = {"event_bus": event_bus}
+
+        await _send_mcp_log(
+            shared_state,
+            "info",
+            "background signal",
+            event_type="system",
+            event_id="evt_bus_only",
+        )
+
+        event_bus.publish.assert_awaited_once()
+        topic, payload = event_bus.publish.await_args.args
+        assert topic == "mcp_log"
+        assert payload["event_id"] == "evt_bus_only"
+
 
 class TestAlertEventRecording:
     def test_record_alert_event_capped(self):

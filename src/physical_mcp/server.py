@@ -30,6 +30,7 @@ from .camera.buffer import FrameBuffer
 from .camera.factory import create_camera
 from .camera.usb import USBCamera
 from .config import CameraConfig, PhysicalMCPConfig
+from .events import EventBus
 from .memory import MemoryStore
 from .notifications import NotificationDispatcher
 from .perception.change_detector import ChangeDetector
@@ -66,11 +67,8 @@ async def _send_mcp_log(
     rule_id: str = "",
     event_id: str = "",
 ) -> None:
-    """Best-effort MCP log emission to surface background alerts in chat clients."""
+    """Best-effort MCP log emission + structured internal fanout."""
     if not shared_state:
-        return
-    session = shared_state.get("_session")
-    if not session:
         return
 
     eid = event_id or _new_event_id()
@@ -80,11 +78,33 @@ async def _send_mcp_log(
     if rule_id:
         parts.append(f"rule_id={rule_id}")
     prefix = " | ".join(parts)
+    data = f"{prefix} | {message}"
+
+    # Structured in-process fanout for subscribers (metrics, relays, etc.).
+    event_bus = shared_state.get("event_bus")
+    if event_bus:
+        try:
+            await event_bus.publish("mcp_log", {
+                "event_type": event_type,
+                "event_id": eid,
+                "camera_id": camera_id,
+                "rule_id": rule_id,
+                "level": level,
+                "message": message,
+                "data": data,
+                "logger": "physical-mcp",
+            })
+        except Exception:
+            pass
+
+    session = shared_state.get("_session")
+    if not session:
+        return
 
     try:
         await session.send_log_message(
             level=level,
-            data=f"{prefix} | {message}",
+            data=data,
             logger="physical-mcp",
         )
     except Exception:
@@ -261,6 +281,15 @@ async def _evaluate_via_sampling(
             )
             if notifier:
                 await notifier.dispatch(alert)
+            if shared_state and "event_bus" in shared_state:
+                await shared_state["event_bus"].publish("alert", {
+                    "type": "watch_rule_triggered",
+                    "rule_id": alert.rule.id,
+                    "rule_name": alert.rule.name,
+                    "camera_id": camera_id,
+                    "confidence": alert.evaluation.confidence,
+                    "reasoning": alert.evaluation.reasoning,
+                })
             if memory:
                 memory.append_event(
                     f"ALERT: {alert.rule.name} triggered — "
@@ -460,6 +489,15 @@ async def _perception_loop(
                         )
                         if notifier:
                             await notifier.dispatch(alert)
+                        if shared_state and "event_bus" in shared_state:
+                            await shared_state["event_bus"].publish("alert", {
+                                "type": "watch_rule_triggered",
+                                "rule_id": alert.rule.id,
+                                "rule_name": alert.rule.name,
+                                "camera_id": camera_id,
+                                "confidence": alert.evaluation.confidence,
+                                "reasoning": alert.evaluation.reasoning,
+                            })
                         if memory:
                             memory.append_event(
                                 f"ALERT [{cam_label}]: {alert.rule.name} triggered — "
@@ -565,6 +603,15 @@ async def _perception_loop(
                                 camera_id=camera_id,
                                 event_id=event_id,
                             )
+
+                        # Publish scene change to EventBus
+                        if shared_state and "event_bus" in shared_state:
+                            await shared_state["event_bus"].publish("scene_change", {
+                                "type": "scene_change",
+                                "camera_id": camera_id,
+                                "change_level": change.level.value,
+                                "active_rules": [r.name for r in active_rules],
+                            })
 
                         # Push + desktop notifications
                         if notifier:
@@ -730,6 +777,7 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         alert_queue = AlertQueue(max_size=50, ttl_seconds=300)
         memory = MemoryStore(config.memory_file)
         notifier = NotificationDispatcher(config.notifications)
+        event_bus = EventBus()
 
         mode = "server-side" if provider else "client-side"
         logger.info(f"Reasoning mode: {mode} (cameras deferred until first use)")
@@ -773,6 +821,7 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             "alert_queue": alert_queue,
             "memory": memory,
             "notifier": notifier,
+            "event_bus": event_bus,
             "_session": None,
             "_fallback_warning_pending": not bool(provider),
             "camera_health": {},
@@ -1214,6 +1263,14 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
                 f"CLIENT ALERT: {alert.rule.name} — {alert.evaluation.reasoning}"
             )
             await notifier_inst.dispatch(alert)
+            if "event_bus" in state:
+                await state["event_bus"].publish("alert", {
+                    "type": "watch_rule_triggered",
+                    "rule_id": alert.rule.id,
+                    "rule_name": alert.rule.name,
+                    "confidence": alert.evaluation.confidence,
+                    "reasoning": alert.evaluation.reasoning,
+                })
             memory_inst.append_event(
                 f"ALERT: {alert.rule.name} triggered — {alert.evaluation.reasoning}"
             )
