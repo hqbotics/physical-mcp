@@ -1510,3 +1510,48 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_ims_2"
+
+    @pytest.mark.asyncio
+    async def test_malformed_timestamp_rows_with_equal_event_id_prefixes_sort_stably(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_bad_2",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "malformed B",
+                "timestamp": "bad-ts-two",
+            },
+            {
+                "event_id": "evt_bad_10",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "malformed A",
+                "timestamp": "bad-ts-ten",
+            },
+            {
+                "event_id": "evt_good_1",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "valid row",
+                "timestamp": "2026-02-18T03:50:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/alerts?camera_id=usb:0&event_type=provider_error")
+            assert resp.status == 200
+            data = await resp.json()
+            assert [e["event_id"] for e in data["events"]] == [
+                "evt_bad_10",
+                "evt_bad_2",
+                "evt_good_1",
+            ]

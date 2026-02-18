@@ -17,6 +17,12 @@ v1 hardening makes physical-mcp safer to run unattended: fallback-mode startup i
 ## Vision API improvements
 - Added `/health` and `/health/{camera_id}` endpoints.
 - Added `/alerts` replay endpoint with filters (`limit`, `since`, `camera_id`, `event_type`).
+- `/alerts` cursor semantics hardened:
+  - `since` is exclusive (boundary-equal rows excluded)
+  - `since` accepts `Z` timezone values
+  - invalid `since` values are ignored safely
+  - mixed aware/naive ISO timestamps are normalized for stable ordering/filtering
+  - malformed stored timestamps are tolerated with deterministic tie-break on `event_id`
 - Standardized JSON error responses (`code`, `message`, optional `camera_id`).
 - Added robust query parsing with fallback/clamping for malformed input.
 
