@@ -872,6 +872,9 @@ class TestConfigureProviderContract:
         assert payload["data"].lower().startswith("pmcp[startup_warning] | event_id=")
         assert "runtime switched to fallback client-side reasoning mode" in payload["data"].lower()
         assert "server is running in fallback" not in payload["message"].lower()
+        assert payload["data"].lower().split("|", 2)[2].strip().startswith(
+            "runtime switched to fallback client-side reasoning mode"
+        )
         assert "server is running in fallback client-side reasoning mode" not in payload["message"].lower()
 
         session_kwargs = session.send_log_message.await_args.kwargs
