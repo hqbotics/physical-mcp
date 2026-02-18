@@ -50,6 +50,16 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
   - `camera_alert_pending_eval` → fields: `event_id`, `camera_id`
   - `startup_warning` → fields: `event_id`
   - Startup warning triage: if PMCP startup warning appears, use that `event_id` to find the same `/alerts` row and confirm fallback-mode startup context.
+
+  Fallback startup warning diagnostics (quick table):
+  - Symptom: PMCP shows fallback startup warning on connect
+    - PMCP line: `PMCP[STARTUP_WARNING] | event_id=... | ...`
+    - Replay query: `GET /alerts?event_type=startup_warning&limit=5`
+    - Expected row: same `event_id`, message mentions fallback mode + provider recommendation
+  - Symptom: Warning seen in `/alerts` but not in PMCP chat
+    - PMCP line: absent
+    - Replay query: `GET /alerts?event_type=startup_warning&limit=5`
+    - Expected row: startup warning exists; verify client session/log permissions
   - Per-camera drilldown example: `GET /alerts?since=<last_seen>&camera_id=usb:0&event_type=provider_error&limit=10`
   - Replay order is deterministic: oldest→newest by `timestamp` (tie-break by `event_id`).
   - `since` is exclusive: events exactly at the cursor timestamp are not returned.

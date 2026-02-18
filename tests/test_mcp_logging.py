@@ -545,6 +545,29 @@ class TestStartupFallbackWarning:
         assert payload["data"] == session_kwargs["data"]
 
     @pytest.mark.asyncio
+    async def test_startup_warning_mcp_log_payload_has_required_metadata_keys(self):
+        session = AsyncMock()
+        event_bus = AsyncMock()
+        state = {
+            "_session": session,
+            "event_bus": event_bus,
+            "_fallback_warning_pending": True,
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+
+        emitted = await _emit_startup_fallback_warning(state)
+        assert emitted is True
+
+        topic, payload = event_bus.publish.await_args.args
+        assert topic == "mcp_log"
+        for key in ("event_type", "event_id", "level", "data", "logger"):
+            assert key in payload
+        assert payload["event_type"] == "startup_warning"
+        assert payload["level"] == "warning"
+        assert payload["logger"] == "physical-mcp"
+
+    @pytest.mark.asyncio
     async def test_without_session_records_event_but_no_log(self):
         state = {
             "_fallback_warning_pending": True,
