@@ -1609,3 +1609,57 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_lmv_2"
+
+    @pytest.mark.asyncio
+    async def test_valid_since_excludes_malformed_rows_under_compound_filters_and_limit(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_vsm_1",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "malformed row should be excluded by valid cursor",
+                "timestamp": "bad-ts-legacy",
+            },
+            {
+                "event_id": "evt_vsm_2",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "older valid row after cursor",
+                "timestamp": "2026-02-18T03:59:00",
+            },
+            {
+                "event_id": "evt_vsm_3",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "newest valid row after cursor",
+                "timestamp": "2026-02-18T04:00:00",
+            },
+            {
+                "event_id": "evt_vsm_4",
+                "event_type": "provider_error",
+                "camera_id": "usb:1",
+                "camera_name": "Lab",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "different camera",
+                "timestamp": "2026-02-18T04:01:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/alerts?since=2026-02-18T03:58:00Z&camera_id=usb:0&event_type=provider_error&limit=1"
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_vsm_3"

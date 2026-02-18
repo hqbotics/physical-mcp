@@ -436,6 +436,19 @@ paths:
                         timestamp: "2026-02-18T03:55:00"
                     count: 1
                     timestamp: 1771386900.40
+                valid_since_excludes_malformed_compound_limit:
+                  value:
+                    events:
+                      - event_id: evt_vsm_3
+                        event_type: provider_error
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: Valid cursor excludes malformed rows; latest valid filtered event selected by limit
+                        timestamp: "2026-02-18T04:00:00"
+                    count: 1
+                    timestamp: 1771387200.40
                 event_variant_watch_rule_triggered:
                   value:
                     events:
