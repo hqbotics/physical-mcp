@@ -519,21 +519,33 @@ async def _perception_loop(
                             f"{len(active_rules)} active rules"
                         )
 
+                        event_id = _record_alert_event(
+                            shared_state,
+                            event_type="camera_alert_pending_eval",
+                            camera_id=camera_id,
+                            camera_name=camera_name,
+                            message=(
+                                f"{change.level.value} scene change detected "
+                                f"(hash_distance={change.hash_distance}, "
+                                f"pixel_diff={change.pixel_diff_pct:.1f}%). "
+                                f"Active rules: {', '.join(r.name for r in active_rules)}."
+                            ),
+                        )
                         if session:
-                            try:
-                                await session.send_log_message(
-                                    level="warning",
-                                    data=(
-                                        f"CAMERA ALERT [{cam_label}]: {change.level.value} scene change detected "
-                                        f"(hash_distance={change.hash_distance}, "
-                                        f"pixel_diff={change.pixel_diff_pct:.1f}%). "
-                                        f"Active rules: {', '.join(r.name for r in active_rules)}. "
-                                        f"Please call check_camera_alerts() NOW to see the frame and evaluate."
-                                    ),
-                                    logger="physical-mcp",
-                                )
-                            except Exception:
-                                pass
+                            await _send_mcp_log(
+                                shared_state,
+                                "warning",
+                                (
+                                    f"CAMERA ALERT [{cam_label}]: {change.level.value} scene change detected "
+                                    f"(hash_distance={change.hash_distance}, "
+                                    f"pixel_diff={change.pixel_diff_pct:.1f}%). "
+                                    f"Active rules: {', '.join(r.name for r in active_rules)}. "
+                                    f"Please call check_camera_alerts() NOW to see the frame and evaluate."
+                                ),
+                                event_type="camera_alert_pending_eval",
+                                camera_id=camera_id,
+                                event_id=event_id,
+                            )
 
                         # Push + desktop notifications
                         if notifier:

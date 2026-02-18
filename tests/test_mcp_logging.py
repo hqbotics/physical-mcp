@@ -86,6 +86,41 @@ class TestAlertEventRecording:
         assert "T" in evt["timestamp"]
 
 
+class TestCameraAlertPendingEval:
+    @pytest.mark.asyncio
+    async def test_recorded_event_id_is_reused_in_standardized_log(self):
+        session = AsyncMock()
+        state = {
+            "_session": session,
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+
+        evt_id = _record_alert_event(
+            state,
+            event_type="camera_alert_pending_eval",
+            camera_id="usb:0",
+            camera_name="Desk Cam",
+            message="major scene change; active rules: door",
+        )
+
+        await _send_mcp_log(
+            state,
+            "warning",
+            "CAMERA ALERT [Desk Cam (usb:0)] ...",
+            event_type="camera_alert_pending_eval",
+            camera_id="usb:0",
+            event_id=evt_id,
+        )
+
+        kwargs = session.send_log_message.await_args.kwargs
+        assert kwargs["data"].startswith(
+            "PMCP[CAMERA_ALERT_PENDING_EVAL] | "
+            f"event_id={evt_id} | camera_id=usb:0 |"
+        )
+        assert state["alert_events"][0]["event_id"] == evt_id
+
+
 class TestStartupFallbackWarning:
     @pytest.mark.asyncio
     async def test_emits_once_and_records_replay_event(self):
