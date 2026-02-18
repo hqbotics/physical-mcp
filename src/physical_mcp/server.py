@@ -250,8 +250,10 @@ async def _apply_provider_configuration(
     analyzer_inst.set_provider(new_provider)
 
     switched_to_fallback = had_provider and not new_provider
+    fallback_warning_reason = ""
     if switched_to_fallback:
         await _emit_fallback_mode_warning(state, reason="runtime_switch")
+        fallback_warning_reason = "runtime_switch"
     if new_provider:
         state["_fallback_warning_pending"] = False
 
@@ -262,6 +264,7 @@ async def _apply_provider_configuration(
         "model": new_provider.model_name if new_provider else "none",
         "reasoning_mode": mode,
         "fallback_warning_emitted": switched_to_fallback,
+        "fallback_warning_reason": fallback_warning_reason,
     }
 
 

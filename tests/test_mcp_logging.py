@@ -685,6 +685,7 @@ class TestConfigureProviderContract:
 
         assert result["reasoning_mode"] == "client"
         assert result["fallback_warning_emitted"] is True
+        assert result["fallback_warning_reason"] == "runtime_switch"
         assert result["provider"] == "none"
         assert result["model"] == "none"
         analyzer.set_provider.assert_called_once_with(None)
@@ -716,8 +717,47 @@ class TestConfigureProviderContract:
 
         assert result["reasoning_mode"] == "server"
         assert result["fallback_warning_emitted"] is False
+        assert result["fallback_warning_reason"] == ""
         assert result["provider"] == "openai"
         assert result["model"] == "gpt-4o-mini"
         assert state["_fallback_warning_pending"] is False
         analyzer.set_provider.assert_called_once_with(provider_obj)
         emit_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_startup_warning_once_then_runtime_switch_warning_can_emit(self, monkeypatch):
+        # Startup warning is one-shot
+        startup_state = {
+            "_fallback_warning_pending": True,
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+        emitted1 = await _emit_startup_fallback_warning(startup_state)
+        emitted2 = await _emit_startup_fallback_warning(startup_state)
+        assert emitted1 is True
+        assert emitted2 is False
+        assert len(startup_state["alert_events"]) == 1
+
+        # Later runtime provider downgrade should still emit warning
+        cfg = PhysicalMCPConfig()
+        analyzer = MagicMock()
+        analyzer.has_provider = True
+        runtime_state = {
+            "config": cfg,
+            "analyzer": analyzer,
+            "_fallback_warning_pending": False,
+        }
+
+        emit_mock = AsyncMock(return_value=True)
+        monkeypatch.setattr("physical_mcp.server._emit_fallback_mode_warning", emit_mock)
+        monkeypatch.setattr("physical_mcp.server._create_provider", lambda _cfg: None)
+
+        result = await _apply_provider_configuration(
+            runtime_state,
+            provider="",
+            api_key="",
+        )
+
+        assert result["fallback_warning_emitted"] is True
+        assert result["fallback_warning_reason"] == "runtime_switch"
+        emit_mock.assert_awaited_once_with(runtime_state, reason="runtime_switch")
