@@ -11,6 +11,7 @@ out a month ago").
 from __future__ import annotations
 
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -20,6 +21,21 @@ _EVENT_LOG = "## Event Log"
 _RULE_CONTEXT = "## Rule Context"
 _PREFERENCES = "## User Preferences"
 _MAX_EVENTS = 500
+
+# Process-local locks keyed by memory file path to prevent thread races
+# in read-modify-write operations.
+_FILE_LOCKS: dict[str, threading.RLock] = {}
+_FILE_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for_path(path: Path) -> threading.RLock:
+    key = str(path.resolve())
+    with _FILE_LOCKS_GUARD:
+        lock = _FILE_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _FILE_LOCKS[key] = lock
+        return lock
 
 
 class MemoryStore:
@@ -33,65 +49,72 @@ class MemoryStore:
 
     def __init__(self, path: str = "~/.physical-mcp/memory.md"):
         self._path = Path(path).expanduser()
+        self._lock = _lock_for_path(self._path)
 
     def read_all(self) -> str:
         """Return entire memory file as string."""
-        if not self._path.exists():
-            return ""
-        return self._path.read_text()
+        with self._lock:
+            if not self._path.exists():
+                return ""
+            return self._path.read_text()
 
     def append_event(self, event: str) -> None:
         """Append a timestamped line to the Event Log section."""
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         line = f"- {ts} | {event}"
-        self._ensure_file()
-        sections = self._parse()
-        sections["events"].append(line)
-        # Trim to max size
-        if len(sections["events"]) > _MAX_EVENTS:
-            sections["events"] = sections["events"][-_MAX_EVENTS:]
-        self._write(sections)
+        with self._lock:
+            self._ensure_file()
+            sections = self._parse()
+            sections["events"].append(line)
+            # Trim to max size
+            if len(sections["events"]) > _MAX_EVENTS:
+                sections["events"] = sections["events"][-_MAX_EVENTS:]
+            self._write(sections)
 
     def set_rule_context(self, rule_id: str, context: str) -> None:
         """Store why a rule was created. Overwrites previous entry for same rule_id."""
-        self._ensure_file()
-        sections = self._parse()
-        # Remove existing entry for this rule_id
-        sections["rules"] = [
-            l for l in sections["rules"]
-            if not l.startswith(f"- {rule_id} |")
-        ]
-        sections["rules"].append(f"- {rule_id} | {context}")
-        self._write(sections)
+        with self._lock:
+            self._ensure_file()
+            sections = self._parse()
+            # Remove existing entry for this rule_id
+            sections["rules"] = [
+                l for l in sections["rules"]
+                if not l.startswith(f"- {rule_id} |")
+            ]
+            sections["rules"].append(f"- {rule_id} | {context}")
+            self._write(sections)
 
     def remove_rule_context(self, rule_id: str) -> None:
         """Remove context when a rule is deleted."""
-        if not self._path.exists():
-            return
-        sections = self._parse()
-        sections["rules"] = [
-            l for l in sections["rules"]
-            if not l.startswith(f"- {rule_id} |")
-        ]
-        self._write(sections)
+        with self._lock:
+            if not self._path.exists():
+                return
+            sections = self._parse()
+            sections["rules"] = [
+                l for l in sections["rules"]
+                if not l.startswith(f"- {rule_id} |")
+            ]
+            self._write(sections)
 
     def set_preference(self, key: str, value: str) -> None:
         """Store a user preference."""
-        self._ensure_file()
-        sections = self._parse()
-        sections["prefs"] = [
-            l for l in sections["prefs"]
-            if not l.startswith(f"- {key} |")
-        ]
-        sections["prefs"].append(f"- {key} | {value}")
-        self._write(sections)
+        with self._lock:
+            self._ensure_file()
+            sections = self._parse()
+            sections["prefs"] = [
+                l for l in sections["prefs"]
+                if not l.startswith(f"- {key} |")
+            ]
+            sections["prefs"].append(f"- {key} | {value}")
+            self._write(sections)
 
     def get_recent_events(self, count: int = 50) -> list[str]:
         """Return last N event log lines."""
-        if not self._path.exists():
-            return []
-        sections = self._parse()
-        return sections["events"][-count:]
+        with self._lock:
+            if not self._path.exists():
+                return []
+            sections = self._parse()
+            return sections["events"][-count:]
 
     def _ensure_file(self) -> None:
         """Create the memory file with empty sections if it doesn't exist."""

@@ -1663,3 +1663,48 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_vsm_3"
+
+    @pytest.mark.asyncio
+    async def test_equivalent_utc_instants_tie_break_by_event_id(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_eq_2",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "same instant offset +08:00",
+                "timestamp": "2026-02-18T12:00:00+08:00",
+            },
+            {
+                "event_id": "evt_eq_1",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "same instant UTC",
+                "timestamp": "2026-02-18T04:00:00+00:00",
+            },
+            {
+                "event_id": "evt_eq_3",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "later instant",
+                "timestamp": "2026-02-18T04:00:01+00:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/alerts?camera_id=usb:0&event_type=provider_error")
+            assert resp.status == 200
+            data = await resp.json()
+            assert [e["event_id"] for e in data["events"]] == [
+                "evt_eq_1",
+                "evt_eq_2",
+                "evt_eq_3",
+            ]
