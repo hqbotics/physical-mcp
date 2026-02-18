@@ -517,6 +517,19 @@ paths:
                         timestamp: "2026-02-18T04:12:00.000000"
                     count: 1
                     timestamp: 1771387920.10
+                startup_warning_empty_fields_contract:
+                  value:
+                    events:
+                      - event_id: evt_start_101
+                        event_type: startup_warning
+                        camera_id: ""
+                        camera_name: ""
+                        rule_id: ""
+                        rule_name: ""
+                        message: Fallback mode active; configure provider for server-side monitoring
+                        timestamp: "2026-02-18T04:12:30.000000"
+                    count: 1
+                    timestamp: 1771387950.10
                 event_variant_watch_rule_triggered:
                   value:
                     events:
