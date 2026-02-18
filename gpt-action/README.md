@@ -49,6 +49,7 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
   - `watch_rule_triggered` → fields: `event_id`, `camera_id`, `rule_id`
   - `camera_alert_pending_eval` → fields: `event_id`, `camera_id`
   - `startup_warning` → fields: `event_id`
+  - Startup warning triage: if PMCP startup warning appears, use that `event_id` to find the same `/alerts` row and confirm fallback-mode startup context.
   - Per-camera drilldown example: `GET /alerts?since=<last_seen>&camera_id=usb:0&event_type=provider_error&limit=10`
   - Replay order is deterministic: oldest→newest by `timestamp` (tie-break by `event_id`).
   - `since` is exclusive: events exactly at the cursor timestamp are not returned.

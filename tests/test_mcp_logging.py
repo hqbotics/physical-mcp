@@ -518,6 +518,33 @@ class TestStartupFallbackWarning:
         assert len(state["alert_events"]) == 1
 
     @pytest.mark.asyncio
+    async def test_startup_warning_event_bus_and_session_log_parity(self):
+        session = AsyncMock()
+        event_bus = AsyncMock()
+        state = {
+            "_session": session,
+            "event_bus": event_bus,
+            "_fallback_warning_pending": True,
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+
+        emitted = await _emit_startup_fallback_warning(state)
+        assert emitted is True
+        assert len(state["alert_events"]) == 1
+        evt = state["alert_events"][0]
+        assert evt["event_type"] == "startup_warning"
+
+        topic, payload = event_bus.publish.await_args.args
+        assert topic == "mcp_log"
+        assert payload["event_type"] == "startup_warning"
+        assert payload["event_id"] == evt["event_id"]
+
+        session_kwargs = session.send_log_message.await_args.kwargs
+        assert f"event_id={evt['event_id']}" in session_kwargs["data"]
+        assert payload["data"] == session_kwargs["data"]
+
+    @pytest.mark.asyncio
     async def test_without_session_records_event_but_no_log(self):
         state = {
             "_fallback_warning_pending": True,
