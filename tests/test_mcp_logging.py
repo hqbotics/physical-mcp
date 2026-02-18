@@ -507,7 +507,9 @@ class TestStartupFallbackWarning:
         evt = state["alert_events"][0]
         assert evt["event_type"] == "startup_warning"
         assert evt["camera_id"] == ""
+        assert evt["camera_name"] == ""
         assert evt["rule_id"] == ""
+        assert evt["rule_name"] == ""
         assert "fallback" in evt["message"].lower()
 
         # MCP log sent with same event id
@@ -584,4 +586,6 @@ class TestStartupFallbackWarning:
         evt = state["alert_events"][0]
         assert evt["event_type"] == "startup_warning"
         assert evt["camera_id"] == ""
+        assert evt["camera_name"] == ""
         assert evt["rule_id"] == ""
+        assert evt["rule_name"] == ""

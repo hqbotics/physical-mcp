@@ -51,6 +51,20 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
   - `startup_warning` → fields: `event_id`
   - Startup warning triage: if PMCP startup warning appears, use that `event_id` to find the same `/alerts` row and confirm fallback-mode startup context.
 
+  Startup warning expected JSON shape:
+  - ```json
+    {
+      "event_id": "evt_start_101",
+      "event_type": "startup_warning",
+      "camera_id": "",
+      "camera_name": "",
+      "rule_id": "",
+      "rule_name": "",
+      "message": "Server is running in fallback client-side reasoning mode...",
+      "timestamp": "2026-02-18T04:12:30.000000"
+    }
+    ```
+
   Fallback startup warning diagnostics (quick table):
   - Symptom: PMCP shows fallback startup warning on connect
     - PMCP line: `PMCP[STARTUP_WARNING] | event_id=... | ...`
