@@ -66,6 +66,10 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
     ```
   - Runtime-switch variant uses the same event schema and `event_type=startup_warning`, but message text indicates server-side → fallback transition.
 
+  Startup_warning message patterns:
+  - Startup fallback: `Server is running in fallback client-side reasoning mode...`
+  - Runtime switch fallback: `Runtime switched to fallback client-side reasoning mode...`
+
   Fallback startup warning diagnostics (quick table):
   - Symptom: PMCP shows fallback startup warning on connect
     - PMCP line: `PMCP[STARTUP_WARNING] | event_id=... | ...`

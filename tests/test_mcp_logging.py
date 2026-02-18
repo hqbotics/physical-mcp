@@ -593,6 +593,31 @@ class TestStartupFallbackWarning:
         assert "restore non-blocking server-side monitoring" in session_kwargs["data"].lower()
 
     @pytest.mark.asyncio
+    async def test_startup_and_runtime_switch_messages_are_distinct(self):
+        startup_state = {
+            "_fallback_warning_pending": True,
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+        runtime_state = {
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+
+        emitted_startup = await _emit_startup_fallback_warning(startup_state)
+        emitted_runtime = await _emit_fallback_mode_warning(runtime_state, reason="runtime_switch")
+
+        assert emitted_startup is True
+        assert emitted_runtime is True
+
+        startup_msg = startup_state["alert_events"][0]["message"]
+        runtime_msg = runtime_state["alert_events"][0]["message"]
+
+        assert startup_msg != runtime_msg
+        assert "server is running in fallback" in startup_msg.lower()
+        assert "runtime switched to fallback" in runtime_msg.lower()
+
+    @pytest.mark.asyncio
     async def test_startup_warning_event_bus_and_session_log_parity(self):
         session = AsyncMock()
         event_bus = AsyncMock()
