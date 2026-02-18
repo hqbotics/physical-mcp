@@ -534,7 +534,7 @@ paths:
                     timestamp: 1771387950.10
                 startup_warning_runtime_switch_variant:
                   summary: Runtime provider downgrade warning (server->fallback)
-                  description: Correlate this event_id with PMCP startup_warning log line for downgrade triage. PMCP log data for runtime-switch path should reflect runtime-switch wording ("Runtime switched to fallback..."). Do not expect startup wording ("Server is running in fallback...") in this runtime-switch variant.
+                  description: Correlate this event_id with PMCP startup_warning log line for downgrade triage. PMCP log data for runtime-switch path should reflect runtime-switch wording ("Runtime switched to fallback...") and prefix pattern (`PMCP[STARTUP_WARNING] | event_id=...`). Do not expect startup wording ("Server is running in fallback...") in this runtime-switch variant.
                   value:
                     events:
                       - event_id: evt_start_202
