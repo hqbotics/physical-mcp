@@ -1466,3 +1466,47 @@ class TestAlertsSinceAndLimit:
             assert resp.status == 200
             data = await resp.json()
             assert [e["event_id"] for e in data["events"]] == ["evt_bmix_3"]
+
+    @pytest.mark.asyncio
+    async def test_invalid_since_with_mixed_timezones_and_limit_uses_unfiltered_cursor(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_ims_1",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "older aware",
+                "timestamp": "2026-02-18T03:29:00+00:00",
+            },
+            {
+                "event_id": "evt_ims_2",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "newer naive",
+                "timestamp": "2026-02-18T03:31:00",
+            },
+            {
+                "event_id": "evt_ims_3",
+                "event_type": "startup_warning",
+                "camera_id": "",
+                "camera_name": "",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "non matching type",
+                "timestamp": "2026-02-18T03:32:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/alerts?since=bad-cursor&camera_id=usb:0&event_type=provider_error&limit=1"
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_ims_2"

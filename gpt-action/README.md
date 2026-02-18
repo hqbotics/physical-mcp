@@ -63,3 +63,4 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
 - This wrapper is read-only by design for safety.
 - For full watch-rule automation, use MCP clients (Claude Desktop, Cursor, OpenClaw).
 - For operator incident response flow, see `docs/health-alerts-debug-playbook.md`.
+- For replay cursor/timezone migration details, see `docs/replay-cursor-migration.md`.
