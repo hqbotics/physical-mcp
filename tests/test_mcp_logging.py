@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from physical_mcp.config import PhysicalMCPConfig
 from physical_mcp.server import (
     _emit_startup_fallback_warning,
+    _perception_loop,
     _record_alert_event,
     _send_mcp_log,
 )
@@ -250,6 +254,81 @@ class TestCameraAlertPendingEval:
             f"event_id={evt_id} | camera_id=usb:0 |"
         )
         assert state["alert_events"][0]["event_id"] == evt_id
+
+
+class TestPerceptionLoopProviderErrorCorrelation:
+    @pytest.mark.asyncio
+    async def test_provider_error_branch_replay_and_mcp_log_fanout_share_event_id(self):
+        frame = MagicMock()
+        camera = AsyncMock()
+        camera.grab_frame = AsyncMock(side_effect=[frame, asyncio.CancelledError()])
+
+        frame_buffer = AsyncMock()
+        sampler = MagicMock()
+        change = SimpleNamespace(
+            level=SimpleNamespace(value="major"),
+            description="major scene change",
+            hash_distance=22,
+            pixel_diff_pct=42.0,
+        )
+        sampler.should_analyze.return_value = (True, change)
+
+        analyzer = MagicMock()
+        analyzer.has_provider = True
+        analyzer.analyze_scene = AsyncMock(side_effect=Exception("provider timeout"))
+
+        scene_state = MagicMock()
+        rules_engine = MagicMock()
+        rules_engine.get_active_rules.return_value = []
+        stats = MagicMock()
+        stats.budget_exceeded.return_value = False
+
+        config = PhysicalMCPConfig()
+        config.perception.capture_fps = 1000  # keep loop fast in test
+
+        alert_queue = AsyncMock()
+        session = AsyncMock()
+        event_bus = AsyncMock()
+        shared_state = {
+            "_session": session,
+            "event_bus": event_bus,
+            "alert_events": [],
+            "alert_events_max": 50,
+            "camera_health": {},
+        }
+
+        with pytest.raises(asyncio.CancelledError):
+            await _perception_loop(
+                camera=camera,
+                frame_buffer=frame_buffer,
+                sampler=sampler,
+                analyzer=analyzer,
+                scene_state=scene_state,
+                rules_engine=rules_engine,
+                stats=stats,
+                config=config,
+                alert_queue=alert_queue,
+                notifier=None,
+                memory=None,
+                shared_state=shared_state,
+                camera_id="usb:0",
+                camera_name="Office",
+            )
+
+        assert len(shared_state["alert_events"]) == 1
+        replay_evt = shared_state["alert_events"][0]
+        assert replay_evt["event_type"] == "provider_error"
+
+        # EventBus fanout should carry same event_id
+        topic, payload = event_bus.publish.await_args.args
+        assert topic == "mcp_log"
+        assert payload["event_type"] == "provider_error"
+        assert payload["event_id"] == replay_evt["event_id"]
+        assert payload["camera_id"] == "usb:0"
+
+        # Session log should carry same event_id too
+        kwargs = session.send_log_message.await_args.kwargs
+        assert f"event_id={replay_evt['event_id']}" in kwargs["data"]
 
 
 class TestStartupFallbackWarning:

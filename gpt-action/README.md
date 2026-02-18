@@ -41,6 +41,7 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
   - Example: `GET /alerts?event_type=provider_error&limit=5` to correlate health degradation with provider failures.
   - Pending-eval queue example: `GET /alerts?camera_id=%20usb:0%20&event_type=CAMERA_ALERT_PENDING_EVAL&limit=1`.
   - Correlation pattern: a `camera_alert_pending_eval` event often precedes a `watch_rule_triggered` event for the same camera.
+  - Correlate by `event_id`: `/alerts` rows, PMCP logs, and internal `mcp_log` fanout now share the same id for key alert paths (e.g., `provider_error`, `watch_rule_triggered`).
   - Per-camera drilldown example: `GET /alerts?since=<last_seen>&camera_id=usb:0&event_type=provider_error&limit=10`
   - Replay order is deterministic: oldest→newest by `timestamp` (tie-break by `event_id`).
   - `since` is exclusive: events exactly at the cursor timestamp are not returned.
