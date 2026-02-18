@@ -14,6 +14,7 @@ from physical_mcp.server import (
     _apply_provider_configuration,
     _emit_fallback_mode_warning,
     _emit_startup_fallback_warning,
+    _flush_pending_session_logs,
     _perception_loop,
     _record_alert_event,
     _send_mcp_log,
@@ -62,10 +63,35 @@ class TestMcpLogFormatting:
         assert "event_id=evt_" in kwargs["data"]
 
     @pytest.mark.asyncio
-    async def test_send_mcp_log_without_session_is_noop(self):
-        shared_state = {}
-        # Should not raise
-        await _send_mcp_log(shared_state, "info", "hello")
+    async def test_send_mcp_log_without_session_buffers_for_later_flush(self):
+        shared_state = {"alert_events": []}
+
+        await _send_mcp_log(shared_state, "info", "hello", event_type="system")
+
+        pending = shared_state.get("_pending_session_logs")
+        assert isinstance(pending, list)
+        assert len(pending) == 1
+        assert pending[0]["data"].startswith("PMCP[SYSTEM] | event_id=")
+
+    @pytest.mark.asyncio
+    async def test_flush_pending_session_logs_replays_buffered_entries_once(self):
+        session = AsyncMock()
+        shared_state = {"_session": None}
+
+        await _send_mcp_log(shared_state, "warning", "fallback", event_type="startup_warning")
+        assert len(shared_state["_pending_session_logs"]) == 1
+
+        shared_state["_session"] = session
+        flushed = await _flush_pending_session_logs(shared_state)
+
+        assert flushed == 1
+        session.send_log_message.assert_awaited_once()
+        kwargs = session.send_log_message.await_args.kwargs
+        assert kwargs["data"].startswith("PMCP[STARTUP_WARNING] | event_id=")
+        assert shared_state["_pending_session_logs"] == []
+
+        flushed_again = await _flush_pending_session_logs(shared_state)
+        assert flushed_again == 0
 
     @pytest.mark.asyncio
     async def test_send_mcp_log_publishes_structured_event_bus_payload(self):
@@ -690,7 +716,7 @@ class TestStartupFallbackWarning:
         assert payload["logger"] == "physical-mcp"
 
     @pytest.mark.asyncio
-    async def test_without_session_records_event_but_no_log(self):
+    async def test_without_session_records_event_and_buffers_log_for_later_session(self):
         state = {
             "_fallback_warning_pending": True,
             "alert_events": [],
@@ -707,6 +733,11 @@ class TestStartupFallbackWarning:
         assert evt["camera_name"] == ""
         assert evt["rule_id"] == ""
         assert evt["rule_name"] == ""
+
+        pending = state.get("_pending_session_logs")
+        assert isinstance(pending, list)
+        assert len(pending) == 1
+        assert f"event_id={evt['event_id']}" in pending[0]["data"]
 
 
 class TestConfigureProviderContract:

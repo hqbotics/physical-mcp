@@ -80,25 +80,32 @@ async def _send_mcp_log(
     prefix = " | ".join(parts)
     data = f"{prefix} | {message}"
 
+    payload = {
+        "event_type": event_type,
+        "event_id": eid,
+        "camera_id": camera_id,
+        "rule_id": rule_id,
+        "level": level,
+        "message": message,
+        "data": data,
+        "logger": "physical-mcp",
+    }
+
     # Structured in-process fanout for subscribers (metrics, relays, etc.).
     event_bus = shared_state.get("event_bus")
     if event_bus:
         try:
-            await event_bus.publish("mcp_log", {
-                "event_type": event_type,
-                "event_id": eid,
-                "camera_id": camera_id,
-                "rule_id": rule_id,
-                "level": level,
-                "message": message,
-                "data": data,
-                "logger": "physical-mcp",
-            })
+            await event_bus.publish("mcp_log", payload)
         except Exception:
             pass
 
     session = shared_state.get("_session")
     if not session:
+        pending = shared_state.setdefault("_pending_session_logs", [])
+        pending.append(payload)
+        max_pending = int(shared_state.get("_pending_session_logs_max", 100))
+        if len(pending) > max_pending:
+            del pending[: len(pending) - max_pending]
         return
 
     try:
@@ -109,6 +116,36 @@ async def _send_mcp_log(
         )
     except Exception:
         pass
+
+
+async def _flush_pending_session_logs(shared_state: dict[str, Any] | None) -> int:
+    """Flush buffered MCP logs to session once available.
+
+    Returns count of successfully flushed buffered entries.
+    """
+    if not shared_state:
+        return 0
+
+    session = shared_state.get("_session")
+    pending: list[dict[str, Any]] = shared_state.get("_pending_session_logs") or []
+    if not session or not pending:
+        return 0
+
+    flushed = 0
+    for payload in pending:
+        try:
+            await session.send_log_message(
+                level=payload.get("level", "info"),
+                data=payload.get("data", ""),
+                logger=payload.get("logger", "physical-mcp"),
+            )
+            flushed += 1
+        except Exception:
+            break
+
+    if flushed:
+        del pending[:flushed]
+    return flushed
 
 
 def _record_alert_event(
@@ -745,6 +782,7 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         """Grab the session reference from the first tool call for background use."""
         if state.get("_session") is None:
             state["_session"] = ctx.session
+            asyncio.create_task(_flush_pending_session_logs(state))
 
             if state.get("_fallback_warning_pending"):
                 asyncio.create_task(_emit_startup_fallback_warning(state))
@@ -898,10 +936,17 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             "event_bus": event_bus,
             "_session": None,
             "_fallback_warning_pending": not bool(provider),
+            "_pending_session_logs": [],
+            "_pending_session_logs_max": 100,
             "camera_health": {},
             "alert_events": [],
             "alert_events_max": 200,
         })
+
+        # Emit fallback startup warning immediately so Vision API/EventBus
+        # observers can see startup mode without requiring an MCP tool call.
+        if state.get("_fallback_warning_pending"):
+            await _emit_startup_fallback_warning(state)
 
         # ── Start Vision API (HTTP endpoints for non-MCP systems) ──
         vision_runner = None
