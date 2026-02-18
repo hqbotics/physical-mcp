@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -16,6 +17,7 @@ from physical_mcp.server import (
     _perception_loop,
     _record_alert_event,
     _send_mcp_log,
+    create_server,
 )
 
 
@@ -761,3 +763,29 @@ class TestConfigureProviderContract:
         assert result["fallback_warning_emitted"] is True
         assert result["fallback_warning_reason"] == "runtime_switch"
         emit_mock.assert_awaited_once_with(runtime_state, reason="runtime_switch")
+
+    @pytest.mark.asyncio
+    async def test_configure_provider_tool_fn_returns_reason_contract(self, monkeypatch):
+        mcp = create_server(PhysicalMCPConfig())
+        tool = mcp._tool_manager._tools["configure_provider"]
+        configure_provider_fn = tool.fn
+
+        closure_state = inspect.getclosurevars(configure_provider_fn).nonlocals["state"]
+        analyzer = MagicMock()
+        analyzer.has_provider = True
+        closure_state.update({
+            "config": PhysicalMCPConfig(),
+            "analyzer": analyzer,
+            "_fallback_warning_pending": False,
+        })
+
+        emit_mock = AsyncMock(return_value=True)
+        monkeypatch.setattr("physical_mcp.server._emit_fallback_mode_warning", emit_mock)
+        monkeypatch.setattr("physical_mcp.server._create_provider", lambda _cfg: None)
+
+        result = await configure_provider_fn(provider="", api_key="")
+
+        assert result["reasoning_mode"] == "client"
+        assert result["fallback_warning_emitted"] is True
+        assert result["fallback_warning_reason"] == "runtime_switch"
+        emit_mock.assert_awaited_once_with(closure_state, reason="runtime_switch")

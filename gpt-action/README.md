@@ -93,6 +93,15 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
   - Verify camera id from `/scene` keys.
   - Expect JSON errors like `camera_not_found` when ids mismatch.
 
+- **Provider switch changed monitoring mode unexpectedly**
+  - `configure_provider(...)` response now includes:
+    - `fallback_warning_emitted` (boolean)
+    - `fallback_warning_reason` (`"runtime_switch"` or `""`)
+  - Downgrade example (server → fallback):
+    - `{ "reasoning_mode": "client", "fallback_warning_emitted": true, "fallback_warning_reason": "runtime_switch" }`
+  - Upgrade example (fallback → server):
+    - `{ "reasoning_mode": "server", "fallback_warning_emitted": false, "fallback_warning_reason": "" }`
+
 ## Notes
 
 - This wrapper is read-only by design for safety.
