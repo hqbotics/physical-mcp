@@ -849,6 +849,7 @@ class TestConfigureProviderContract:
         evt = closure_state["alert_events"][0]
         assert evt["event_type"] == "startup_warning"
         assert "runtime switched to fallback" in evt["message"].lower()
+        assert "server is running in fallback" not in evt["message"].lower()
 
         topic, payload = event_bus.publish.await_args.args
         assert topic == "mcp_log"
