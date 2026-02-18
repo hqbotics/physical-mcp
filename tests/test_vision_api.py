@@ -1423,3 +1423,46 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_mix_3"
+
+    @pytest.mark.asyncio
+    async def test_boundary_equal_since_exclusive_with_mixed_timezone_rows(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_bmix_1",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "exact boundary aware",
+                "timestamp": "2026-02-18T03:30:00+00:00",
+            },
+            {
+                "event_id": "evt_bmix_2",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "exact boundary naive",
+                "timestamp": "2026-02-18T03:30:00",
+            },
+            {
+                "event_id": "evt_bmix_3",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "after boundary",
+                "timestamp": "2026-02-18T03:30:00.100000",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/alerts?since=2026-02-18T03:30:00Z&camera_id=usb:0&event_type=provider_error"
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert [e["event_id"] for e in data["events"]] == ["evt_bmix_3"]

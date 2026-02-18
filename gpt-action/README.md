@@ -50,6 +50,8 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
   - Replay filtering also tolerates legacy stored rows where `camera_id` or `event_type` were space-padded/mixed-case.
   - Legacy malformed alert timestamps are tolerated; for `since` cursor queries those malformed rows are skipped to preserve deterministic pagination.
   - `since` accepts `Z` timezone values (example: `2026-02-18T03:30:00Z`).
+  - Boundary-equal rows are always excluded (`since` is exclusive), including mixed timezone rows (`+00:00` and naive timestamps).
+  - Migration note: if your old client depended on lexical string timestamp comparison, switch to strict ISO datetime parsing and treat all times as UTC-normalized before cursor math.
   - `/changes` has the same camera-id normalization; invalid `since` values are ignored there too.
   - Example: `GET /changes?since=bad-cursor&camera_id=%20usb:0%20`
 - **Frame fetch fails for a camera**
