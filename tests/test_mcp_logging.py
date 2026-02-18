@@ -791,6 +791,45 @@ class TestConfigureProviderContract:
         emit_mock.assert_awaited_once_with(closure_state, reason="runtime_switch")
 
     @pytest.mark.asyncio
+    async def test_configure_provider_tool_fn_runtime_switch_records_startup_warning_message(self, monkeypatch):
+        mcp = create_server(PhysicalMCPConfig())
+        tool = mcp._tool_manager._tools["configure_provider"]
+        configure_provider_fn = tool.fn
+
+        closure_state = inspect.getclosurevars(configure_provider_fn).nonlocals["state"]
+        analyzer = MagicMock()
+        analyzer.has_provider = True
+        session = AsyncMock()
+        event_bus = AsyncMock()
+        closure_state.update({
+            "config": PhysicalMCPConfig(),
+            "analyzer": analyzer,
+            "_fallback_warning_pending": False,
+            "_session": session,
+            "event_bus": event_bus,
+            "alert_events": [],
+            "alert_events_max": 50,
+        })
+
+        monkeypatch.setattr("physical_mcp.server._create_provider", lambda _cfg: None)
+
+        result = await configure_provider_fn(provider="", api_key="")
+
+        assert result["fallback_warning_emitted"] is True
+        assert result["fallback_warning_reason"] == "runtime_switch"
+
+        assert len(closure_state["alert_events"]) == 1
+        evt = closure_state["alert_events"][0]
+        assert evt["event_type"] == "startup_warning"
+        assert "runtime switched to fallback" in evt["message"].lower()
+
+        topic, payload = event_bus.publish.await_args.args
+        assert topic == "mcp_log"
+        assert payload["event_id"] == evt["event_id"]
+        session_kwargs = session.send_log_message.await_args.kwargs
+        assert f"event_id={evt['event_id']}" in session_kwargs["data"]
+
+    @pytest.mark.asyncio
     async def test_configure_provider_tool_fn_upgrade_has_empty_reason(self, monkeypatch):
         mcp = create_server(PhysicalMCPConfig())
         tool = mcp._tool_manager._tools["configure_provider"]

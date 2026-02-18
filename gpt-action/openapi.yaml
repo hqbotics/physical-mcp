@@ -531,6 +531,8 @@ paths:
                     count: 1
                     timestamp: 1771387950.10
                 startup_warning_runtime_switch_variant:
+                  summary: Runtime provider downgrade warning (server->fallback)
+                  description: Correlate this event_id with PMCP startup_warning log line for downgrade triage.
                   value:
                     events:
                       - event_id: evt_start_202
