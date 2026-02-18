@@ -1201,3 +1201,93 @@ class TestAlertsSinceAndLimit:
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_902"
             assert data["events"][0]["event_type"] == "CAMERA_ALERT_PENDING_EVAL"
+
+    @pytest.mark.asyncio
+    async def test_malformed_timestamps_are_tolerated_and_sorted_deterministically(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_malformed_b",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "legacy malformed timestamp B",
+                "timestamp": "not-a-time",
+            },
+            {
+                "event_id": "evt_good_old",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "valid old",
+                "timestamp": "2026-02-18T03:20:00",
+            },
+            {
+                "event_id": "evt_malformed_a",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "legacy malformed timestamp A",
+                "timestamp": "???",
+            },
+            {
+                "event_id": "evt_good_new",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "valid new",
+                "timestamp": "2026-02-18T03:21:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/alerts?event_type=provider_error")
+            assert resp.status == 200
+            data = await resp.json()
+            assert [e["event_id"] for e in data["events"]] == [
+                "evt_malformed_a",
+                "evt_malformed_b",
+                "evt_good_old",
+                "evt_good_new",
+            ]
+
+    @pytest.mark.asyncio
+    async def test_since_cursor_excludes_malformed_timestamps(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_bad_since",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "malformed row should be ignored by since cursor",
+                "timestamp": "not-an-iso-time",
+            },
+            {
+                "event_id": "evt_good_since",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "valid row after cursor",
+                "timestamp": "2026-02-18T03:31:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/alerts?since=2026-02-18T03:30:00&event_type=provider_error"
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_good_since"

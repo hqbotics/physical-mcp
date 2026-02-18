@@ -88,6 +88,23 @@ def _norm_token(value: str) -> str:
     return str(value or "").strip().lower()
 
 
+def _parse_iso_datetime(value: str) -> datetime | None:
+    """Parse ISO datetime safely; return None on malformed values."""
+    candidate = str(value or "").strip()
+    if not candidate:
+        return None
+    try:
+        return datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _event_sort_key(event: dict[str, Any]) -> tuple[datetime, str]:
+    """Stable replay ordering key (timestamp then event_id)."""
+    ts = _parse_iso_datetime(event.get("timestamp", "")) or datetime.min
+    return (ts, str(event.get("event_id", "")))
+
+
 def create_vision_routes(state: dict[str, Any]) -> web.Application:
     """Create aiohttp app with vision API routes.
 
@@ -424,12 +441,21 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         """
         limit = _parse_int(request.query.get("limit", "50"), default=50, minimum=1, maximum=500)
         since = _validated_since(request.query.get("since", ""))
+        since_dt = _parse_iso_datetime(since) if since else None
         camera_id = request.query.get("camera_id", "").strip()
         event_type = _norm_token(request.query.get("event_type", ""))
 
         events = list(state.get("alert_events", []))
-        if since:
-            events = [e for e in events if e.get("timestamp", "") > since]
+        if since_dt:
+            # Cursor semantics only apply to valid timestamps; malformed legacy
+            # rows are ignored for cursor queries instead of causing crashes or
+            # non-deterministic lexical ordering artifacts.
+            filtered = []
+            for event in events:
+                event_ts = _parse_iso_datetime(event.get("timestamp", ""))
+                if event_ts and event_ts > since_dt:
+                    filtered.append(event)
+            events = filtered
         if camera_id:
             events = [
                 e for e in events if str(e.get("camera_id", "")).strip() == camera_id
@@ -440,8 +466,9 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             ]
 
         # Deterministic replay ordering for clients:
-        # oldest → newest by timestamp, tie-broken by event_id.
-        events.sort(key=lambda e: (e.get("timestamp", ""), e.get("event_id", "")))
+        # oldest → newest by parsed timestamp (malformed timestamps sort first),
+        # tie-broken by event_id.
+        events.sort(key=_event_sort_key)
 
         if limit > 0:
             events = events[-limit:]

@@ -510,7 +510,7 @@ components:
       required:
         - camera_id
         - health
-    AlertEvent:
+    AlertEventBase:
       type: object
       properties:
         event_id:
@@ -534,6 +534,82 @@ components:
         - event_id
         - event_type
         - timestamp
+    WatchRuleTriggeredEvent:
+      allOf:
+        - $ref: '#/components/schemas/AlertEventBase'
+        - type: object
+          properties:
+            event_type:
+              type: string
+              enum: [watch_rule_triggered]
+            rule_id:
+              type: string
+              minLength: 1
+            rule_name:
+              type: string
+              minLength: 1
+          required:
+            - event_type
+            - rule_id
+            - rule_name
+    CameraAlertPendingEvalEvent:
+      allOf:
+        - $ref: '#/components/schemas/AlertEventBase'
+        - type: object
+          properties:
+            event_type:
+              type: string
+              enum: [camera_alert_pending_eval]
+          required:
+            - event_type
+    ProviderErrorEvent:
+      allOf:
+        - $ref: '#/components/schemas/AlertEventBase'
+        - type: object
+          properties:
+            event_type:
+              type: string
+              enum: [provider_error]
+          required:
+            - event_type
+    RuleEvalErrorEvent:
+      allOf:
+        - $ref: '#/components/schemas/AlertEventBase'
+        - type: object
+          properties:
+            event_type:
+              type: string
+              enum: [rule_eval_error]
+          required:
+            - event_type
+    StartupWarningEvent:
+      allOf:
+        - $ref: '#/components/schemas/AlertEventBase'
+        - type: object
+          properties:
+            event_type:
+              type: string
+              enum: [startup_warning]
+          required:
+            - event_type
+    SystemEvent:
+      allOf:
+        - $ref: '#/components/schemas/AlertEventBase'
+        - type: object
+          properties:
+            event_type:
+              type: string
+              enum: [system]
+          required:
+            - event_type
+    AlertEvent:
+      oneOf:
+        - $ref: '#/components/schemas/WatchRuleTriggeredEvent'
+        - $ref: '#/components/schemas/CameraAlertPendingEvalEvent'
+        - $ref: '#/components/schemas/ProviderErrorEvent'
+        - $ref: '#/components/schemas/RuleEvalErrorEvent'
+        - $ref: '#/components/schemas/StartupWarningEvent'
+        - $ref: '#/components/schemas/SystemEvent'
     AlertsResponse:
       type: object
       properties:
