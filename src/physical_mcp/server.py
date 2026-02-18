@@ -227,6 +227,44 @@ def _create_provider(config: PhysicalMCPConfig) -> VisionProvider | None:
         return None
 
 
+async def _apply_provider_configuration(
+    state: dict[str, Any],
+    *,
+    provider: str,
+    api_key: str,
+    model: str = "",
+    base_url: str = "",
+) -> dict[str, Any]:
+    """Apply provider config and return the public configure_provider contract."""
+    cfg: PhysicalMCPConfig = state["config"]
+    cfg.reasoning.provider = provider
+    cfg.reasoning.api_key = api_key
+    if model:
+        cfg.reasoning.model = model
+    if base_url:
+        cfg.reasoning.base_url = base_url
+
+    new_provider = _create_provider(cfg)
+    analyzer_inst: FrameAnalyzer = state["analyzer"]
+    had_provider = analyzer_inst.has_provider
+    analyzer_inst.set_provider(new_provider)
+
+    switched_to_fallback = had_provider and not new_provider
+    if switched_to_fallback:
+        await _emit_fallback_mode_warning(state, reason="runtime_switch")
+    if new_provider:
+        state["_fallback_warning_pending"] = False
+
+    mode = "server" if new_provider else "client"
+    return {
+        "status": "configured",
+        "provider": provider or "none",
+        "model": new_provider.model_name if new_provider else "none",
+        "reasoning_mode": mode,
+        "fallback_warning_emitted": switched_to_fallback,
+    }
+
+
 async def _evaluate_via_sampling(
     session,
     frame: "Frame",
@@ -1510,33 +1548,13 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         Set provider to "" and api_key to "" only when you need fallback
         client-side reasoning (you analyze frames, no external API needed).
         """
-        cfg: PhysicalMCPConfig = state["config"]
-        cfg.reasoning.provider = provider
-        cfg.reasoning.api_key = api_key
-        if model:
-            cfg.reasoning.model = model
-        if base_url:
-            cfg.reasoning.base_url = base_url
-
-        new_provider = _create_provider(cfg)
-        analyzer_inst: FrameAnalyzer = state["analyzer"]
-        had_provider = analyzer_inst.has_provider
-        analyzer_inst.set_provider(new_provider)
-
-        switched_to_fallback = had_provider and not new_provider
-        if switched_to_fallback:
-            await _emit_fallback_mode_warning(state, reason="runtime_switch")
-        if new_provider:
-            state["_fallback_warning_pending"] = False
-
-        mode = "server" if new_provider else "client"
-        return {
-            "status": "configured",
-            "provider": provider or "none",
-            "model": new_provider.model_name if new_provider else "none",
-            "reasoning_mode": mode,
-            "fallback_warning_emitted": switched_to_fallback,
-        }
+        return await _apply_provider_configuration(
+            state,
+            provider=provider,
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+        )
 
     # ── Memory Tools ──────────────────────────────────────────
 
