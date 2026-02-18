@@ -505,6 +505,8 @@ paths:
                     count: 1
                     timestamp: 1771387810.12
                 startup_warning_event_id_correlation:
+                  summary: Startup fallback warning (initial startup path)
+                  description: Startup variant uses message text beginning with "Server is running in fallback..."; correlate event_id with PMCP startup_warning log line.
                   value:
                     events:
                       - event_id: evt_start_100

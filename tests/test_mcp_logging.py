@@ -639,6 +639,8 @@ class TestStartupFallbackWarning:
         assert topic == "mcp_log"
         assert payload["event_type"] == "startup_warning"
         assert payload["event_id"] == evt["event_id"]
+        assert payload["message"].startswith("Server is running in fallback client-side reasoning mode")
+        assert "runtime switched to fallback" not in payload["message"].lower()
 
         session_kwargs = session.send_log_message.await_args.kwargs
         assert f"event_id={evt['event_id']}" in session_kwargs["data"]
