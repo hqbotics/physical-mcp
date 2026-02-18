@@ -56,8 +56,8 @@ class CostControlConfig(BaseModel):
 
 
 class ServerConfig(BaseModel):
-    transport: str = "stdio"
-    host: str = "127.0.0.1"
+    transport: str = "streamable-http"
+    host: str = "0.0.0.0"
     port: int = 8400
 
 
