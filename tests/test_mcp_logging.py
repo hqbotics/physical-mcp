@@ -642,6 +642,7 @@ class TestStartupFallbackWarning:
         assert payload["event_id"] == evt["event_id"]
         assert payload["message"].startswith("Server is running in fallback client-side reasoning mode")
         assert payload["message"].lower().startswith("server is running in fallback client-side reasoning mode")
+        assert payload["message"].lower().split(".")[0] == "server is running in fallback client-side reasoning mode"
         assert payload["data"].lower().startswith("pmcp[startup_warning] | event_id=")
         assert "server is running in fallback" in payload["message"].lower()
         assert "server is running in fallback client-side reasoning mode" in payload["message"].lower()
