@@ -491,6 +491,19 @@ paths:
                         timestamp: "2026-02-18T04:00:02+00:00"
                     count: 1
                     timestamp: 1771387202.20
+                event_id_correlation_triage:
+                  value:
+                    events:
+                      - event_id: evt_corr_12345
+                        event_type: watch_rule_triggered
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: r_12ab34cd
+                        rule_name: Front Door Watch
+                        message: Person detected at front door
+                        timestamp: "2026-02-18T04:10:10.000000"
+                    count: 1
+                    timestamp: 1771387810.12
                 event_variant_watch_rule_triggered:
                   value:
                     events:
