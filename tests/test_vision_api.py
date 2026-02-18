@@ -1555,3 +1555,57 @@ class TestAlertsSinceAndLimit:
                 "evt_bad_2",
                 "evt_good_1",
             ]
+
+    @pytest.mark.asyncio
+    async def test_limit_with_compound_filters_when_malformed_and_valid_rows_coexist(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_lmv_1",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "older malformed",
+                "timestamp": "bad-ts-legacy",
+            },
+            {
+                "event_id": "evt_lmv_2",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "valid newest",
+                "timestamp": "2026-02-18T03:55:00",
+            },
+            {
+                "event_id": "evt_lmv_3",
+                "event_type": "provider_error",
+                "camera_id": "usb:1",
+                "camera_name": "Lab",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "different camera",
+                "timestamp": "2026-02-18T03:56:00",
+            },
+            {
+                "event_id": "evt_lmv_4",
+                "event_type": "startup_warning",
+                "camera_id": "",
+                "camera_name": "",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "different type",
+                "timestamp": "2026-02-18T03:57:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/alerts?camera_id=usb:0&event_type=provider_error&limit=1"
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_lmv_2"

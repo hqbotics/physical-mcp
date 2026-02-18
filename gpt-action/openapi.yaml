@@ -423,6 +423,19 @@ paths:
                         timestamp: "2026-02-18T03:31:00"
                     count: 1
                     timestamp: 1771385460.95
+                malformed_and_valid_compound_limit:
+                  value:
+                    events:
+                      - event_id: evt_lmv_2
+                        event_type: provider_error
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: Compound filters applied; malformed older row retained safely but latest valid row wins with limit=1
+                        timestamp: "2026-02-18T03:55:00"
+                    count: 1
+                    timestamp: 1771386900.40
                 event_variant_watch_rule_triggered:
                   value:
                     events:
