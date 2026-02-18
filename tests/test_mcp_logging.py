@@ -851,8 +851,11 @@ class TestConfigureProviderContract:
         topic, payload = event_bus.publish.await_args.args
         assert topic == "mcp_log"
         assert payload["event_id"] == evt["event_id"]
+        assert payload["message"].startswith("Runtime switched to fallback client-side reasoning mode")
+
         session_kwargs = session.send_log_message.await_args.kwargs
         assert f"event_id={evt['event_id']}" in session_kwargs["data"]
+        assert "runtime switched to fallback client-side reasoning mode" in session_kwargs["data"].lower()
 
     @pytest.mark.asyncio
     async def test_configure_provider_tool_fn_upgrade_has_empty_reason(self, monkeypatch):

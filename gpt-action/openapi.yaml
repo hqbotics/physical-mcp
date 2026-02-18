@@ -743,6 +743,8 @@ components:
         when context does not apply — e.g., startup_warning has empty camera_id,
         camera_name, rule_id, and rule_name because it is a global fallback-mode warning event
         (emitted at startup and on runtime switches back to fallback mode).
+        startup_warning keeps a stable event_type; distinguish startup vs runtime-switch
+        variants using the message text and correlate with event_id across PMCP logs/replay.
       properties:
         event_id:
           type: string
