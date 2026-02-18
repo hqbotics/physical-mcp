@@ -383,6 +383,16 @@ async def _perception_loop(
                         f"[{cam_label}] Scene analysis error #{consecutive_errors}, "
                         f"backing off {wait:.0f}s: {str(e)[:150]}"
                     )
+                    event_id = _record_alert_event(
+                        shared_state,
+                        event_type="provider_error",
+                        camera_id=camera_id,
+                        camera_name=camera_name,
+                        message=(
+                            f"[{cam_label}] Vision provider error (retry in {wait:.0f}s): "
+                            f"{str(e)[:120]}"
+                        ),
+                    )
                     await _send_mcp_log(
                         shared_state,
                         "error",
@@ -392,6 +402,7 @@ async def _perception_loop(
                         ),
                         event_type="provider_error",
                         camera_id=camera_id,
+                        event_id=event_id,
                     )
                     await asyncio.sleep(interval)
                     continue
@@ -420,12 +431,20 @@ async def _perception_loop(
                         )
                     except Exception as e:
                         logger.error(f"[{cam_label}] Rule evaluation error: {str(e)[:150]}")
+                        event_id = _record_alert_event(
+                            shared_state,
+                            event_type="rule_eval_error",
+                            camera_id=camera_id,
+                            camera_name=camera_name,
+                            message=f"[{cam_label}] Rule evaluation failed: {str(e)[:120]}",
+                        )
                         await _send_mcp_log(
                             shared_state,
                             "warning",
                             f"[{cam_label}] Rule evaluation failed: {str(e)[:120]}",
                             event_type="rule_eval_error",
                             camera_id=camera_id,
+                            event_id=event_id,
                         )
                         await asyncio.sleep(interval)
                         continue

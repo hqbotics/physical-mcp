@@ -261,6 +261,7 @@ paths:
             type: string
             enum:
               - watch_rule_triggered
+              - camera_alert_pending_eval
               - provider_error
               - rule_eval_error
               - startup_warning
@@ -370,6 +371,19 @@ paths:
                         timestamp: "2026-02-18T02:50:00.200000"
                     count: 1
                     timestamp: 1771383000.55
+                pending_eval_normalized_limit:
+                  value:
+                    events:
+                      - event_id: evt_h1i2j3k4l5
+                        event_type: camera_alert_pending_eval
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: Major scene change detected; pending LLM/client rule evaluation
+                        timestamp: "2026-02-18T03:10:00.200000"
+                    count: 1
+                    timestamp: 1771384200.22
 components:
   schemas:
     CameraScene:

@@ -1156,3 +1156,48 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_823"
+
+    @pytest.mark.asyncio
+    async def test_camera_alert_pending_eval_filter_normalized_and_limited(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_901",
+                "event_type": " camera_alert_pending_eval ",
+                "camera_id": " usb:0 ",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "pending eval older",
+                "timestamp": "2026-02-18T03:10:00.100000",
+            },
+            {
+                "event_id": "evt_902",
+                "event_type": "CAMERA_ALERT_PENDING_EVAL",
+                "camera_id": " usb:0 ",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "pending eval newer",
+                "timestamp": "2026-02-18T03:10:00.200000",
+            },
+            {
+                "event_id": "evt_903",
+                "event_type": "watch_rule_triggered",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "r_1",
+                "rule_name": "Door",
+                "message": "person at door",
+                "timestamp": "2026-02-18T03:10:00.300000",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/alerts?camera_id=%20usb:0%20&event_type=CAMERA_ALERT_PENDING_EVAL&limit=1"
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_902"
+            assert data["events"][0]["event_type"] == "CAMERA_ALERT_PENDING_EVAL"
