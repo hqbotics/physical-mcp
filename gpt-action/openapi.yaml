@@ -749,6 +749,8 @@ components:
         variants using the message text and correlate with event_id across PMCP logs/replay.
         EventBus mcp_log.data mirrors PMCP log prefix/message semantics
         (`PMCP[STARTUP_WARNING] | event_id=...`) for both variants.
+        Canonical first sentences: startup="Server is running in fallback client-side reasoning mode";
+        runtime-switch="Runtime switched to fallback client-side reasoning mode".
       properties:
         event_id:
           type: string

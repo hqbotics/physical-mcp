@@ -647,6 +647,9 @@ class TestStartupFallbackWarning:
         assert "server is running in fallback" in payload["message"].lower()
         assert "server is running in fallback client-side reasoning mode" in payload["message"].lower()
         assert "server is running in fallback client-side reasoning mode" in payload["data"].lower()
+        assert payload["data"].lower().split("|", 2)[2].strip().startswith(
+            "server is running in fallback client-side reasoning mode"
+        )
         assert "runtime switched to fallback" not in payload["message"].lower()
         assert "runtime switched to fallback client-side reasoning mode" not in payload["message"].lower()
 
