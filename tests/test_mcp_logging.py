@@ -646,6 +646,7 @@ class TestStartupFallbackWarning:
 
         session_kwargs = session.send_log_message.await_args.kwargs
         assert f"event_id={evt['event_id']}" in session_kwargs["data"]
+        assert "server is running in fallback client-side reasoning mode" in session_kwargs["data"].lower()
         assert "runtime switched to fallback client-side reasoning mode" not in session_kwargs["data"].lower()
         assert payload["data"] == session_kwargs["data"]
 
