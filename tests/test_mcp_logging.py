@@ -660,6 +660,9 @@ class TestStartupFallbackWarning:
         assert session_kwargs["data"].lower().split("|", 2)[2].strip().startswith(
             "server is running in fallback client-side reasoning mode"
         )
+        assert session_kwargs["data"].lower().split("|", 2)[2].strip().split(".")[0] == (
+            "server is running in fallback client-side reasoning mode"
+        )
         assert "runtime switched to fallback client-side reasoning mode" not in session_kwargs["data"].lower()
         assert payload["data"] == session_kwargs["data"]
 
