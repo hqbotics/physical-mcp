@@ -1335,3 +1335,47 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_good_z_new"
+
+    @pytest.mark.asyncio
+    async def test_limit_with_mixed_timezone_rows_returns_newest_deterministically(self, state_with_data):
+        state_with_data["alert_events"] = [
+            {
+                "event_id": "evt_tz_1",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "old aware",
+                "timestamp": "2026-02-18T03:30:00+00:00",
+            },
+            {
+                "event_id": "evt_tz_2",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "mid naive",
+                "timestamp": "2026-02-18T03:30:30",
+            },
+            {
+                "event_id": "evt_tz_3",
+                "event_type": "provider_error",
+                "camera_id": "usb:0",
+                "camera_name": "Office",
+                "rule_id": "",
+                "rule_name": "",
+                "message": "new aware",
+                "timestamp": "2026-02-18T03:31:00+00:00",
+            },
+        ]
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/alerts?camera_id=usb:0&event_type=provider_error&limit=1"
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["count"] == 1
+            assert data["events"][0]["event_id"] == "evt_tz_3"

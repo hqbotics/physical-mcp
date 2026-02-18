@@ -565,6 +565,15 @@ components:
             - event_type
             - rule_id
             - rule_name
+      example:
+        event_id: evt_wr_001
+        event_type: watch_rule_triggered
+        camera_id: usb:0
+        camera_name: Front Door
+        rule_id: r_12ab34cd
+        rule_name: Front Door Watch
+        message: Person detected at the front door
+        timestamp: "2026-02-18T03:40:00.000000"
     CameraAlertPendingEvalEvent:
       allOf:
         - $ref: '#/components/schemas/AlertEventBase'
@@ -575,6 +584,15 @@ components:
               enum: [camera_alert_pending_eval]
           required:
             - event_type
+      example:
+        event_id: evt_pe_001
+        event_type: camera_alert_pending_eval
+        camera_id: usb:0
+        camera_name: Front Door
+        rule_id: ""
+        rule_name: ""
+        message: Major scene change detected; pending evaluation
+        timestamp: "2026-02-18T03:41:00.000000"
     ProviderErrorEvent:
       allOf:
         - $ref: '#/components/schemas/AlertEventBase'
@@ -585,6 +603,15 @@ components:
               enum: [provider_error]
           required:
             - event_type
+      example:
+        event_id: evt_pe_101
+        event_type: provider_error
+        camera_id: usb:0
+        camera_name: Front Door
+        rule_id: ""
+        rule_name: ""
+        message: Vision provider timeout (retry in 20s)
+        timestamp: "2026-02-18T03:42:00.000000"
     RuleEvalErrorEvent:
       allOf:
         - $ref: '#/components/schemas/AlertEventBase'
@@ -595,6 +622,15 @@ components:
               enum: [rule_eval_error]
           required:
             - event_type
+      example:
+        event_id: evt_re_001
+        event_type: rule_eval_error
+        camera_id: usb:0
+        camera_name: Front Door
+        rule_id: ""
+        rule_name: ""
+        message: Rule evaluation failed: provider malformed JSON
+        timestamp: "2026-02-18T03:43:00.000000"
     StartupWarningEvent:
       allOf:
         - $ref: '#/components/schemas/AlertEventBase'
@@ -605,6 +641,15 @@ components:
               enum: [startup_warning]
           required:
             - event_type
+      example:
+        event_id: evt_sw_001
+        event_type: startup_warning
+        camera_id: ""
+        camera_name: ""
+        rule_id: ""
+        rule_name: ""
+        message: Server is running in fallback client-side reasoning mode
+        timestamp: "2026-02-18T03:44:00.000000"
     SystemEvent:
       allOf:
         - $ref: '#/components/schemas/AlertEventBase'
@@ -615,6 +660,15 @@ components:
               enum: [system]
           required:
             - event_type
+      example:
+        event_id: evt_sys_001
+        event_type: system
+        camera_id: ""
+        camera_name: ""
+        rule_id: ""
+        rule_name: ""
+        message: Monitoring subsystem initialized
+        timestamp: "2026-02-18T03:45:00.000000"
     AlertEvent:
       oneOf:
         - $ref: '#/components/schemas/WatchRuleTriggeredEvent'
