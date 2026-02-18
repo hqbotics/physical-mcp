@@ -101,6 +101,7 @@ ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) a
     - `{ "reasoning_mode": "client", "fallback_warning_emitted": true, "fallback_warning_reason": "runtime_switch" }`
   - Upgrade example (fallback → server):
     - `{ "reasoning_mode": "server", "fallback_warning_emitted": false, "fallback_warning_reason": "" }`
+  - Replay verification after downgrade: if `fallback_warning_reason == "runtime_switch"`, confirm warning persistence via `/alerts?event_type=startup_warning&limit=5` and match `event_id` with PMCP log.
 
 ## Notes
 

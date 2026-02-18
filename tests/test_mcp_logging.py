@@ -824,3 +824,44 @@ class TestConfigureProviderContract:
         assert closure_state["_fallback_warning_pending"] is False
         analyzer.set_provider.assert_called_once_with(provider_obj)
         emit_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_runtime_downgrade_reason_contract_preserves_event_id_parity(self, monkeypatch):
+        cfg = PhysicalMCPConfig()
+        analyzer = MagicMock()
+        analyzer.has_provider = True
+        session = AsyncMock()
+        event_bus = AsyncMock()
+
+        state = {
+            "config": cfg,
+            "analyzer": analyzer,
+            "_fallback_warning_pending": False,
+            "_session": session,
+            "event_bus": event_bus,
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+
+        monkeypatch.setattr("physical_mcp.server._create_provider", lambda _cfg: None)
+
+        result = await _apply_provider_configuration(
+            state,
+            provider="",
+            api_key="",
+        )
+
+        assert result["reasoning_mode"] == "client"
+        assert result["fallback_warning_emitted"] is True
+        assert result["fallback_warning_reason"] == "runtime_switch"
+        assert len(state["alert_events"]) == 1
+
+        evt = state["alert_events"][0]
+        topic, payload = event_bus.publish.await_args.args
+        assert topic == "mcp_log"
+        assert payload["event_type"] == "startup_warning"
+        assert payload["event_id"] == evt["event_id"]
+
+        session_kwargs = session.send_log_message.await_args.kwargs
+        assert f"event_id={evt['event_id']}" in session_kwargs["data"]
+        assert payload["data"] == session_kwargs["data"]
