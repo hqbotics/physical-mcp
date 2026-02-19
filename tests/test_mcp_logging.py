@@ -256,6 +256,47 @@ class TestMcpReplayAndFanoutCorrelation:
         assert f"event_id={evt_id}" in kwargs["data"]
 
 
+class TestRuleEvalErrorCorrelation:
+    @pytest.mark.asyncio
+    async def test_rule_eval_error_replay_and_event_bus_share_event_id_and_timestamp(self):
+        session = AsyncMock()
+        event_bus = AsyncMock()
+        state = {
+            "_session": session,
+            "event_bus": event_bus,
+            "alert_events": [],
+            "alert_events_max": 50,
+        }
+
+        evt_id = _record_alert_event(
+            state,
+            event_type="rule_eval_error",
+            camera_id="usb:0",
+            camera_name="Office",
+            message="Rule evaluation failed: malformed response",
+        )
+
+        await _send_mcp_log(
+            state,
+            "warning",
+            "[Office (usb:0)] Rule evaluation failed: malformed response",
+            event_type="rule_eval_error",
+            camera_id="usb:0",
+            event_id=evt_id,
+            timestamp=state["alert_events"][0]["timestamp"],
+        )
+
+        topic, payload = event_bus.publish.await_args.args
+        assert topic == "mcp_log"
+        assert payload["event_type"] == "rule_eval_error"
+        assert payload["event_id"] == evt_id
+        assert payload["camera_id"] == "usb:0"
+        assert payload["timestamp"] == state["alert_events"][0]["timestamp"]
+
+        kwargs = session.send_log_message.await_args.kwargs
+        assert f"event_id={evt_id}" in kwargs["data"]
+
+
 class TestCameraAlertPendingEval:
     @pytest.mark.asyncio
     async def test_recorded_event_id_is_reused_in_standardized_log(self):

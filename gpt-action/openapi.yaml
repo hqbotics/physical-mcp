@@ -406,6 +406,21 @@ paths:
                         timestamp: "2026-02-18T03:10:00.200000"
                     count: 1
                     timestamp: 1771384200.22
+                pending_eval_event_id_timestamp_correlation:
+                  summary: Pending-eval replay row for parity triage
+                  description: Correlate (`event_id`, `timestamp`) with PMCP/EventBus `mcp_log` payload for camera_alert_pending_eval triage.
+                  value:
+                    events:
+                      - event_id: evt_pe_corr_301
+                        event_type: camera_alert_pending_eval
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: Major scene change detected; pending client evaluation
+                        timestamp: "2026-02-18T04:22:10.500000"
+                    count: 1
+                    timestamp: 1771388530.50
                 malformed_legacy_skipped_by_since:
                   value:
                     events:
