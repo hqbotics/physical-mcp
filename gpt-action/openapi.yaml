@@ -246,6 +246,19 @@ paths:
                       last_error: ""
                       last_frame_at: null
                       status: unknown
+                malformed_row_normalized:
+                  summary: Stored non-object health row is normalized to defaults
+                  value:
+                    camera_id: usb:0
+                    health:
+                      camera_id: usb:0
+                      camera_name: usb:0
+                      consecutive_errors: 0
+                      backoff_until: null
+                      last_success_at: null
+                      last_error: ""
+                      last_frame_at: null
+                      status: unknown
   /alerts:
     get:
       operationId: replayAlerts
