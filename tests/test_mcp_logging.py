@@ -948,6 +948,22 @@ class TestGetCameraHealthContract:
         assert health["message"] == "No health data yet. Start monitoring first."
 
     @pytest.mark.asyncio
+    async def test_health_fallback_message_difference_is_intentional(self):
+        mcp = create_server(PhysicalMCPConfig())
+        tool = mcp._tool_manager._tools["get_camera_health"]
+        get_camera_health_fn = tool.fn
+
+        closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
+        closure_state.update({"camera_health": {}})
+
+        result = await get_camera_health_fn(camera_id="usb:9")
+        mcp_message = result["health"]["message"]
+
+        # MCP tool provides slightly more operator guidance than Vision API.
+        assert mcp_message == "No health data yet. Start monitoring first."
+        assert mcp_message != "No health data yet."
+
+    @pytest.mark.asyncio
     async def test_get_camera_health_all_normalizes_partial_rows(self):
         mcp = create_server(PhysicalMCPConfig())
         tool = mcp._tool_manager._tools["get_camera_health"]

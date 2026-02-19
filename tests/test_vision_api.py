@@ -582,6 +582,43 @@ class TestHealthAndAlerts:
             assert health["last_success_at"] is None
 
     @pytest.mark.asyncio
+    async def test_health_all_normalization_matrix_unknown_empty_malformed(self, state_with_data):
+        state_with_data["camera_health"] = {
+            "usb:0": {
+                "camera_id": "usb:0",
+                "camera_name": "",
+                "status": "running",
+            },
+            "usb:1": "legacy-corrupted-row",
+        }
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/health")
+            assert resp.status == 200
+            data = await resp.json()
+
+            # empty-name normalization
+            h0 = data["cameras"]["usb:0"]
+            assert h0["camera_id"] == "usb:0"
+            assert h0["camera_name"] == "usb:0"
+            assert h0["status"] == "running"
+
+            # malformed-row normalization
+            h1 = data["cameras"]["usb:1"]
+            assert h1["camera_id"] == "usb:1"
+            assert h1["camera_name"] == "usb:1"
+            assert h1["status"] == "unknown"
+
+            # unknown-camera single endpoint normalization
+            resp_unknown = await client.get("/health/usb:9")
+            assert resp_unknown.status == 200
+            unknown = (await resp_unknown.json())["health"]
+            assert unknown["camera_id"] == "usb:9"
+            assert unknown["camera_name"] == "usb:9"
+            assert unknown["status"] == "unknown"
+            assert unknown["message"] == "No health data yet."
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "status,errors,backoff,last_error",
         [

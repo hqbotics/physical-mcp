@@ -206,7 +206,7 @@ paths:
     get:
       operationId: getHealthByCamera
       summary: Get per-camera health for one camera
-      description: Returns normalized health shape for known and unknown cameras; missing keys are defaulted for contract stability. Legacy malformed/non-object rows fall back to defaults instead of returning partial/invalid payloads. Vision API fallback message text is "No health data yet." for unknown/malformed rows.
+      description: Returns normalized health shape for known and unknown cameras; missing keys are defaulted for contract stability. Legacy malformed/non-object rows fall back to defaults instead of returning partial/invalid payloads. Vision API fallback message text is "No health data yet." for unknown/malformed rows (MCP tool wording is intentionally different: "No health data yet. Start monitoring first.").
       parameters:
         - in: path
           name: camera_id
