@@ -21,7 +21,7 @@ import asyncio
 import json
 import logging
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from aiohttp import web
@@ -105,7 +105,7 @@ def _parse_iso_datetime(value: str) -> datetime | None:
     # Normalize aware datetimes to naive UTC so comparisons/sorting remain
     # stable across mixed legacy inputs (aware + naive).
     if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
     return parsed
 
 

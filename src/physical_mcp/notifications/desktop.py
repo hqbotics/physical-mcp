@@ -27,7 +27,7 @@ class DesktopNotifier:
 
     def __init__(self, min_interval: float = 10.0):
         self._min_interval = min_interval
-        self._last_sent: float = 0.0
+        self._last_sent: float | None = None
         self._platform = sys.platform
         # On macOS, prefer terminal-notifier (reliable banners) over osascript
         self._has_terminal_notifier = (
@@ -36,7 +36,7 @@ class DesktopNotifier:
 
     def _should_send(self) -> bool:
         now = time.monotonic()
-        if now - self._last_sent < self._min_interval:
+        if self._last_sent is not None and now - self._last_sent < self._min_interval:
             return False
         self._last_sent = now
         return True

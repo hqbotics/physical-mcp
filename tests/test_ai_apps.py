@@ -25,13 +25,19 @@ from physical_mcp.ai_apps import (
 class TestExpandPath:
     def test_expands_tilde(self):
         result = _expand_path("~/test/file.json")
-        assert str(result).startswith("/")
+        # On Windows, expanded path won't start with "/" but should not contain "~"
         assert "~" not in str(result)
+        assert "test" in str(result)
 
     def test_expands_appdata(self):
         with patch.dict(os.environ, {"APPDATA": "/mock/appdata"}):
             result = _expand_path("%APPDATA%/Claude/config.json")
-            assert str(result) == "/mock/appdata/Claude/config.json"
+            # Use Path for cross-platform comparison (Windows uses backslashes)
+            from pathlib import PurePosixPath
+
+            assert PurePosixPath(result.as_posix()) == PurePosixPath(
+                "/mock/appdata/Claude/config.json"
+            )
 
 
 # ── Registry ────────────────────────────────────────────────

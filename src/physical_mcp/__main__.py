@@ -173,7 +173,7 @@ def main(
                     interval=1.0 / fps,
                 ):
                     """Grab frames, push to buffer, and periodically analyze."""
-                    from datetime import datetime, UTC
+                    from datetime import datetime, timezone
                     import time as _time
 
                     last_analysis = 0.0
@@ -186,7 +186,9 @@ def main(
                             frame_count += 1
                             health = vision_state["camera_health"].get(cam_id)
                             if health:
-                                health["last_frame_at"] = datetime.now(UTC).isoformat()
+                                health["last_frame_at"] = datetime.now(
+                                    timezone.utc
+                                ).isoformat()
                                 health["last_success_at"] = health["last_frame_at"]
                                 health["consecutive_errors"] = 0
                         except Exception as e:
