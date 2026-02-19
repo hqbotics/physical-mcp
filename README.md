@@ -52,6 +52,8 @@ physical-mcp
 - [Cursor quickstart](docs/quickstart-cursor.md)
 - [VS Code quickstart](docs/quickstart-vscode.md)
 - [OpenClaw quickstart](docs/quickstart-openclaw.md)
+- [Gemini quickstart](docs/quickstart-gemini.md)
+- [Generic MCP client quickstart](docs/quickstart-generic-mcp-client.md)
 
 ---
 
