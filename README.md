@@ -64,6 +64,7 @@ physical-mcp
 - [First 10 minutes playbook](docs/first-10-minutes-playbook-v1.md)
 - [GitHub Codespaces quickstart](docs/quickstart-github-codespaces-v1.md)
 - [Docker quickstart](docs/quickstart-docker-v1.md)
+- [Headless Raspberry Pi quickstart](docs/quickstart-headless-raspberry-pi-v1.md)
 - [Windsurf/Trae troubleshooting](docs/quickstart-windsurf-trae-troubleshooting-v1.md)
 - [Common install failures](docs/common-install-failures-v1.md)
 
