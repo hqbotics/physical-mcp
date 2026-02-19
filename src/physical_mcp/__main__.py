@@ -997,7 +997,21 @@ def doctor(config_path: str | None) -> None:
     else:
         checks.append(("Config file", False, f"not found ({config_file})"))
 
-    # 4. Optional dependencies
+    # 4. mDNS / Bonjour
+    try:
+        import zeroconf  # noqa: F401
+
+        checks.append(("mDNS/Bonjour", True, "zeroconf installed"))
+    except ImportError:
+        checks.append(
+            (
+                "mDNS/Bonjour",
+                False,
+                "zeroconf not installed (optional, for LAN discovery)",
+            )
+        )
+
+    # 5. Optional dependencies
     optional_deps = [
         ("openai", "OpenAI / OpenAI-compatible providers"),
         ("anthropic", "Anthropic Claude provider"),
@@ -1012,7 +1026,22 @@ def doctor(config_path: str | None) -> None:
         except ImportError:
             checks.append((f"  {desc}", False, "not installed (optional)"))
 
-    # 5. Port availability
+    # 6. LAN IP detection (used for mDNS + phone access)
+    try:
+        from .platform import get_lan_ip
+
+        lan_ip = get_lan_ip()
+        checks.append(
+            (
+                "LAN IP detection",
+                True,
+                f"{lan_ip}" if lan_ip else "no LAN interface found",
+            )
+        )
+    except Exception as e:
+        checks.append(("LAN IP detection", False, str(e)))
+
+    # 7. Port availability
     for port_num, service in [(8400, "MCP server"), (8090, "Vision API")]:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
