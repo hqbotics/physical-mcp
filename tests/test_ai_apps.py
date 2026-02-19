@@ -80,6 +80,13 @@ class TestKnownApps:
         assert chatgpt.setup_hint != ""
         assert "tunnel" in chatgpt.setup_hint.lower()
 
+    def test_gemini_in_known_apps_stdio_config(self):
+        gemini = next((a for a in KNOWN_APPS if a.name == "Gemini"), None)
+        assert gemini is not None
+        assert gemini.transport == "stdio"
+        assert gemini.server_key == "mcpServers"
+        assert "darwin" in gemini.config_paths
+
     def test_setup_hint_empty_for_stdio_apps(self):
         for app in KNOWN_APPS:
             if app.transport == "stdio":

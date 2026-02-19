@@ -8,11 +8,13 @@
 ## Install
 ```bash
 pip install physical-mcp
-physical-mcp
+physical-mcp setup
 ```
-If Gemini needs HTTPS/remote endpoint, run:
+
+Setup auto-configures Gemini MCP config when Gemini is installed (stdio mode).
+If Gemini needs HTTPS/remote endpoint in your environment, run:
 ```bash
-physical-mcp tunnel
+physical-mcp tunnel --provider auto --port 8090
 ```
 
 ## Verify

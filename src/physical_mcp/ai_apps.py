@@ -163,8 +163,13 @@ KNOWN_APPS: list[AIApp] = [
     ),
     AIApp(
         name="Gemini",
-        transport="http",
-        setup_hint="Paste the HTTP URL into Gemini's MCP settings",
+        transport="stdio",
+        config_paths={
+            "darwin": "~/Library/Application Support/Gemini/settings.json",
+            "win32": "%APPDATA%/Gemini/settings.json",
+            "linux": "~/.config/gemini/settings.json",
+        },
+        server_key="mcpServers",
     ),
 ]
 
