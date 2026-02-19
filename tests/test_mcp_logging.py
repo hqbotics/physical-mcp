@@ -1104,6 +1104,48 @@ class TestGetCameraHealthContract:
         assert health["backoff_until"] is None
         assert health["last_success_at"] is None
 
+    @pytest.mark.asyncio
+    async def test_get_camera_health_all_rows_include_required_keys_matrix(self):
+        mcp = create_server(PhysicalMCPConfig())
+        tool = mcp._tool_manager._tools["get_camera_health"]
+        get_camera_health_fn = tool.fn
+
+        closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
+        closure_state.update({
+            "camera_health": {
+                "usb:0": {
+                    "camera_id": "",
+                    "camera_name": "",
+                    "status": "running",
+                },
+                "usb:1": "malformed",
+                "usb:2": {
+                    "camera_id": "usb:2",
+                    "camera_name": "Lab",
+                    "consecutive_errors": 2,
+                    "backoff_until": "2026-02-18T02:35:00",
+                    "last_success_at": None,
+                    "last_error": "timeout",
+                    "last_frame_at": None,
+                    "status": "degraded",
+                },
+            }
+        })
+
+        result = await get_camera_health_fn()
+        required = {
+            "camera_id",
+            "camera_name",
+            "consecutive_errors",
+            "backoff_until",
+            "last_success_at",
+            "last_error",
+            "last_frame_at",
+            "status",
+        }
+        for health in result["cameras"].values():
+            assert required.issubset(set(health.keys()))
+
 
 class TestConfigureProviderContract:
     @pytest.mark.asyncio

@@ -202,6 +202,38 @@ paths:
                         last_frame_at: "2026-02-18T02:10:46.000000"
                         status: running
                     timestamp: 1771380646.12
+                mixed_rows_normalized:
+                  summary: Mixed empty/malformed/degraded rows normalized consistently
+                  value:
+                    cameras:
+                      usb:0:
+                        camera_id: usb:0
+                        camera_name: usb:0
+                        consecutive_errors: 0
+                        backoff_until: null
+                        last_success_at: null
+                        last_error: ""
+                        last_frame_at: null
+                        status: running
+                      usb:1:
+                        camera_id: usb:1
+                        camera_name: usb:1
+                        consecutive_errors: 0
+                        backoff_until: null
+                        last_success_at: null
+                        last_error: ""
+                        last_frame_at: null
+                        status: unknown
+                      usb:2:
+                        camera_id: usb:2
+                        camera_name: Lab
+                        consecutive_errors: 2
+                        backoff_until: "2026-02-18T02:35:00.000000"
+                        last_success_at: null
+                        last_error: timeout
+                        last_frame_at: null
+                        status: degraded
+                    timestamp: 1771380655.55
   /health/{camera_id}:
     get:
       operationId: getHealthByCamera
