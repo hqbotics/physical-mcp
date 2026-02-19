@@ -260,8 +260,10 @@ class TestCameraAlertPendingEval:
     @pytest.mark.asyncio
     async def test_recorded_event_id_is_reused_in_standardized_log(self):
         session = AsyncMock()
+        event_bus = AsyncMock()
         state = {
             "_session": session,
+            "event_bus": event_bus,
             "alert_events": [],
             "alert_events_max": 50,
         }
@@ -281,7 +283,13 @@ class TestCameraAlertPendingEval:
             event_type="camera_alert_pending_eval",
             camera_id="usb:0",
             event_id=evt_id,
+            timestamp=state["alert_events"][0]["timestamp"],
         )
+
+        topic, payload = event_bus.publish.await_args.args
+        assert topic == "mcp_log"
+        assert payload["event_id"] == evt_id
+        assert payload["timestamp"] == state["alert_events"][0]["timestamp"]
 
         kwargs = session.send_log_message.await_args.kwargs
         assert kwargs["data"].startswith(
