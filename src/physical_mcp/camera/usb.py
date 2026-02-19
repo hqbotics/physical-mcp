@@ -9,6 +9,7 @@ from typing import Optional
 
 import cv2
 
+from ..exceptions import CameraConnectionError, CameraTimeoutError
 from .base import CameraSource, Frame
 
 
@@ -37,7 +38,9 @@ class USBCamera(CameraSource):
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
         if not self._cap.isOpened():
-            raise RuntimeError(f"Cannot open camera at index {self._device_index}")
+            raise CameraConnectionError(
+                f"Cannot open camera at index {self._device_index}"
+            )
         self._running = True
         self._thread = threading.Thread(target=self._capture_loop, daemon=True)
         self._thread.start()
@@ -47,7 +50,9 @@ class USBCamera(CameraSource):
             with self._lock:
                 if self._latest_frame is not None:
                     return
-        raise RuntimeError("Camera opened but no frames received within 5 seconds")
+        raise CameraTimeoutError(
+            "Camera opened but no frames received within 5 seconds"
+        )
 
     def _capture_loop(self) -> None:
         while self._running and self._cap is not None:
@@ -68,7 +73,7 @@ class USBCamera(CameraSource):
         loop = asyncio.get_event_loop()
         frame = await loop.run_in_executor(None, self._get_latest)
         if frame is None:
-            raise RuntimeError("No frame available")
+            raise CameraTimeoutError("No frame available")
         return frame
 
     def _get_latest(self) -> Optional[Frame]:

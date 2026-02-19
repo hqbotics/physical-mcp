@@ -18,6 +18,7 @@ from typing import Optional
 
 import cv2
 
+from ..exceptions import CameraConnectionError, CameraTimeoutError
 from .base import CameraSource, Frame
 
 logger = logging.getLogger("physical-mcp")
@@ -60,7 +61,7 @@ class HTTPCamera(CameraSource):
     async def open(self) -> None:
         self._cap = cv2.VideoCapture(self._url)
         if not self._cap.isOpened():
-            raise RuntimeError(f"Cannot open HTTP stream: {self._url}")
+            raise CameraConnectionError(f"Cannot open HTTP stream: {self._url}")
         logger.info("HTTP MJPEG stream opened: %s", self._url)
 
         self._running = True
@@ -72,7 +73,7 @@ class HTTPCamera(CameraSource):
             with self._lock:
                 if self._latest_frame is not None:
                     return
-        raise RuntimeError(
+        raise CameraTimeoutError(
             f"HTTP stream opened but no frames received within 10s: {self._url}"
         )
 
@@ -89,7 +90,9 @@ class HTTPCamera(CameraSource):
         loop = asyncio.get_event_loop()
         frame = await loop.run_in_executor(None, self._get_latest)
         if frame is None:
-            raise RuntimeError(f"No frame available from HTTP stream: {self._url}")
+            raise CameraTimeoutError(
+                f"No frame available from HTTP stream: {self._url}"
+            )
         return frame
 
     def is_open(self) -> bool:

@@ -1268,5 +1268,38 @@ def doctor(config_path: str | None) -> None:
     click.echo("")
 
 
+@main.command()
+@click.option("--config", "config_path", default=None, help="Config file path")
+def rules(config_path: str | None) -> None:
+    """List active watch rules."""
+    from .config import load_config
+    from .rules.store import RulesStore
+
+    config = load_config(config_path)
+    store = RulesStore(config.rules_file)
+    rule_list = store.load()
+
+    if not rule_list:
+        click.echo("No watch rules configured.")
+        click.echo(
+            "Use the MCP 'add_watch_rule' tool or the web dashboard to create rules."
+        )
+        return
+
+    click.echo(f"\n{'ID':<14} {'Name':<20} {'Priority':<10} {'Camera':<12} Condition")
+    click.echo("-" * 80)
+    for r in rule_list:
+        status_icon = (
+            click.style("●", fg="green") if r.enabled else click.style("○", fg="red")
+        )
+        cam = r.camera_id or "(all)"
+        condition = r.condition[:40] + "…" if len(r.condition) > 40 else r.condition
+        click.echo(
+            f"{status_icon} {r.id:<12} {r.name:<20} {r.priority.value:<10} {cam:<12} {condition}"
+        )
+
+    click.echo(f"\n  {len(rule_list)} rule(s) total")
+
+
 if __name__ == "__main__":
     main()

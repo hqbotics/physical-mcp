@@ -18,6 +18,7 @@ from typing import Optional
 
 import cv2
 
+from ..exceptions import CameraConnectionError, CameraTimeoutError
 from .base import CameraSource, Frame
 
 logger = logging.getLogger("physical-mcp")
@@ -74,7 +75,7 @@ class RTSPCamera(CameraSource):
     async def open(self) -> None:
         self._cap = self._create_capture()
         if not self._cap.isOpened():
-            raise RuntimeError(f"Cannot open RTSP stream: {self._safe_url}")
+            raise CameraConnectionError(f"Cannot open RTSP stream: {self._safe_url}")
         logger.info("RTSP stream opened: %s", self._safe_url)
 
         self._running = True
@@ -87,7 +88,7 @@ class RTSPCamera(CameraSource):
             with self._lock:
                 if self._latest_frame is not None:
                     return
-        raise RuntimeError(
+        raise CameraTimeoutError(
             f"RTSP stream opened but no frames received within 10s: {self._safe_url}"
         )
 
@@ -104,7 +105,7 @@ class RTSPCamera(CameraSource):
         loop = asyncio.get_event_loop()
         frame = await loop.run_in_executor(None, self._get_latest)
         if frame is None:
-            raise RuntimeError(f"No frame available from RTSP: {self._safe_url}")
+            raise CameraTimeoutError(f"No frame available from RTSP: {self._safe_url}")
         return frame
 
     def is_open(self) -> bool:

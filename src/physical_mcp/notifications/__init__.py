@@ -9,6 +9,8 @@ Routes alerts to the appropriate channel:
 
 from __future__ import annotations
 
+__all__ = ["NotificationDispatcher"]
+
 import logging
 
 from ..config import NotificationsConfig

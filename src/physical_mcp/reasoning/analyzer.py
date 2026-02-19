@@ -15,7 +15,8 @@ from .providers.base import VisionProvider
 
 logger = logging.getLogger("physical-mcp")
 
-# Maximum time to wait for an LLM API call before giving up (seconds)
+# Default maximum time to wait for an LLM API call (seconds).
+# Overridden by config.reasoning.llm_timeout_seconds at runtime.
 LLM_CALL_TIMEOUT = 30.0
 
 
@@ -84,14 +85,15 @@ class FrameAnalyzer:
             max_dim=config.reasoning.max_thumbnail_dim,
             quality=config.reasoning.image_quality,
         )
+        timeout = getattr(config.reasoning, "llm_timeout_seconds", LLM_CALL_TIMEOUT)
 
         try:
             return await asyncio.wait_for(
                 self._provider.analyze_image_json(image_b64, prompt),
-                timeout=LLM_CALL_TIMEOUT,
+                timeout=timeout,
             )
         except asyncio.TimeoutError:
-            logger.warning("Scene analysis timed out after %.0fs", LLM_CALL_TIMEOUT)
+            logger.warning("Scene analysis timed out after %.0fs", timeout)
             return {"summary": "", "objects": [], "people_count": 0}
         except json.JSONDecodeError:
             # JSON parse failure — don't retry (same response likely).
@@ -123,15 +125,16 @@ class FrameAnalyzer:
             max_dim=config.reasoning.max_thumbnail_dim,
             quality=config.reasoning.image_quality,
         )
+        timeout = getattr(config.reasoning, "llm_timeout_seconds", LLM_CALL_TIMEOUT)
 
         try:
             raw = await asyncio.wait_for(
                 self._provider.analyze_image_json(image_b64, prompt),
-                timeout=LLM_CALL_TIMEOUT,
+                timeout=timeout,
             )
             return [RuleEvaluation(**ev) for ev in raw.get("evaluations", [])]
         except asyncio.TimeoutError:
-            logger.warning("Rule evaluation timed out after %.0fs", LLM_CALL_TIMEOUT)
+            logger.warning("Rule evaluation timed out after %.0fs", timeout)
             return []
         except Exception as e:
             if _is_api_error(e):

@@ -1,0 +1,19 @@
+"""Camera backends — USB, RTSP, HTTP MJPEG, and LAN auto-discovery."""
+
+from .base import CameraSource, Frame
+from .discovery import DiscoveredCamera, discover_cameras
+from .factory import create_camera
+from .http_mjpeg import HTTPCamera
+from .rtsp import RTSPCamera
+from .usb import USBCamera
+
+__all__ = [
+    "CameraSource",
+    "Frame",
+    "USBCamera",
+    "RTSPCamera",
+    "HTTPCamera",
+    "create_camera",
+    "discover_cameras",
+    "DiscoveredCamera",
+]
