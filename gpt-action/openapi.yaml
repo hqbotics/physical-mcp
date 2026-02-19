@@ -180,7 +180,7 @@ paths:
     get:
       operationId: getHealthAll
       summary: Get per-camera health snapshots
-      description: Health rows are normalized server-side; missing keys are filled with safe defaults and empty camera_name falls back to camera_id.
+      description: Health rows are normalized server-side; missing keys are filled with safe defaults and empty camera_name falls back to camera_id. Legacy malformed/non-object rows are safely replaced with default health shape.
       responses:
         '200':
           description: Health state for all cameras
@@ -206,7 +206,7 @@ paths:
     get:
       operationId: getHealthByCamera
       summary: Get per-camera health for one camera
-      description: Returns normalized health shape for known and unknown cameras; missing keys are defaulted for contract stability.
+      description: Returns normalized health shape for known and unknown cameras; missing keys are defaulted for contract stability. Legacy malformed/non-object rows fall back to defaults instead of returning partial/invalid payloads.
       parameters:
         - in: path
           name: camera_id
@@ -234,7 +234,7 @@ paths:
                       last_frame_at: "2026-02-18T02:12:00.000000"
                       status: degraded
                 unknown_default_shape:
-                  summary: Unknown camera returns full default health shape
+                  summary: Unknown or malformed camera row returns full default health shape
                   value:
                     camera_id: usb:9
                     health:
