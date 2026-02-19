@@ -945,6 +945,7 @@ class TestGetCameraHealthContract:
         assert health["consecutive_errors"] == 0
         assert health["backoff_until"] is None
         assert health["last_success_at"] is None
+        assert health["message"] == "No health data yet. Start monitoring first."
 
     @pytest.mark.asyncio
     async def test_get_camera_health_all_normalizes_partial_rows(self):
