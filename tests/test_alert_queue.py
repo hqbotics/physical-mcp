@@ -1,6 +1,5 @@
 """Tests for the AlertQueue — bounded async queue for client-side reasoning."""
 
-import asyncio
 from datetime import datetime, timedelta
 
 import pytest
@@ -22,7 +21,12 @@ def _make_alert(
         frame_base64="dGVzdF9mcmFtZV9kYXRh",  # base64 of "test_frame_data"
         scene_context="A test scene",
         active_rules=[
-            {"id": "r_test1", "name": "Test rule", "condition": "something happens", "priority": "medium"}
+            {
+                "id": "r_test1",
+                "name": "Test rule",
+                "condition": "something happens",
+                "priority": "medium",
+            }
         ],
         expires_at=datetime.now() + timedelta(seconds=ttl_seconds),
     )

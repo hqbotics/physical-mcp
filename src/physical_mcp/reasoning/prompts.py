@@ -35,8 +35,7 @@ Respond in JSON only:
 def build_rule_eval_prompt(scene_state: SceneState, rules: list[WatchRule]) -> str:
     """Build the rule evaluation prompt."""
     rules_text = "\n".join(
-        f'  {{"id": "{r.id}", "condition": "{r.condition}"}}'
-        for r in rules
+        f'  {{"id": "{r.id}", "condition": "{r.condition}"}}' for r in rules
     )
 
     context = ""

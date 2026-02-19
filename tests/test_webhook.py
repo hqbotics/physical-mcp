@@ -1,7 +1,6 @@
 """Tests for webhook notification delivery."""
 
-from datetime import datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 

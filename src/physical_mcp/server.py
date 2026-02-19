@@ -165,7 +165,9 @@ def _default_camera_health(camera_id: str) -> dict[str, Any]:
     }
 
 
-def _normalize_camera_health(camera_id: str, health: dict[str, Any] | None) -> dict[str, Any]:
+def _normalize_camera_health(
+    camera_id: str, health: dict[str, Any] | None
+) -> dict[str, Any]:
     """Fill missing camera-health keys with safe defaults."""
     base = _default_camera_health(camera_id)
     if not isinstance(health, dict):
@@ -193,16 +195,18 @@ def _record_alert_event(
         return event_id
 
     events = shared_state.setdefault("alert_events", [])
-    events.append({
-        "event_id": event_id,
-        "event_type": event_type,
-        "camera_id": camera_id,
-        "camera_name": camera_name,
-        "rule_id": rule_id,
-        "rule_name": rule_name,
-        "message": message,
-        "timestamp": datetime.now().isoformat(),
-    })
+    events.append(
+        {
+            "event_id": event_id,
+            "event_type": event_type,
+            "camera_id": camera_id,
+            "camera_name": camera_name,
+            "rule_id": rule_id,
+            "rule_name": rule_name,
+            "message": message,
+            "timestamp": datetime.now().isoformat(),
+        }
+    )
     max_events = int(shared_state.get("alert_events_max", 200))
     if len(events) > max_events:
         del events[: len(events) - max_events]
@@ -295,15 +299,21 @@ def _create_provider(config: PhysicalMCPConfig) -> VisionProvider | None:
 
     if r.provider == "anthropic":
         from .reasoning.providers.anthropic import AnthropicProvider
+
         return AnthropicProvider(api_key=r.api_key, model=r.model)
     elif r.provider == "openai":
         from .reasoning.providers.openai_compat import OpenAICompatProvider
+
         return OpenAICompatProvider(api_key=r.api_key, model=r.model)
     elif r.provider == "openai-compatible":
         from .reasoning.providers.openai_compat import OpenAICompatProvider
-        return OpenAICompatProvider(api_key=r.api_key, model=r.model, base_url=r.base_url)
+
+        return OpenAICompatProvider(
+            api_key=r.api_key, model=r.model, base_url=r.base_url
+        )
     elif r.provider == "google":
         from .reasoning.providers.google import GoogleProvider
+
         return GoogleProvider(api_key=r.api_key, model=r.model)
     else:
         logger.warning(f"Unknown provider: {r.provider}")
@@ -373,8 +383,7 @@ async def _evaluate_via_sampling(
     cam_label = f"{camera_name} ({camera_id})" if camera_name else camera_id
 
     rules_text = "\n".join(
-        f'- Rule "{r.name}" (id={r.id}): {r.condition}'
-        for r in active_rules
+        f'- Rule "{r.name}" (id={r.id}): {r.condition}' for r in active_rules
     )
 
     try:
@@ -383,7 +392,9 @@ async def _evaluate_via_sampling(
                 SamplingMessage(
                     role="user",
                     content=[
-                        ImageContent(type="image", data=frame_b64, mimeType="image/jpeg"),
+                        ImageContent(
+                            type="image", data=frame_b64, mimeType="image/jpeg"
+                        ),
                         TextContent(
                             type="text",
                             text=(
@@ -429,7 +440,9 @@ async def _evaluate_via_sampling(
 
         evaluations = json.loads(json_match.group())
         alerts = rules_engine.process_client_evaluations(
-            evaluations, scene_state, frame_base64=frame_b64,
+            evaluations,
+            scene_state,
+            frame_base64=frame_b64,
         )
         for alert in alerts:
             stats.record_alert()
@@ -439,18 +452,20 @@ async def _evaluate_via_sampling(
             if notifier:
                 await notifier.dispatch(alert)
             if shared_state and "event_bus" in shared_state:
-                await shared_state["event_bus"].publish("alert", {
-                    "type": "watch_rule_triggered",
-                    "rule_id": alert.rule.id,
-                    "rule_name": alert.rule.name,
-                    "camera_id": camera_id,
-                    "confidence": alert.evaluation.confidence,
-                    "reasoning": alert.evaluation.reasoning,
-                })
+                await shared_state["event_bus"].publish(
+                    "alert",
+                    {
+                        "type": "watch_rule_triggered",
+                        "rule_id": alert.rule.id,
+                        "rule_name": alert.rule.name,
+                        "camera_id": camera_id,
+                        "confidence": alert.evaluation.confidence,
+                        "reasoning": alert.evaluation.reasoning,
+                    },
+                )
             if memory:
                 memory.append_event(
-                    f"ALERT: {alert.rule.name} triggered — "
-                    f"{alert.evaluation.reasoning}"
+                    f"ALERT: {alert.rule.name} triggered — {alert.evaluation.reasoning}"
                 )
             event_id = _record_alert_event(
                 shared_state,
@@ -549,12 +564,16 @@ async def _perception_loop(
                     if health is not None:
                         health["status"] = "backoff"
                     if consecutive_errors <= 3:
-                        logger.info(f"[{cam_label}] In backoff, retry in {remaining:.0f}s")
+                        logger.info(
+                            f"[{cam_label}] In backoff, retry in {remaining:.0f}s"
+                        )
                     await asyncio.sleep(interval)
                     continue
 
                 try:
-                    scene_data = await analyzer.analyze_scene(frame, scene_state, config)
+                    scene_data = await analyzer.analyze_scene(
+                        frame, scene_state, config
+                    )
                 except Exception as e:
                     consecutive_errors += 1
                     wait = min(5.0 * (2 ** (consecutive_errors - 1)), max_backoff)
@@ -609,7 +628,9 @@ async def _perception_loop(
                     health["last_success_at"] = datetime.now().isoformat()
                     health["last_error"] = ""
                     health["status"] = "running"
-                logger.info(f"[{cam_label}] Scene: {scene_data.get('summary', '')[:100]}")
+                logger.info(
+                    f"[{cam_label}] Scene: {scene_data.get('summary', '')[:100]}"
+                )
 
                 active_rules = rules_engine.get_active_rules()
                 if active_rules:
@@ -618,7 +639,9 @@ async def _perception_loop(
                             frame, scene_state, active_rules, config
                         )
                     except Exception as e:
-                        logger.error(f"[{cam_label}] Rule evaluation error: {str(e)[:150]}")
+                        logger.error(
+                            f"[{cam_label}] Rule evaluation error: {str(e)[:150]}"
+                        )
                         event_id = _record_alert_event(
                             shared_state,
                             event_type="rule_eval_error",
@@ -640,7 +663,9 @@ async def _perception_loop(
 
                     frame_b64 = frame.to_base64(quality=config.reasoning.image_quality)
                     alerts = rules_engine.process_evaluations(
-                        evaluations, scene_state, frame_base64=frame_b64,
+                        evaluations,
+                        scene_state,
+                        frame_base64=frame_b64,
                     )
                     for alert in alerts:
                         stats.record_alert()
@@ -650,14 +675,17 @@ async def _perception_loop(
                         if notifier:
                             await notifier.dispatch(alert)
                         if shared_state and "event_bus" in shared_state:
-                            await shared_state["event_bus"].publish("alert", {
-                                "type": "watch_rule_triggered",
-                                "rule_id": alert.rule.id,
-                                "rule_name": alert.rule.name,
-                                "camera_id": camera_id,
-                                "confidence": alert.evaluation.confidence,
-                                "reasoning": alert.evaluation.reasoning,
-                            })
+                            await shared_state["event_bus"].publish(
+                                "alert",
+                                {
+                                    "type": "watch_rule_triggered",
+                                    "rule_id": alert.rule.id,
+                                    "rule_name": alert.rule.name,
+                                    "camera_id": camera_id,
+                                    "confidence": alert.evaluation.confidence,
+                                    "reasoning": alert.evaluation.reasoning,
+                                },
+                            )
                         if memory:
                             memory.append_event(
                                 f"ALERT [{cam_label}]: {alert.rule.name} triggered — "
@@ -697,6 +725,7 @@ async def _perception_loop(
                     if session:
                         try:
                             from mcp.types import ClientCapabilities, SamplingCapability
+
                             sampling_supported = session.check_client_capability(
                                 ClientCapabilities(sampling=SamplingCapability())
                             )
@@ -705,10 +734,19 @@ async def _perception_loop(
 
                     if session and sampling_supported:
                         await _evaluate_via_sampling(
-                            session, frame, change, active_rules,
-                            scene_state, rules_engine, stats, config,
-                            notifier, memory, shared_state=shared_state,
-                            camera_id=camera_id, camera_name=camera_name,
+                            session,
+                            frame,
+                            change,
+                            active_rules,
+                            scene_state,
+                            rules_engine,
+                            stats,
+                            config,
+                            notifier,
+                            memory,
+                            shared_state=shared_state,
+                            camera_id=camera_id,
+                            camera_name=camera_name,
                         )
                     else:
                         frame_b64 = frame.to_base64(quality=75)
@@ -763,17 +801,22 @@ async def _perception_loop(
                                 event_type="camera_alert_pending_eval",
                                 camera_id=camera_id,
                                 event_id=event_id,
-                                timestamp=_alert_event_timestamp(shared_state, event_id),
+                                timestamp=_alert_event_timestamp(
+                                    shared_state, event_id
+                                ),
                             )
 
                         # Publish scene change to EventBus
                         if shared_state and "event_bus" in shared_state:
-                            await shared_state["event_bus"].publish("scene_change", {
-                                "type": "scene_change",
-                                "camera_id": camera_id,
-                                "change_level": change.level.value,
-                                "active_rules": [r.name for r in active_rules],
-                            })
+                            await shared_state["event_bus"].publish(
+                                "scene_change",
+                                {
+                                    "type": "scene_change",
+                                    "camera_id": camera_id,
+                                    "change_level": change.level.value,
+                                    "active_rules": [r.name for r in active_rules],
+                                },
+                            )
 
                         # Push + desktop notifications
                         if notifier:
@@ -964,35 +1007,38 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         if enabled_cams:
             cam_ids = [c.id for c in enabled_cams]
             instructions_text += (
-                "\n\nAVAILABLE CAMERAS: " + ", ".join(cam_ids)
+                "\n\nAVAILABLE CAMERAS: "
+                + ", ".join(cam_ids)
                 + "\n\nCall list_cameras() to see what each camera currently "
                 "shows, then use camera_id to target the right one(s). "
                 "You can use multiple cameras if needed."
             )
 
-        state.update({
-            "cameras": {},
-            "frame_buffers": {},
-            "scene_states": {},
-            "camera_configs": {},
-            "_loop_tasks": {},
-            "rules_engine": rules_engine,
-            "rules_store": rules_store,
-            "analyzer": analyzer,
-            "stats": stats,
-            "config": config,
-            "alert_queue": alert_queue,
-            "memory": memory,
-            "notifier": notifier,
-            "event_bus": event_bus,
-            "_session": None,
-            "_fallback_warning_pending": not bool(provider),
-            "_pending_session_logs": [],
-            "_pending_session_logs_max": 100,
-            "camera_health": {},
-            "alert_events": [],
-            "alert_events_max": 200,
-        })
+        state.update(
+            {
+                "cameras": {},
+                "frame_buffers": {},
+                "scene_states": {},
+                "camera_configs": {},
+                "_loop_tasks": {},
+                "rules_engine": rules_engine,
+                "rules_store": rules_store,
+                "analyzer": analyzer,
+                "stats": stats,
+                "config": config,
+                "alert_queue": alert_queue,
+                "memory": memory,
+                "notifier": notifier,
+                "event_bus": event_bus,
+                "_session": None,
+                "_fallback_warning_pending": not bool(provider),
+                "_pending_session_logs": [],
+                "_pending_session_logs_max": 100,
+                "camera_health": {},
+                "alert_events": [],
+                "alert_events_max": 200,
+            }
+        )
 
         # Emit fallback startup warning immediately so Vision API/EventBus
         # observers can see startup mode without requiring an MCP tool call.
@@ -1082,10 +1128,12 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             _capture_session(ctx)
         camera, cid, cam_cfg = await _get_camera(camera_id)
         if not camera:
-            return [TextContent(
-                type="text",
-                text="Error: No camera available. Run 'physical-mcp setup' to configure.",
-            )]
+            return [
+                TextContent(
+                    type="text",
+                    text="Error: No camera available. Run 'physical-mcp setup' to configure.",
+                )
+            ]
 
         engine: RulesEngine = state["rules_engine"]
         if engine.get_active_rules():
@@ -1099,7 +1147,7 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             TextContent(
                 type="text",
                 text=f"Live frame from {label} at {frame.timestamp.isoformat()}. "
-                     f"Resolution: {frame.resolution[0]}x{frame.resolution[1]}.",
+                f"Resolution: {frame.resolution[0]}x{frame.resolution[1]}.",
             ),
         ]
 
@@ -1117,13 +1165,15 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         for cid, cam in cameras.items():
             cfg = state["camera_configs"].get(cid)
             scene = scene_states.get(cid, SceneState())
-            active_cameras.append({
-                "id": cid,
-                "name": cfg.name if cfg else "",
-                "status": "active" if cam.is_open() else "disconnected",
-                "scene_summary": scene.summary,
-                "objects_present": scene.objects_present,
-            })
+            active_cameras.append(
+                {
+                    "id": cid,
+                    "name": cfg.name if cfg else "",
+                    "status": "active" if cam.is_open() else "disconnected",
+                    "scene_summary": scene.summary,
+                    "objects_present": scene.objects_present,
+                }
+            )
         return {
             "available_hardware": available,
             "configured_cameras": active_cameras,
@@ -1170,7 +1220,9 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             # Single camera — flat response for backward compat
             scene = next(iter(scene_states.values()), SceneState())
             result = scene.to_dict()
-            result["reasoning_mode"] = "server" if analyzer_inst.has_provider else "client"
+            result["reasoning_mode"] = (
+                "server" if analyzer_inst.has_provider else "client"
+            )
             result["pending_alerts"] = await queue.size()
             return result
 
@@ -1241,10 +1293,12 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         stats_tracker: StatsTracker = state["stats"]
 
         if not camera:
-            return [TextContent(
-                type="text",
-                text="Error: No camera available. Run 'physical-mcp setup' to configure.",
-            )]
+            return [
+                TextContent(
+                    type="text",
+                    text="Error: No camera available. Run 'physical-mcp setup' to configure.",
+                )
+            ]
 
         frame = await camera.grab_frame()
         label = _cam_label(cam_cfg, cid)
@@ -1254,7 +1308,9 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             if stats_tracker.budget_exceeded():
                 return [TextContent(type="text", text="Error: Daily budget exceeded.")]
             cfg = state["config"]
-            result = await analyzer_inst.analyze_scene(frame, scene, cfg, question=question)
+            result = await analyzer_inst.analyze_scene(
+                frame, scene, cfg, question=question
+            )
             stats_tracker.record_analysis()
 
             scene.update(
@@ -1263,18 +1319,22 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
                 people_count=result.get("people_count", 0),
                 change_desc="Manual analysis",
             )
-            return [TextContent(
-                type="text",
-                text=str(result),
-            )]
+            return [
+                TextContent(
+                    type="text",
+                    text=str(result),
+                )
+            ]
 
         # ── Client-side mode: return frame for client AI ─────
         result = []
-        result.append(ImageContent(
-            type="image",
-            data=frame.to_base64(quality=85),
-            mimeType="image/jpeg",
-        ))
+        result.append(
+            ImageContent(
+                type="image",
+                data=frame.to_base64(quality=85),
+                mimeType="image/jpeg",
+            )
+        )
 
         prompt = f"Analyze this camera frame from {label}."
         if scene.summary:
@@ -1339,11 +1399,13 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
 
         result = []
 
-        result.append(ImageContent(
-            type="image",
-            data=latest.frame_base64,
-            mimeType="image/jpeg",
-        ))
+        result.append(
+            ImageContent(
+                type="image",
+                data=latest.frame_base64,
+                mimeType="image/jpeg",
+            )
+        )
 
         cam_label_str = latest.camera_name or latest.camera_id or "unknown"
         rules_text = "\n".join(
@@ -1351,25 +1413,27 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             for r in latest.active_rules
         )
 
-        result.append(TextContent(
-            type="text",
-            text=(
-                f"CAMERA ALERT from {cam_label_str}: "
-                f"{latest.change_level.upper()} scene change detected\n"
-                f"Time: {latest.timestamp.isoformat()}\n"
-                f"Change: {latest.change_description}\n"
-                f"Scene context: {latest.scene_context}\n\n"
-                f"ACTIVE WATCH RULES TO EVALUATE:\n{rules_text}\n\n"
-                f"INSTRUCTIONS: Look at the camera frame image above. "
-                f"For EACH rule listed, determine if the condition is currently "
-                f"met based on what you see. Then call report_rule_evaluation() "
-                f"with your findings. Be conservative — only mark triggered=true "
-                f"if you are confident (>= 0.7).\n"
-                f"Alert count in this batch: {len(alerts)}\n\n"
-                f"After calling report_rule_evaluation(), IMMEDIATELY call "
-                f"check_camera_alerts() again to continue monitoring."
-            ),
-        ))
+        result.append(
+            TextContent(
+                type="text",
+                text=(
+                    f"CAMERA ALERT from {cam_label_str}: "
+                    f"{latest.change_level.upper()} scene change detected\n"
+                    f"Time: {latest.timestamp.isoformat()}\n"
+                    f"Change: {latest.change_description}\n"
+                    f"Scene context: {latest.scene_context}\n\n"
+                    f"ACTIVE WATCH RULES TO EVALUATE:\n{rules_text}\n\n"
+                    f"INSTRUCTIONS: Look at the camera frame image above. "
+                    f"For EACH rule listed, determine if the condition is currently "
+                    f"met based on what you see. Then call report_rule_evaluation() "
+                    f"with your findings. Be conservative — only mark triggered=true "
+                    f"if you are confident (>= 0.7).\n"
+                    f"Alert count in this batch: {len(alerts)}\n\n"
+                    f"After calling report_rule_evaluation(), IMMEDIATELY call "
+                    f"check_camera_alerts() again to continue monitoring."
+                ),
+            )
+        )
 
         return result
 
@@ -1403,11 +1467,17 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         engine: RulesEngine = state["rules_engine"]
         # Use first available scene state for context
         scene_states = state.get("scene_states", {})
-        scene = next(iter(scene_states.values()), SceneState()) if scene_states else SceneState()
+        scene = (
+            next(iter(scene_states.values()), SceneState())
+            if scene_states
+            else SceneState()
+        )
         stats_tracker: StatsTracker = state["stats"]
 
         try:
-            eval_list = json.loads(evaluations) if isinstance(evaluations, str) else evaluations
+            eval_list = (
+                json.loads(evaluations) if isinstance(evaluations, str) else evaluations
+            )
         except json.JSONDecodeError:
             return {"error": "Invalid JSON in evaluations parameter"}
 
@@ -1416,7 +1486,9 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
 
         frame_b64 = state.get("_last_alert_frame")
         triggered_alerts = engine.process_client_evaluations(
-            eval_list, scene, frame_base64=frame_b64,
+            eval_list,
+            scene,
+            frame_base64=frame_b64,
         )
         notifier_inst: NotificationDispatcher = state["notifier"]
         memory_inst: MemoryStore = state["memory"]
@@ -1424,23 +1496,28 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         triggered_rules = []
         for alert in triggered_alerts:
             stats_tracker.record_alert()
-            triggered_rules.append({
-                "rule_id": alert.rule.id,
-                "rule_name": alert.rule.name,
-                "reasoning": alert.evaluation.reasoning,
-            })
+            triggered_rules.append(
+                {
+                    "rule_id": alert.rule.id,
+                    "rule_name": alert.rule.name,
+                    "reasoning": alert.evaluation.reasoning,
+                }
+            )
             logger.info(
                 f"CLIENT ALERT: {alert.rule.name} — {alert.evaluation.reasoning}"
             )
             await notifier_inst.dispatch(alert)
             if "event_bus" in state:
-                await state["event_bus"].publish("alert", {
-                    "type": "watch_rule_triggered",
-                    "rule_id": alert.rule.id,
-                    "rule_name": alert.rule.name,
-                    "confidence": alert.evaluation.confidence,
-                    "reasoning": alert.evaluation.reasoning,
-                })
+                await state["event_bus"].publish(
+                    "alert",
+                    {
+                        "type": "watch_rule_triggered",
+                        "rule_id": alert.rule.id,
+                        "rule_name": alert.rule.name,
+                        "confidence": alert.evaluation.confidence,
+                        "reasoning": alert.evaluation.reasoning,
+                    },
+                )
             memory_inst.append_event(
                 f"ALERT: {alert.rule.name} triggered — {alert.evaluation.reasoning}"
             )
@@ -1623,7 +1700,9 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         if camera_id:
             return {
                 "camera_id": camera_id,
-                "health": _normalize_camera_health(camera_id, health_map.get(camera_id)),
+                "health": _normalize_camera_health(
+                    camera_id, health_map.get(camera_id)
+                ),
             }
         return {
             "cameras": {
@@ -1680,7 +1759,9 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         memory: MemoryStore = state["memory"]
         content = memory.read_all()
         if not content:
-            return "No memory stored yet. Events will be recorded as you use the system."
+            return (
+                "No memory stored yet. Events will be recorded as you use the system."
+            )
         return content
 
     @mcp.tool()
@@ -1720,7 +1801,10 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             saved.append(f"preference: {preference_key}={preference_value}")
 
         if not saved:
-            return {"status": "nothing_saved", "message": "Provide at least one field to save."}
+            return {
+                "status": "nothing_saved",
+                "message": "Provide at least one field to save.",
+            }
 
         return {"status": "saved", "saved": saved}
 

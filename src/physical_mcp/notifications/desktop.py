@@ -31,8 +31,7 @@ class DesktopNotifier:
         self._platform = sys.platform
         # On macOS, prefer terminal-notifier (reliable banners) over osascript
         self._has_terminal_notifier = (
-            self._platform == "darwin"
-            and shutil.which("terminal-notifier") is not None
+            self._platform == "darwin" and shutil.which("terminal-notifier") is not None
         )
 
     def _should_send(self) -> bool:
@@ -60,9 +59,7 @@ class DesktopNotifier:
             elif self._platform == "win32":
                 self._notify_windows(title, body)
             else:
-                logger.debug(
-                    f"Desktop notifications unsupported on {self._platform}"
-                )
+                logger.debug(f"Desktop notifications unsupported on {self._platform}")
                 return False
             return True
         except Exception as e:
@@ -76,10 +73,14 @@ class DesktopNotifier:
             subprocess.Popen(
                 [
                     "terminal-notifier",
-                    "-title", title,
-                    "-message", body,
-                    "-sound", "default",
-                    "-group", "physical-mcp",
+                    "-title",
+                    title,
+                    "-message",
+                    body,
+                    "-sound",
+                    "default",
+                    "-group",
+                    "physical-mcp",
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -87,8 +88,7 @@ class DesktopNotifier:
         else:
             # Fallback to osascript (may not show banner on all systems)
             script = (
-                f'display notification "{_escape(body)}" '
-                f'with title "{_escape(title)}"'
+                f'display notification "{_escape(body)}" with title "{_escape(title)}"'
             )
             subprocess.Popen(
                 ["osascript", "-e", script],
@@ -129,8 +129,4 @@ class DesktopNotifier:
 
 def _escape(text: str) -> str:
     """Escape quotes and backslashes for shell embedding."""
-    return (
-        text.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("'", "\\'")
-    )
+    return text.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")

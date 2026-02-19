@@ -1,7 +1,6 @@
 """Tests for the perceptual hash change detector."""
 
 import numpy as np
-import pytest
 
 from physical_mcp.perception.change_detector import ChangeDetector, ChangeLevel
 

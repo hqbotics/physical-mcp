@@ -223,11 +223,13 @@ def discover_apps() -> list[AppStatus]:
         else:
             installed = app.is_installed()
             configured = app.is_configured() if installed else False
-            results.append(AppStatus(
-                app=app,
-                installed=installed,
-                already_configured=configured,
-            ))
+            results.append(
+                AppStatus(
+                    app=app,
+                    installed=installed,
+                    already_configured=configured,
+                )
+            )
     return results
 
 

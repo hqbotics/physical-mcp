@@ -29,10 +29,14 @@ def _pick_model(provider_name: str, options: list[tuple[str, str]]) -> str:
 @click.group(invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="physical-mcp")
 @click.option("--config", "config_path", default=None, help="Config file path")
-@click.option("--transport", default=None, help="Override transport: stdio | streamable-http")
+@click.option(
+    "--transport", default=None, help="Override transport: stdio | streamable-http"
+)
 @click.option("--port", default=None, type=int, help="Override HTTP port")
 @click.pass_context
-def main(ctx: click.Context, config_path: str | None, transport: str | None, port: int | None) -> None:
+def main(
+    ctx: click.Context, config_path: str | None, transport: str | None, port: int | None
+) -> None:
     """Physical MCP — Give your AI eyes."""
     if ctx.invoked_subcommand is not None:
         return
@@ -46,6 +50,7 @@ def main(ctx: click.Context, config_path: str | None, transport: str | None, por
         if not config_file.exists():
             return  # Setup was cancelled
         from .config import load_config
+
         config = load_config(config_path)
         if config.server.transport == "stdio":
             # Claude Desktop handles starting the server itself
@@ -61,7 +66,10 @@ def main(ctx: click.Context, config_path: str | None, transport: str | None, por
         config.server.port = port
 
     # Auto-bind to all interfaces for HTTP mode (enables phone/LAN connections)
-    if config.server.transport == "streamable-http" and config.server.host == "127.0.0.1":
+    if (
+        config.server.transport == "streamable-http"
+        and config.server.host == "127.0.0.1"
+    ):
         config.server.host = "0.0.0.0"
 
     mcp_server = create_server(config)
@@ -128,7 +136,10 @@ def main(ctx: click.Context, config_path: str | None, transport: str | None, por
                     click.echo(f"Camera {cid}: failed to open ({e})", err=True)
 
             if opened == 0:
-                click.echo("Warning: No cameras opened. Vision API will serve empty data.", err=True)
+                click.echo(
+                    "Warning: No cameras opened. Vision API will serve empty data.",
+                    err=True,
+                )
 
             # Set up server-side vision analysis (if provider configured)
             from .reasoning.analyzer import FrameAnalyzer
@@ -155,8 +166,11 @@ def main(ctx: click.Context, config_path: str | None, transport: str | None, por
                 fps = config.perception.capture_fps or 2
 
                 async def _capture_loop(
-                    cam=camera, fb=buf, cam_id=cid,
-                    scene=scene_st, interval=1.0 / fps,
+                    cam=camera,
+                    fb=buf,
+                    cam_id=cid,
+                    scene=scene_st,
+                    interval=1.0 / fps,
                 ):
                     """Grab frames, push to buffer, and periodically analyze."""
                     from datetime import datetime, UTC
@@ -208,9 +222,7 @@ def main(ctx: click.Context, config_path: str | None, transport: str | None, por
                                         people_count=scene_data.get("people_count", 0),
                                         change_desc="server-side analysis",
                                     )
-                                    click.echo(
-                                        f"[{cam_id}] Scene: {summary[:80]}"
-                                    )
+                                    click.echo(f"[{cam_id}] Scene: {summary[:80]}")
                                 else:
                                     click.echo(
                                         f"[{cam_id}] Analysis returned no data, keeping previous scene",
@@ -218,9 +230,7 @@ def main(ctx: click.Context, config_path: str | None, transport: str | None, por
                                     )
                                 last_analysis = now
                             except Exception as e:
-                                click.echo(
-                                    f"[{cam_id}] Analysis error: {e}", err=True
-                                )
+                                click.echo(f"[{cam_id}] Analysis error: {e}", err=True)
                                 # Backoff on API errors
                                 last_analysis = now
 
@@ -249,6 +259,7 @@ def main(ctx: click.Context, config_path: str | None, transport: str | None, por
 
                 # Print dashboard URL for phone/browser access
                 from .platform import get_lan_ip, print_qr_code
+
                 lan_ip = get_lan_ip()
                 dash_host = lan_ip or "127.0.0.1"
                 dash_port = config.vision_api.port
@@ -291,13 +302,23 @@ def main(ctx: click.Context, config_path: str | None, transport: str | None, por
 
 @main.command()
 @click.option("--config", "config_path", default=None, help="Config file path")
-@click.option("--advanced", is_flag=True, default=False, help="Show advanced options (provider, notifications)")
+@click.option(
+    "--advanced",
+    is_flag=True,
+    default=False,
+    help="Show advanced options (provider, notifications)",
+)
 def setup(config_path: str | None, advanced: bool) -> None:
     """Interactive setup wizard."""
     from .camera.usb import USBCamera
     from .config import (
-        PhysicalMCPConfig, CameraConfig, ServerConfig, ReasoningConfig,
-        NotificationsConfig, VisionAPIConfig, save_config,
+        PhysicalMCPConfig,
+        CameraConfig,
+        ServerConfig,
+        ReasoningConfig,
+        NotificationsConfig,
+        VisionAPIConfig,
+        save_config,
     )
     from .ai_apps import configure_all
     from .platform import get_lan_ip, print_qr_code
@@ -316,12 +337,14 @@ def setup(config_path: str | None, advanced: bool) -> None:
         for cam in detected:
             click.echo(f"  Index {cam['index']}: {cam['width']}x{cam['height']}")
         for cam in detected:
-            camera_configs.append(CameraConfig(
-                id=f"usb:{cam['index']}",
-                device_index=cam["index"],
-                width=cam.get("width", 1280),
-                height=cam.get("height", 720),
-            ))
+            camera_configs.append(
+                CameraConfig(
+                    id=f"usb:{cam['index']}",
+                    device_index=cam["index"],
+                    width=cam.get("width", 1280),
+                    height=cam.get("height", 720),
+                )
+            )
     else:
         click.echo("No cameras detected. You can configure one manually later.")
         camera_configs.append(CameraConfig(id="usb:0", device_index=0))
@@ -334,13 +357,18 @@ def setup(config_path: str | None, advanced: bool) -> None:
     ntfy_topic = ""
 
     import secrets
+
     vision_api_token = secrets.token_urlsafe(32)
 
     if advanced:
         # Full provider selection
         click.echo("\nSelect your vision model provider:")
-        click.echo("  1. None — let Claude Desktop / ChatGPT do the reasoning (RECOMMENDED)")
-        click.echo("     No API key needed! Your MCP client's built-in AI analyzes frames.")
+        click.echo(
+            "  1. None — let Claude Desktop / ChatGPT do the reasoning (RECOMMENDED)"
+        )
+        click.echo(
+            "     No API key needed! Your MCP client's built-in AI analyzes frames."
+        )
         click.echo("  2. Google Gemini  (FREE tier: 15 req/min, 1M tokens/day)")
         click.echo("  3. Anthropic Claude")
         click.echo("  4. OpenAI")
@@ -352,27 +380,36 @@ def setup(config_path: str | None, advanced: bool) -> None:
             provider = "google"
             click.echo("\n  Get a free API key at: https://aistudio.google.com/apikey")
             api_key = click.prompt("Google API key", hide_input=True)
-            model = _pick_model("Google Gemini", [
-                ("gemini-2.0-flash", "Fast, free tier, recommended"),
-                ("gemini-2.5-pro-preview-06-05", "Most capable, free tier limited"),
-                ("gemini-2.0-flash-lite", "Cheapest, fastest"),
-            ])
+            model = _pick_model(
+                "Google Gemini",
+                [
+                    ("gemini-2.0-flash", "Fast, free tier, recommended"),
+                    ("gemini-2.5-pro-preview-06-05", "Most capable, free tier limited"),
+                    ("gemini-2.0-flash-lite", "Cheapest, fastest"),
+                ],
+            )
         elif provider_choice == 3:
             provider = "anthropic"
             api_key = click.prompt("Anthropic API key", hide_input=True)
-            model = _pick_model("Anthropic Claude", [
-                ("claude-haiku-4-20250414", "Cheapest, recommended for monitoring"),
-                ("claude-sonnet-4-20250514", "More capable, higher cost"),
-                ("claude-opus-4-20250514", "Most capable, highest cost"),
-            ])
+            model = _pick_model(
+                "Anthropic Claude",
+                [
+                    ("claude-haiku-4-20250414", "Cheapest, recommended for monitoring"),
+                    ("claude-sonnet-4-20250514", "More capable, higher cost"),
+                    ("claude-opus-4-20250514", "Most capable, highest cost"),
+                ],
+            )
         elif provider_choice == 4:
             provider = "openai"
             api_key = click.prompt("OpenAI API key", hide_input=True)
-            model = _pick_model("OpenAI", [
-                ("gpt-4o-mini", "Cheapest, recommended"),
-                ("gpt-4o", "More capable, higher cost"),
-                ("o4-mini", "Reasoning model, highest cost"),
-            ])
+            model = _pick_model(
+                "OpenAI",
+                [
+                    ("gpt-4o-mini", "Cheapest, recommended"),
+                    ("gpt-4o", "More capable, higher cost"),
+                    ("o4-mini", "Reasoning model, highest cost"),
+                ],
+            )
         elif provider_choice == 5:
             provider = "openai-compatible"
             click.echo("\n  Common base URLs:")
@@ -390,16 +427,22 @@ def setup(config_path: str | None, advanced: bool) -> None:
         click.echo("-" * 40)
         click.echo("\nDesktop notifications are enabled by default.")
         setup_ntfy = click.confirm(
-            "Set up phone push notifications via ntfy.sh? (free, no signup)", default=False
+            "Set up phone push notifications via ntfy.sh? (free, no signup)",
+            default=False,
         )
         if setup_ntfy:
             import secrets
+
             suggested_topic = f"physical-mcp-{secrets.token_hex(4)}"
             click.echo("\n  ntfy.sh sends push notifications to your phone.")
-            click.echo("  1. Install the ntfy app (Android: Play Store, iOS: App Store)")
+            click.echo(
+                "  1. Install the ntfy app (Android: Play Store, iOS: App Store)"
+            )
             click.echo("  2. Open it and subscribe to your topic")
             ntfy_topic = click.prompt("  Topic name", default=suggested_topic)
-            click.echo(f"\n  Subscribe to '{ntfy_topic}' in the ntfy app to receive alerts.")
+            click.echo(
+                f"\n  Subscribe to '{ntfy_topic}' in the ntfy app to receive alerts."
+            )
 
     # ── 3. Auto-detect and configure all AI apps ─────────
     click.echo("\nDetecting AI apps...")
@@ -456,12 +499,18 @@ def setup(config_path: str | None, advanced: bool) -> None:
     click.echo(f"Vision API auth token generated: {masked_token}")
 
     if not advanced:
-        click.echo("Run 'physical-mcp setup --advanced' for provider & notification options.")
+        click.echo(
+            "Run 'physical-mcp setup --advanced' for provider & notification options."
+        )
 
     # ── 5. Show results ──────────────────────────────────
     click.echo("\n" + "=" * 40)
     if configured_apps:
-        apps_str = " and ".join(configured_apps) if len(configured_apps) <= 2 else ", ".join(configured_apps)
+        apps_str = (
+            " and ".join(configured_apps)
+            if len(configured_apps) <= 2
+            else ", ".join(configured_apps)
+        )
         click.echo(f"Restart {apps_str} to start using camera features!")
 
     if needs_http:
@@ -469,7 +518,7 @@ def setup(config_path: str | None, advanced: bool) -> None:
         port = config.server.port
         local_url = f"http://{lan_ip or '127.0.0.1'}:{port}/mcp"
 
-        click.echo(f"\nFor phone / LAN apps:")
+        click.echo("\nFor phone / LAN apps:")
         click.echo(f"  {local_url}")
         click.echo("  Include auth token when calling Vision API endpoints:")
         click.echo("    Authorization: Bearer <vision_api.auth_token>")
@@ -478,21 +527,27 @@ def setup(config_path: str | None, advanced: bool) -> None:
             print_qr_code(f"http://{lan_ip}:{port}/mcp")
             click.echo("Scan with your phone to connect.")
 
-        click.echo(f"\nFor ChatGPT (requires HTTPS):")
-        click.echo(f"  Run: physical-mcp tunnel")
-        click.echo(f"  Then paste the HTTPS URL into ChatGPT \u2192 Settings \u2192 Connectors")
+        click.echo("\nFor ChatGPT (requires HTTPS):")
+        click.echo("  Run: physical-mcp tunnel")
+        click.echo(
+            "  Then paste the HTTPS URL into ChatGPT \u2192 Settings \u2192 Connectors"
+        )
 
         click.echo("\nTip: Run 'physical-mcp install' to start the server on login.")
 
     if not configured_apps and not needs_http:
-        click.echo("No AI apps detected. Install Claude Desktop, Cursor, or another MCP client.")
+        click.echo(
+            "No AI apps detected. Install Claude Desktop, Cursor, or another MCP client."
+        )
         click.echo("Then run 'physical-mcp setup' again.")
 
     click.echo("")
 
 
 @main.command()
-@click.option("--port", default=8400, type=int, help="HTTP port for the background server")
+@click.option(
+    "--port", default=8400, type=int, help="HTTP port for the background server"
+)
 def install(port: int) -> None:
     """Run Physical MCP in the background (starts on login)."""
     from .platform import install_autostart, get_lan_ip, print_qr_code
@@ -571,15 +626,21 @@ def tunnel(port: int, provider: str) -> None:
                     break
 
             if not https_url:
-                click.echo("Could not detect Cloudflare public URL from tunnel output.", err=True)
+                click.echo(
+                    "Could not detect Cloudflare public URL from tunnel output.",
+                    err=True,
+                )
                 proc.terminate()
                 return False
 
             click.echo(f"\n  Public URL: {https_url}")
-            click.echo("\nUse this as GPT Action server URL (no /mcp suffix for REST Vision API).")
+            click.echo(
+                "\nUse this as GPT Action server URL (no /mcp suffix for REST Vision API)."
+            )
             click.echo("Press Ctrl+C to stop the tunnel.\n")
 
             from .platform import print_qr_code
+
             print_qr_code(https_url)
 
             while proc.poll() is None:
@@ -602,7 +663,7 @@ def tunnel(port: int, provider: str) -> None:
         except ImportError:
             click.echo("Install ngrok support: pip install 'physical-mcp[tunnel]'")
             click.echo("Or manually: pip install pyngrok")
-            click.echo(f"\nAlternative: install ngrok CLI and run:")
+            click.echo("\nAlternative: install ngrok CLI and run:")
             click.echo(f"  ngrok http {port}")
             return False
 
@@ -610,10 +671,13 @@ def tunnel(port: int, provider: str) -> None:
         public_url = ngrok.connect(port, "http").public_url
         https_url = public_url.replace("http://", "https://")
         click.echo(f"\n  Public URL: {https_url}")
-        click.echo("\nUse this as GPT Action server URL (no /mcp suffix for REST Vision API).")
+        click.echo(
+            "\nUse this as GPT Action server URL (no /mcp suffix for REST Vision API)."
+        )
         click.echo("Press Ctrl+C to stop the tunnel.\n")
 
         from .platform import print_qr_code
+
         print_qr_code(https_url)
 
         try:
@@ -641,7 +705,12 @@ def tunnel(port: int, provider: str) -> None:
 @click.option("--config", "config_path", default=None, help="Config file path")
 def status(config_path: str | None) -> None:
     """Check if Physical MCP is running and show connection info."""
-    from .platform import is_autostart_installed, get_lan_ip, get_platform, print_qr_code
+    from .platform import (
+        is_autostart_installed,
+        get_lan_ip,
+        get_platform,
+        print_qr_code,
+    )
 
     click.echo("Physical MCP Status")
     click.echo("=" * 40)
@@ -652,6 +721,7 @@ def status(config_path: str | None) -> None:
     # Camera check
     try:
         from .camera.usb import USBCamera
+
         detected = USBCamera.enumerate_cameras()
         click.echo(f"Cameras:  {len(detected)} detected")
         for cam in detected:
@@ -677,6 +747,7 @@ def status(config_path: str | None) -> None:
     # Connection info
     try:
         from .config import load_config
+
         config = load_config(config_path)
         if config.server.transport == "streamable-http":
             port = config.server.port
@@ -719,7 +790,9 @@ def cameras(config_path: str | None) -> None:
 
 @main.command()
 @click.option("--camera", "camera_index", default=0, type=int, help="Camera index")
-@click.option("--paste", "-p", is_flag=True, help="Auto-paste into focused app after capture")
+@click.option(
+    "--paste", "-p", is_flag=True, help="Auto-paste into focused app after capture"
+)
 @click.option("--save", "save_path", default=None, help="Also save frame to file")
 def snap(camera_index: int, paste: bool, save_path: str | None) -> None:
     """Snap camera to clipboard. Paste into any AI chat app.
@@ -734,6 +807,7 @@ def snap(camera_index: int, paste: bool, save_path: str | None) -> None:
         click.echo(f"\U0001f4f8 {result}")
         if not paste:
             import sys as _sys
+
             key = "Cmd+V" if _sys.platform == "darwin" else "Ctrl+V"
             click.echo(f"Paste into any chat app with {key}")
     except RuntimeError as e:
@@ -745,8 +819,12 @@ def snap(camera_index: int, paste: bool, save_path: str | None) -> None:
 @click.option("--camera", "camera_index", default=0, type=int, help="Camera index")
 @click.option("--paste", "-p", is_flag=True, help="Auto-paste after each capture")
 @click.option("--interval", default=None, type=float, help="Auto-snap every N seconds")
-@click.option("--on-change", "on_change", is_flag=True, help="Auto-snap when scene changes")
-def watch(camera_index: int, paste: bool, interval: float | None, on_change: bool) -> None:
+@click.option(
+    "--on-change", "on_change", is_flag=True, help="Auto-snap when scene changes"
+)
+def watch(
+    camera_index: int, paste: bool, interval: float | None, on_change: bool
+) -> None:
     """Continuous camera monitoring with auto-snap.
 
     Three modes:
@@ -845,16 +923,14 @@ def watch(camera_index: int, paste: bool, interval: float | None, on_change: boo
     pressed: set = set()
 
     click.echo(f"\U0001f441\ufe0f  Press {hotkey_display} to snap | Ctrl+C to stop")
-    click.echo(
-        f"   Camera: {camera_index} | Paste: {'ON' if paste else 'OFF'}\n"
-    )
+    click.echo(f"   Camera: {camera_index} | Paste: {'ON' if paste else 'OFF'}\n")
 
-    def on_press(key: Any) -> None:
+    def on_press(key: object) -> None:
         pressed.add(key)
         if combo.issubset(pressed):
             do_capture()
 
-    def on_release(key: Any) -> None:
+    def on_release(key: object) -> None:
         pressed.discard(key)
 
     with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
@@ -877,14 +953,22 @@ def doctor(config_path: str | None) -> None:
     # 1. Python version
     ver = sys.version.split()[0]
     ok = sys.version_info >= (3, 10)
-    checks.append(("Python version", ok, f"{ver} {'(>= 3.10)' if ok else '(need >= 3.10)'}"))
+    checks.append(
+        ("Python version", ok, f"{ver} {'(>= 3.10)' if ok else '(need >= 3.10)'}")
+    )
 
     # 2. Camera detection
     try:
         from .camera.usb import USBCamera
+
         detected = USBCamera.enumerate_cameras()
-        checks.append(("Camera detection", len(detected) > 0,
-                        f"{len(detected)} camera(s) found" if detected else "no cameras found"))
+        checks.append(
+            (
+                "Camera detection",
+                len(detected) > 0,
+                f"{len(detected)} camera(s) found" if detected else "no cameras found",
+            )
+        )
     except Exception as e:
         checks.append(("Camera detection", False, str(e)))
 
@@ -893,6 +977,7 @@ def doctor(config_path: str | None) -> None:
     if config_file.exists():
         try:
             from .config import load_config
+
             cfg = load_config(config_path)
             checks.append(("Config file", True, str(config_file)))
         except Exception as e:
@@ -923,14 +1008,22 @@ def doctor(config_path: str | None) -> None:
                 s.bind(("127.0.0.1", port_num))
             checks.append((f"Port {port_num} ({service})", True, "available"))
         except OSError:
-            checks.append((f"Port {port_num} ({service})", False, "in use (server running?)"))
+            checks.append(
+                (f"Port {port_num} ({service})", False, "in use (server running?)")
+            )
 
     # 6. Autostart service
     try:
         from .platform import is_autostart_installed
+
         installed = is_autostart_installed()
-        checks.append(("Background service", installed,
-                        "installed" if installed else "not installed"))
+        checks.append(
+            (
+                "Background service",
+                installed,
+                "installed" if installed else "not installed",
+            )
+        )
     except Exception:
         checks.append(("Background service", False, "unable to check"))
 
@@ -938,12 +1031,20 @@ def doctor(config_path: str | None) -> None:
     if config_file.exists():
         try:
             from .config import load_config
+
             cfg = load_config(config_path)
             if cfg.reasoning.provider:
-                checks.append(("Vision provider", True,
-                                f"{cfg.reasoning.provider} / {cfg.reasoning.model or 'default'}"))
+                checks.append(
+                    (
+                        "Vision provider",
+                        True,
+                        f"{cfg.reasoning.provider} / {cfg.reasoning.model or 'default'}",
+                    )
+                )
             else:
-                checks.append(("Vision provider", True, "client-side (no API key needed)"))
+                checks.append(
+                    ("Vision provider", True, "client-side (no API key needed)")
+                )
         except Exception:
             pass
 
@@ -969,7 +1070,9 @@ def doctor(config_path: str | None) -> None:
     if failed == 0:
         click.echo(click.style("  All checks passed!", fg="green"))
     else:
-        click.echo(click.style("  Some checks failed. See above for details.", fg="red"))
+        click.echo(
+            click.style("  Some checks failed. See above for details.", fg="red")
+        )
     click.echo("")
 
 

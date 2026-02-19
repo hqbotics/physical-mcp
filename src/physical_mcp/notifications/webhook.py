@@ -51,7 +51,9 @@ class WebhookNotifier:
                     logger.info(f"Webhook sent to {target_url}: {resp.status}")
                     return True
                 else:
-                    logger.warning(f"Webhook failed: {target_url} returned {resp.status}")
+                    logger.warning(
+                        f"Webhook failed: {target_url} returned {resp.status}"
+                    )
                     return False
         except Exception as e:
             logger.warning(f"Webhook error: {target_url}: {e}")

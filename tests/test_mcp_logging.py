@@ -81,7 +81,9 @@ class TestMcpLogFormatting:
         session = AsyncMock()
         shared_state = {"_session": None}
 
-        await _send_mcp_log(shared_state, "warning", "fallback", event_type="startup_warning")
+        await _send_mcp_log(
+            shared_state, "warning", "fallback", event_type="startup_warning"
+        )
         assert len(shared_state["_pending_session_logs"]) == 1
 
         shared_state["_session"] = session
@@ -261,7 +263,9 @@ class TestMcpReplayAndFanoutCorrelation:
 
 class TestRuleEvalErrorCorrelation:
     @pytest.mark.asyncio
-    async def test_rule_eval_error_replay_and_event_bus_share_event_id_and_timestamp(self):
+    async def test_rule_eval_error_replay_and_event_bus_share_event_id_and_timestamp(
+        self,
+    ):
         session = AsyncMock()
         event_bus = AsyncMock()
         state = {
@@ -337,8 +341,7 @@ class TestCameraAlertPendingEval:
 
         kwargs = session.send_log_message.await_args.kwargs
         assert kwargs["data"].startswith(
-            "PMCP[CAMERA_ALERT_PENDING_EVAL] | "
-            f"event_id={evt_id} | camera_id=usb:0 |"
+            f"PMCP[CAMERA_ALERT_PENDING_EVAL] | event_id={evt_id} | camera_id=usb:0 |"
         )
         assert state["alert_events"][0]["event_id"] == evt_id
 
@@ -418,9 +421,10 @@ class TestPerceptionLoopProviderErrorCorrelation:
         kwargs = session.send_log_message.await_args.kwargs
         assert f"event_id={replay_evt['event_id']}" in kwargs["data"]
 
-
     @pytest.mark.asyncio
-    async def test_watch_rule_triggered_branch_replay_and_mcp_log_fanout_share_event_id(self):
+    async def test_watch_rule_triggered_branch_replay_and_mcp_log_fanout_share_event_id(
+        self,
+    ):
         frame = MagicMock()
         frame.to_base64.return_value = "fake-b64"
 
@@ -439,12 +443,16 @@ class TestPerceptionLoopProviderErrorCorrelation:
 
         analyzer = MagicMock()
         analyzer.has_provider = True
-        analyzer.analyze_scene = AsyncMock(return_value={
-            "summary": "person near door",
-            "objects": ["person", "door"],
-            "people_count": 1,
-        })
-        analyzer.evaluate_rules = AsyncMock(return_value=[{"rule_id": "r_123", "triggered": True}])
+        analyzer.analyze_scene = AsyncMock(
+            return_value={
+                "summary": "person near door",
+                "objects": ["person", "door"],
+                "people_count": 1,
+            }
+        )
+        analyzer.evaluate_rules = AsyncMock(
+            return_value=[{"rule_id": "r_123", "triggered": True}]
+        )
 
         scene_state = MagicMock()
         rules_engine = MagicMock()
@@ -452,7 +460,9 @@ class TestPerceptionLoopProviderErrorCorrelation:
         rules_engine.get_active_rules.return_value = [active_rule]
         alert = SimpleNamespace(
             rule=SimpleNamespace(id="r_123", name="Front Door Watch"),
-            evaluation=SimpleNamespace(confidence=0.91, reasoning="Person detected at the door"),
+            evaluation=SimpleNamespace(
+                confidence=0.91, reasoning="Person detected at the door"
+            ),
         )
         rules_engine.process_evaluations.return_value = [alert]
 
@@ -509,7 +519,9 @@ class TestPerceptionLoopProviderErrorCorrelation:
         assert f"event_id={replay_evt['event_id']}" in kwargs["data"]
 
     @pytest.mark.asyncio
-    async def test_camera_alert_pending_eval_branch_replay_and_mcp_log_fanout_share_event_id_and_timestamp(self):
+    async def test_camera_alert_pending_eval_branch_replay_and_mcp_log_fanout_share_event_id_and_timestamp(
+        self,
+    ):
         frame = MagicMock()
         frame.to_base64.return_value = "fake-b64"
 
@@ -533,7 +545,9 @@ class TestPerceptionLoopProviderErrorCorrelation:
         scene_state.to_context_string.return_value = "person near door"
         rules_engine = MagicMock()
         active_rule = SimpleNamespace(
-            id="r_123", name="Front Door Watch", condition="person at door",
+            id="r_123",
+            name="Front Door Watch",
+            condition="person at door",
             priority=SimpleNamespace(value="high"),
         )
         rules_engine.get_active_rules.return_value = [active_rule]
@@ -660,7 +674,9 @@ class TestPerceptionLoopProviderErrorCorrelation:
 
 class TestStartupFallbackWarningLifespan:
     @pytest.mark.asyncio
-    async def test_startup_warning_through_server_lifespan_emits_empty_field_event(self):
+    async def test_startup_warning_through_server_lifespan_emits_empty_field_event(
+        self,
+    ):
         """Test startup warning as emitted through full server lifespan path.
 
         Simulates state initialized during app_lifespan with _fallback_warning_pending
@@ -781,7 +797,10 @@ class TestStartupFallbackWarning:
 
         session_kwargs = session.send_log_message.await_args.kwargs
         assert f"event_id={evt['event_id']}" in session_kwargs["data"]
-        assert "restore non-blocking server-side monitoring" in session_kwargs["data"].lower()
+        assert (
+            "restore non-blocking server-side monitoring"
+            in session_kwargs["data"].lower()
+        )
 
     @pytest.mark.asyncio
     async def test_startup_and_runtime_switch_messages_are_distinct(self):
@@ -796,7 +815,9 @@ class TestStartupFallbackWarning:
         }
 
         emitted_startup = await _emit_startup_fallback_warning(startup_state)
-        emitted_runtime = await _emit_fallback_mode_warning(runtime_state, reason="runtime_switch")
+        emitted_runtime = await _emit_fallback_mode_warning(
+            runtime_state, reason="runtime_switch"
+        )
 
         assert emitted_startup is True
         assert emitted_runtime is True
@@ -832,30 +853,66 @@ class TestStartupFallbackWarning:
         assert payload["event_type"] == "startup_warning"
         assert payload["event_id"] == evt["event_id"]
         assert payload["timestamp"] == evt["timestamp"]
-        assert payload["message"].startswith("Server is running in fallback client-side reasoning mode")
-        assert payload["message"].lower().startswith("server is running in fallback client-side reasoning mode")
-        assert payload["message"].lower().split(".")[0] == "server is running in fallback client-side reasoning mode"
+        assert payload["message"].startswith(
+            "Server is running in fallback client-side reasoning mode"
+        )
+        assert (
+            payload["message"]
+            .lower()
+            .startswith("server is running in fallback client-side reasoning mode")
+        )
+        assert (
+            payload["message"].lower().split(".")[0]
+            == "server is running in fallback client-side reasoning mode"
+        )
         assert payload["data"].lower().startswith("pmcp[startup_warning] | event_id=")
         assert "server is running in fallback" in payload["message"].lower()
-        assert "server is running in fallback client-side reasoning mode" in payload["message"].lower()
-        assert "server is running in fallback client-side reasoning mode" in payload["data"].lower()
-        assert payload["data"].lower().split("|", 2)[2].strip().startswith(
+        assert (
             "server is running in fallback client-side reasoning mode"
+            in payload["message"].lower()
+        )
+        assert (
+            "server is running in fallback client-side reasoning mode"
+            in payload["data"].lower()
+        )
+        assert (
+            payload["data"]
+            .lower()
+            .split("|", 2)[2]
+            .strip()
+            .startswith("server is running in fallback client-side reasoning mode")
         )
         assert "runtime switched to fallback" not in payload["message"].lower()
-        assert "runtime switched to fallback client-side reasoning mode" not in payload["message"].lower()
+        assert (
+            "runtime switched to fallback client-side reasoning mode"
+            not in payload["message"].lower()
+        )
 
         session_kwargs = session.send_log_message.await_args.kwargs
         assert f"event_id={evt['event_id']}" in session_kwargs["data"]
-        assert session_kwargs["data"].lower().startswith("pmcp[startup_warning] | event_id=")
-        assert "server is running in fallback client-side reasoning mode" in session_kwargs["data"].lower()
-        assert session_kwargs["data"].lower().split("|", 2)[2].strip().startswith(
-            "server is running in fallback client-side reasoning mode"
+        assert (
+            session_kwargs["data"]
+            .lower()
+            .startswith("pmcp[startup_warning] | event_id=")
         )
-        assert session_kwargs["data"].lower().split("|", 2)[2].strip().split(".")[0] == (
+        assert (
             "server is running in fallback client-side reasoning mode"
+            in session_kwargs["data"].lower()
         )
-        assert "runtime switched to fallback client-side reasoning mode" not in session_kwargs["data"].lower()
+        assert (
+            session_kwargs["data"]
+            .lower()
+            .split("|", 2)[2]
+            .strip()
+            .startswith("server is running in fallback client-side reasoning mode")
+        )
+        assert session_kwargs["data"].lower().split("|", 2)[2].strip().split(".")[
+            0
+        ] == ("server is running in fallback client-side reasoning mode")
+        assert (
+            "runtime switched to fallback client-side reasoning mode"
+            not in session_kwargs["data"].lower()
+        )
         assert payload["data"] == session_kwargs["data"]
 
     @pytest.mark.asyncio
@@ -882,7 +939,9 @@ class TestStartupFallbackWarning:
         assert payload["logger"] == "physical-mcp"
 
     @pytest.mark.asyncio
-    async def test_without_session_records_event_and_buffers_log_for_later_session(self):
+    async def test_without_session_records_event_and_buffers_log_for_later_session(
+        self,
+    ):
         state = {
             "_fallback_warning_pending": True,
             "alert_events": [],
@@ -934,11 +993,13 @@ class TestGetCameraHealthContract:
         get_camera_health_fn = tool.fn
 
         closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
-        closure_state.update({
-            "camera_health": {
-                "usb:0": "bad-row",
+        closure_state.update(
+            {
+                "camera_health": {
+                    "usb:0": "bad-row",
+                }
             }
-        })
+        )
 
         result = await get_camera_health_fn(camera_id="usb:0")
         health = result["health"]
@@ -957,11 +1018,13 @@ class TestGetCameraHealthContract:
         get_camera_health_fn = tool.fn
 
         closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
-        closure_state.update({
-            "camera_health": {
-                "usb:0": "malformed",
+        closure_state.update(
+            {
+                "camera_health": {
+                    "usb:0": "malformed",
+                }
             }
-        })
+        )
 
         result = await get_camera_health_fn(camera_id="usb:0")
         health = result["health"]
@@ -978,17 +1041,21 @@ class TestGetCameraHealthContract:
         assert required.issubset(set(health.keys()))
 
     @pytest.mark.asyncio
-    async def test_get_camera_health_single_malformed_row_nullable_fields_stay_none(self):
+    async def test_get_camera_health_single_malformed_row_nullable_fields_stay_none(
+        self,
+    ):
         mcp = create_server(PhysicalMCPConfig())
         tool = mcp._tool_manager._tools["get_camera_health"]
         get_camera_health_fn = tool.fn
 
         closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
-        closure_state.update({
-            "camera_health": {
-                "usb:0": "malformed",
+        closure_state.update(
+            {
+                "camera_health": {
+                    "usb:0": "malformed",
+                }
             }
-        })
+        )
 
         result = await get_camera_health_fn(camera_id="usb:0")
         health = result["health"]
@@ -1020,14 +1087,16 @@ class TestGetCameraHealthContract:
         get_camera_health_fn = tool.fn
 
         closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
-        closure_state.update({
-            "camera_health": {
-                "usb:0": {
-                    "status": "degraded",
-                    "last_error": "provider timeout",
+        closure_state.update(
+            {
+                "camera_health": {
+                    "usb:0": {
+                        "status": "degraded",
+                        "last_error": "provider timeout",
+                    }
                 }
             }
-        })
+        )
 
         result = await get_camera_health_fn()
         health = result["cameras"]["usb:0"]
@@ -1046,15 +1115,17 @@ class TestGetCameraHealthContract:
         get_camera_health_fn = tool.fn
 
         closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
-        closure_state.update({
-            "camera_health": {
-                "usb:0": {
-                    "camera_id": "usb:0",
-                    "camera_name": "",
-                    "status": "running",
+        closure_state.update(
+            {
+                "camera_health": {
+                    "usb:0": {
+                        "camera_id": "usb:0",
+                        "camera_name": "",
+                        "status": "running",
+                    }
                 }
             }
-        })
+        )
 
         result = await get_camera_health_fn()
         health = result["cameras"]["usb:0"]
@@ -1069,15 +1140,17 @@ class TestGetCameraHealthContract:
         get_camera_health_fn = tool.fn
 
         closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
-        closure_state.update({
-            "camera_health": {
-                "usb:0": {
-                    "camera_id": "",
-                    "camera_name": "Office",
-                    "status": "running",
+        closure_state.update(
+            {
+                "camera_health": {
+                    "usb:0": {
+                        "camera_id": "",
+                        "camera_name": "Office",
+                        "status": "running",
+                    }
                 }
             }
-        })
+        )
 
         result = await get_camera_health_fn()
         health = result["cameras"]["usb:0"]
@@ -1092,11 +1165,13 @@ class TestGetCameraHealthContract:
         get_camera_health_fn = tool.fn
 
         closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
-        closure_state.update({
-            "camera_health": {
-                "usb:0": ["bad", "row"],
+        closure_state.update(
+            {
+                "camera_health": {
+                    "usb:0": ["bad", "row"],
+                }
             }
-        })
+        )
 
         result = await get_camera_health_fn()
         health = result["cameras"]["usb:0"]
@@ -1114,26 +1189,28 @@ class TestGetCameraHealthContract:
         get_camera_health_fn = tool.fn
 
         closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
-        closure_state.update({
-            "camera_health": {
-                "usb:0": {
-                    "camera_id": "",
-                    "camera_name": "",
-                    "status": "running",
-                },
-                "usb:1": "malformed",
-                "usb:2": {
-                    "camera_id": "usb:2",
-                    "camera_name": "Lab",
-                    "consecutive_errors": 2,
-                    "backoff_until": "2026-02-18T02:35:00",
-                    "last_success_at": None,
-                    "last_error": "timeout",
-                    "last_frame_at": None,
-                    "status": "degraded",
-                },
+        closure_state.update(
+            {
+                "camera_health": {
+                    "usb:0": {
+                        "camera_id": "",
+                        "camera_name": "",
+                        "status": "running",
+                    },
+                    "usb:1": "malformed",
+                    "usb:2": {
+                        "camera_id": "usb:2",
+                        "camera_name": "Lab",
+                        "consecutive_errors": 2,
+                        "backoff_until": "2026-02-18T02:35:00",
+                        "last_success_at": None,
+                        "last_error": "timeout",
+                        "last_frame_at": None,
+                        "status": "degraded",
+                    },
+                }
             }
-        })
+        )
 
         result = await get_camera_health_fn()
         required = {
@@ -1185,7 +1262,9 @@ class TestGetCameraHealthContract:
             api_result = await resp.json()
 
         for cid in mixed:
-            assert set(mcp_result["cameras"][cid].keys()) == set(api_result["cameras"][cid].keys())
+            assert set(mcp_result["cameras"][cid].keys()) == set(
+                api_result["cameras"][cid].keys()
+            )
 
     @pytest.mark.asyncio
     async def test_health_nullable_fields_match_between_mcp_tool_and_vision_api(self):
@@ -1229,7 +1308,9 @@ class TestGetCameraHealthContract:
                 assert mcp_health[field] == api_health[field]
 
     @pytest.mark.asyncio
-    async def test_health_message_field_difference_is_consistent_across_mixed_rows(self):
+    async def test_health_message_field_difference_is_consistent_across_mixed_rows(
+        self,
+    ):
         mixed = {
             "usb:0": {
                 "camera_id": "",
@@ -1264,13 +1345,18 @@ class TestGetCameraHealthContract:
             api_result = await resp.json()
 
         for cid in mixed:
-            assert mcp_result["cameras"][cid]["message"] == "No health data yet. Start monitoring first."
+            assert (
+                mcp_result["cameras"][cid]["message"]
+                == "No health data yet. Start monitoring first."
+            )
             assert api_result["cameras"][cid]["message"] == "No health data yet."
 
 
 class TestConfigureProviderContract:
     @pytest.mark.asyncio
-    async def test_runtime_downgrade_emits_warning_and_sets_contract_flag(self, monkeypatch):
+    async def test_runtime_downgrade_emits_warning_and_sets_contract_flag(
+        self, monkeypatch
+    ):
         cfg = PhysicalMCPConfig()
         analyzer = MagicMock()
         analyzer.has_provider = True
@@ -1282,7 +1368,9 @@ class TestConfigureProviderContract:
         }
 
         emit_mock = AsyncMock(return_value=True)
-        monkeypatch.setattr("physical_mcp.server._emit_fallback_mode_warning", emit_mock)
+        monkeypatch.setattr(
+            "physical_mcp.server._emit_fallback_mode_warning", emit_mock
+        )
         monkeypatch.setattr("physical_mcp.server._create_provider", lambda _cfg: None)
 
         result = await _apply_provider_configuration(
@@ -1313,8 +1401,12 @@ class TestConfigureProviderContract:
 
         provider_obj = SimpleNamespace(model_name="gpt-4o-mini")
         emit_mock = AsyncMock(return_value=True)
-        monkeypatch.setattr("physical_mcp.server._emit_fallback_mode_warning", emit_mock)
-        monkeypatch.setattr("physical_mcp.server._create_provider", lambda _cfg: provider_obj)
+        monkeypatch.setattr(
+            "physical_mcp.server._emit_fallback_mode_warning", emit_mock
+        )
+        monkeypatch.setattr(
+            "physical_mcp.server._create_provider", lambda _cfg: provider_obj
+        )
 
         result = await _apply_provider_configuration(
             state,
@@ -1333,7 +1425,9 @@ class TestConfigureProviderContract:
         emit_mock.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_startup_warning_once_then_runtime_switch_warning_can_emit(self, monkeypatch):
+    async def test_startup_warning_once_then_runtime_switch_warning_can_emit(
+        self, monkeypatch
+    ):
         # Startup warning is one-shot
         startup_state = {
             "_fallback_warning_pending": True,
@@ -1357,7 +1451,9 @@ class TestConfigureProviderContract:
         }
 
         emit_mock = AsyncMock(return_value=True)
-        monkeypatch.setattr("physical_mcp.server._emit_fallback_mode_warning", emit_mock)
+        monkeypatch.setattr(
+            "physical_mcp.server._emit_fallback_mode_warning", emit_mock
+        )
         monkeypatch.setattr("physical_mcp.server._create_provider", lambda _cfg: None)
 
         result = await _apply_provider_configuration(
@@ -1371,7 +1467,9 @@ class TestConfigureProviderContract:
         emit_mock.assert_awaited_once_with(runtime_state, reason="runtime_switch")
 
     @pytest.mark.asyncio
-    async def test_configure_provider_tool_fn_returns_reason_contract(self, monkeypatch):
+    async def test_configure_provider_tool_fn_returns_reason_contract(
+        self, monkeypatch
+    ):
         mcp = create_server(PhysicalMCPConfig())
         tool = mcp._tool_manager._tools["configure_provider"]
         configure_provider_fn = tool.fn
@@ -1379,14 +1477,18 @@ class TestConfigureProviderContract:
         closure_state = inspect.getclosurevars(configure_provider_fn).nonlocals["state"]
         analyzer = MagicMock()
         analyzer.has_provider = True
-        closure_state.update({
-            "config": PhysicalMCPConfig(),
-            "analyzer": analyzer,
-            "_fallback_warning_pending": False,
-        })
+        closure_state.update(
+            {
+                "config": PhysicalMCPConfig(),
+                "analyzer": analyzer,
+                "_fallback_warning_pending": False,
+            }
+        )
 
         emit_mock = AsyncMock(return_value=True)
-        monkeypatch.setattr("physical_mcp.server._emit_fallback_mode_warning", emit_mock)
+        monkeypatch.setattr(
+            "physical_mcp.server._emit_fallback_mode_warning", emit_mock
+        )
         monkeypatch.setattr("physical_mcp.server._create_provider", lambda _cfg: None)
 
         result = await configure_provider_fn(provider="", api_key="")
@@ -1397,7 +1499,9 @@ class TestConfigureProviderContract:
         emit_mock.assert_awaited_once_with(closure_state, reason="runtime_switch")
 
     @pytest.mark.asyncio
-    async def test_configure_provider_tool_fn_runtime_switch_records_startup_warning_message(self, monkeypatch):
+    async def test_configure_provider_tool_fn_runtime_switch_records_startup_warning_message(
+        self, monkeypatch
+    ):
         mcp = create_server(PhysicalMCPConfig())
         tool = mcp._tool_manager._tools["configure_provider"]
         configure_provider_fn = tool.fn
@@ -1407,15 +1511,17 @@ class TestConfigureProviderContract:
         analyzer.has_provider = True
         session = AsyncMock()
         event_bus = AsyncMock()
-        closure_state.update({
-            "config": PhysicalMCPConfig(),
-            "analyzer": analyzer,
-            "_fallback_warning_pending": False,
-            "_session": session,
-            "event_bus": event_bus,
-            "alert_events": [],
-            "alert_events_max": 50,
-        })
+        closure_state.update(
+            {
+                "config": PhysicalMCPConfig(),
+                "analyzer": analyzer,
+                "_fallback_warning_pending": False,
+                "_session": session,
+                "event_bus": event_bus,
+                "alert_events": [],
+                "alert_events_max": 50,
+            }
+        )
 
         monkeypatch.setattr("physical_mcp.server._create_provider", lambda _cfg: None)
 
@@ -1434,29 +1540,63 @@ class TestConfigureProviderContract:
         assert topic == "mcp_log"
         assert payload["event_id"] == evt["event_id"]
         assert payload["timestamp"] == evt["timestamp"]
-        assert payload["message"].startswith("Runtime switched to fallback client-side reasoning mode")
-        assert payload["message"].lower().startswith("runtime switched to fallback client-side reasoning mode")
-        assert payload["message"].lower().split(".")[0] == "runtime switched to fallback client-side reasoning mode"
-        assert "runtime switched to fallback client-side reasoning mode" in payload["message"].lower()
-        assert payload["data"].lower().startswith("pmcp[startup_warning] | event_id=")
-        assert "runtime switched to fallback client-side reasoning mode" in payload["data"].lower()
-        assert "server is running in fallback" not in payload["message"].lower()
-        assert payload["data"].lower().split("|", 2)[2].strip().startswith(
-            "runtime switched to fallback client-side reasoning mode"
+        assert payload["message"].startswith(
+            "Runtime switched to fallback client-side reasoning mode"
         )
-        assert "server is running in fallback client-side reasoning mode" not in payload["message"].lower()
+        assert (
+            payload["message"]
+            .lower()
+            .startswith("runtime switched to fallback client-side reasoning mode")
+        )
+        assert (
+            payload["message"].lower().split(".")[0]
+            == "runtime switched to fallback client-side reasoning mode"
+        )
+        assert (
+            "runtime switched to fallback client-side reasoning mode"
+            in payload["message"].lower()
+        )
+        assert payload["data"].lower().startswith("pmcp[startup_warning] | event_id=")
+        assert (
+            "runtime switched to fallback client-side reasoning mode"
+            in payload["data"].lower()
+        )
+        assert "server is running in fallback" not in payload["message"].lower()
+        assert (
+            payload["data"]
+            .lower()
+            .split("|", 2)[2]
+            .strip()
+            .startswith("runtime switched to fallback client-side reasoning mode")
+        )
+        assert (
+            "server is running in fallback client-side reasoning mode"
+            not in payload["message"].lower()
+        )
 
         session_kwargs = session.send_log_message.await_args.kwargs
         assert f"event_id={evt['event_id']}" in session_kwargs["data"]
-        assert "runtime switched to fallback client-side reasoning mode" in session_kwargs["data"].lower()
-        assert session_kwargs["data"].lower().startswith("pmcp[startup_warning] | event_id=")
-        assert session_kwargs["data"].lower().split("|", 2)[2].strip().split(".")[0] == (
+        assert (
             "runtime switched to fallback client-side reasoning mode"
+            in session_kwargs["data"].lower()
         )
-        assert "server is running in fallback client-side reasoning mode" not in session_kwargs["data"].lower()
+        assert (
+            session_kwargs["data"]
+            .lower()
+            .startswith("pmcp[startup_warning] | event_id=")
+        )
+        assert session_kwargs["data"].lower().split("|", 2)[2].strip().split(".")[
+            0
+        ] == ("runtime switched to fallback client-side reasoning mode")
+        assert (
+            "server is running in fallback client-side reasoning mode"
+            not in session_kwargs["data"].lower()
+        )
 
     @pytest.mark.asyncio
-    async def test_configure_provider_tool_fn_upgrade_has_empty_reason(self, monkeypatch):
+    async def test_configure_provider_tool_fn_upgrade_has_empty_reason(
+        self, monkeypatch
+    ):
         mcp = create_server(PhysicalMCPConfig())
         tool = mcp._tool_manager._tools["configure_provider"]
         configure_provider_fn = tool.fn
@@ -1464,16 +1604,22 @@ class TestConfigureProviderContract:
         closure_state = inspect.getclosurevars(configure_provider_fn).nonlocals["state"]
         analyzer = MagicMock()
         analyzer.has_provider = False
-        closure_state.update({
-            "config": PhysicalMCPConfig(),
-            "analyzer": analyzer,
-            "_fallback_warning_pending": True,
-        })
+        closure_state.update(
+            {
+                "config": PhysicalMCPConfig(),
+                "analyzer": analyzer,
+                "_fallback_warning_pending": True,
+            }
+        )
 
         provider_obj = SimpleNamespace(model_name="gpt-4o-mini")
         emit_mock = AsyncMock(return_value=True)
-        monkeypatch.setattr("physical_mcp.server._emit_fallback_mode_warning", emit_mock)
-        monkeypatch.setattr("physical_mcp.server._create_provider", lambda _cfg: provider_obj)
+        monkeypatch.setattr(
+            "physical_mcp.server._emit_fallback_mode_warning", emit_mock
+        )
+        monkeypatch.setattr(
+            "physical_mcp.server._create_provider", lambda _cfg: provider_obj
+        )
 
         result = await configure_provider_fn(
             provider="openai",
@@ -1491,7 +1637,9 @@ class TestConfigureProviderContract:
         emit_mock.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_runtime_downgrade_reason_contract_preserves_event_id_parity(self, monkeypatch):
+    async def test_runtime_downgrade_reason_contract_preserves_event_id_parity(
+        self, monkeypatch
+    ):
         cfg = PhysicalMCPConfig()
         analyzer = MagicMock()
         analyzer.has_provider = True

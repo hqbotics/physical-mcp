@@ -37,7 +37,9 @@ class SamplingConfig(BaseModel):
 class PerceptionConfig(BaseModel):
     buffer_size: int = 300
     capture_fps: int = 2
-    change_detection: ChangeDetectionConfig = Field(default_factory=ChangeDetectionConfig)
+    change_detection: ChangeDetectionConfig = Field(
+        default_factory=ChangeDetectionConfig
+    )
     sampling: SamplingConfig = Field(default_factory=SamplingConfig)
 
 
@@ -90,9 +92,11 @@ class PhysicalMCPConfig(BaseModel):
 
 def _interpolate_env_vars(text: str) -> str:
     """Replace ${VAR_NAME} with environment variable values."""
+
     def replacer(match: re.Match) -> str:
         var_name = match.group(1)
         return os.environ.get(var_name, "")
+
     return re.sub(r"\$\{(\w+)\}", replacer, text)
 
 

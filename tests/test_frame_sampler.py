@@ -1,9 +1,8 @@
 """Tests for the frame sampler cost-control logic."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import numpy as np
-import pytest
 
 from physical_mcp.camera.base import Frame
 from physical_mcp.perception.change_detector import ChangeDetector, ChangeLevel

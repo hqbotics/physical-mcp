@@ -31,8 +31,11 @@ class StatsTracker:
         now = datetime.now()
         self._hour_analyses.append(now)
         # Prune entries older than 1 hour
-        cutoff = datetime(now.year, now.month, now.day, now.hour, now.minute, now.second)
+        cutoff = datetime(
+            now.year, now.month, now.day, now.hour, now.minute, now.second
+        )
         from datetime import timedelta
+
         cutoff = now - timedelta(hours=1)
         self._hour_analyses = [t for t in self._hour_analyses if t >= cutoff]
 

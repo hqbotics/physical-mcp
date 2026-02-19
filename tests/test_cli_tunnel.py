@@ -12,11 +12,13 @@ from physical_mcp.__main__ import main
 
 class _FakeCloudflaredProc:
     def __init__(self):
-        self.stdout = iter([
-            "INF Initializing tunnel\n",
-            "INF +--------------------------------------------------------------------------------------------+\n",
-            "INF |  https://demo-123.trycloudflare.com                                                     |\n",
-        ])
+        self.stdout = iter(
+            [
+                "INF Initializing tunnel\n",
+                "INF +--------------------------------------------------------------------------------------------+\n",
+                "INF |  https://demo-123.trycloudflare.com                                                     |\n",
+            ]
+        )
         self._poll_calls = 0
 
     def poll(self):
@@ -38,8 +40,13 @@ class TestTunnelCommand:
     def test_auto_prefers_cloudflare_when_available(self, monkeypatch):
         runner = CliRunner()
 
-        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/cloudflared" if name == "cloudflared" else None)
-        monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: _FakeCloudflaredProc())
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "/usr/bin/cloudflared" if name == "cloudflared" else None,
+        )
+        monkeypatch.setattr(
+            "subprocess.Popen", lambda *args, **kwargs: _FakeCloudflaredProc()
+        )
 
         qr = MagicMock()
         monkeypatch.setattr("physical_mcp.platform.print_qr_code", qr)
@@ -58,15 +65,23 @@ class TestTunnelCommand:
         monkeypatch.setattr("shutil.which", lambda name: None)
 
         fake_ngrok = types.SimpleNamespace()
-        fake_ngrok.connect = lambda port, proto: types.SimpleNamespace(public_url="http://ngrok.test")
+        fake_ngrok.connect = lambda port, proto: types.SimpleNamespace(
+            public_url="http://ngrok.test"
+        )
         fake_ngrok.kill = MagicMock()
-        monkeypatch.setitem(__import__("sys").modules, "pyngrok", types.SimpleNamespace(ngrok=fake_ngrok))
+        monkeypatch.setitem(
+            __import__("sys").modules,
+            "pyngrok",
+            types.SimpleNamespace(ngrok=fake_ngrok),
+        )
 
         qr = MagicMock()
         monkeypatch.setattr("physical_mcp.platform.print_qr_code", qr)
 
         # stop ngrok keepalive loop immediately
-        monkeypatch.setattr("time.sleep", lambda _: (_ for _ in ()).throw(KeyboardInterrupt()))
+        monkeypatch.setattr(
+            "time.sleep", lambda _: (_ for _ in ()).throw(KeyboardInterrupt())
+        )
 
         result = runner.invoke(main, ["tunnel", "--provider", "auto", "--port", "8090"])
 

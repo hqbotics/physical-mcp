@@ -71,7 +71,9 @@ class SceneState:
             "summary": self.summary,
             "objects_present": self.objects_present,
             "people_count": self.people_count,
-            "last_updated": self.last_updated.isoformat() if self.last_updated else None,
+            "last_updated": self.last_updated.isoformat()
+            if self.last_updated
+            else None,
             "last_change": self.last_change_description,
             "update_count": self.update_count,
         }

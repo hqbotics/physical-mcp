@@ -28,6 +28,4 @@ def create_camera(config: CameraConfig) -> CameraSource:
             width=config.width,
             height=config.height,
         )
-    raise ValueError(
-        f"Unknown camera type: {config.type!r}. Supported: usb"
-    )
+    raise ValueError(f"Unknown camera type: {config.type!r}. Supported: usb")

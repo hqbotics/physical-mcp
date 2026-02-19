@@ -1,7 +1,5 @@
 """Tests for the markdown-based persistent memory system."""
 
-import pytest
-
 from physical_mcp.memory import MemoryStore
 
 

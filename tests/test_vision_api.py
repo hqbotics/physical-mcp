@@ -365,12 +365,7 @@ class TestSSEEvents:
     async def test_events_returns_sse(self, state_with_data):
         """Events endpoint returns text/event-stream with scene data."""
 
-        iteration = 0
-
         # We need to make the SSE loop terminate after sending initial data
-        original_scenes = state_with_data["scene_states"]
-        original_get = dict.get
-
         app = create_vision_routes(state_with_data)
         async with TestClient(TestServer(app)) as client:
             # Read with a short timeout — SSE is infinite

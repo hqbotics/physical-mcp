@@ -27,9 +27,7 @@ class NotificationDispatcher:
         self._config = config
         self._webhook = WebhookNotifier(config.webhook_url)
         self._desktop = (
-            DesktopNotifier(min_interval=10.0)
-            if config.desktop_enabled
-            else None
+            DesktopNotifier(min_interval=10.0) if config.desktop_enabled else None
         )
         self._ntfy = NtfyNotifier(
             default_topic=config.ntfy_topic,
@@ -49,13 +47,13 @@ class NotificationDispatcher:
                 await self._webhook.notify(alert, url)
         elif target.type == "desktop":
             if self._desktop:
-                title = (
-                    f"[{alert.rule.priority.value.upper()}] {alert.rule.name}"
-                )
+                title = f"[{alert.rule.priority.value.upper()}] {alert.rule.name}"
                 body = alert.evaluation.reasoning
                 self._desktop.notify(title, body)
             else:
-                logger.warning("Desktop notification requested but desktop_enabled=False")
+                logger.warning(
+                    "Desktop notification requested but desktop_enabled=False"
+                )
         elif target.type == "ntfy":
             topic = target.channel or self._config.ntfy_topic
             await self._ntfy.notify(alert, topic)
@@ -75,7 +73,10 @@ class NotificationDispatcher:
         if not topic:
             return False
         return await self._ntfy.notify_scene_change(
-            topic, change_level, rule_names, frame_base64=frame_base64,
+            topic,
+            change_level,
+            rule_names,
+            frame_base64=frame_base64,
         )
 
     def notify_desktop(self, title: str, body: str) -> bool:

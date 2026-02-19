@@ -26,14 +26,9 @@ Each stress test documents:
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
-import os
-import tempfile
 import threading
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -54,6 +49,7 @@ from physical_mcp.rules.models import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_rule(rule_id: str = "r_1", cooldown: int = 0) -> WatchRule:
     """Create a test WatchRule with zero cooldown by default."""
     return WatchRule(
@@ -66,7 +62,9 @@ def _make_rule(rule_id: str = "r_1", cooldown: int = 0) -> WatchRule:
     )
 
 
-def _make_eval(rule_id: str = "r_1", triggered: bool = True, confidence: float = 0.9) -> RuleEvaluation:
+def _make_eval(
+    rule_id: str = "r_1", triggered: bool = True, confidence: float = 0.9
+) -> RuleEvaluation:
     return RuleEvaluation(
         rule_id=rule_id, triggered=triggered, confidence=confidence, reasoning="bench"
     )
@@ -80,7 +78,9 @@ def _make_alert(alert_id: str = "pa_1", ttl: int = 300) -> PendingAlert:
         change_description="bench change",
         frame_base64="dGVzdA==",
         scene_context="bench scene",
-        active_rules=[{"id": "r_1", "name": "Rule", "condition": "c", "priority": "medium"}],
+        active_rules=[
+            {"id": "r_1", "name": "Rule", "condition": "c", "priority": "medium"}
+        ],
         expires_at=datetime.now() + timedelta(seconds=ttl),
     )
 
@@ -88,6 +88,7 @@ def _make_alert(alert_id: str = "pa_1", ttl: int = 300) -> PendingAlert:
 # ===========================================================================
 # B1 — RulesEngine Concurrent Access
 # ===========================================================================
+
 
 class TestB1_RulesEngine_Concurrency:
     """RulesEngine._rules dict is currently unprotected.
@@ -169,9 +170,7 @@ class TestB1_RulesEngine_Concurrency:
         all_alerts = []
 
         async def evaluate(i: int):
-            alerts = engine.process_evaluations(
-                [_make_eval("r_1")], scene
-            )
+            alerts = engine.process_evaluations([_make_eval("r_1")], scene)
             all_alerts.extend(alerts)
 
         await asyncio.gather(*(evaluate(i) for i in range(N)))
@@ -212,6 +211,7 @@ class TestB1_RulesEngine_Concurrency:
 # ===========================================================================
 # B2 — SceneState Concurrent Updates
 # ===========================================================================
+
 
 class TestB2_SceneState_Concurrency:
     """SceneState fields are currently unprotected.
@@ -292,6 +292,7 @@ class TestB2_SceneState_Concurrency:
 # B3 — MemoryStore Concurrent File Operations
 # ===========================================================================
 
+
 class TestB3_MemoryStore_Concurrency:
     """MemoryStore._parse() + _write() is a read-modify-write cycle
     with NO file locking. Concurrent writes will clobber each other.
@@ -334,6 +335,7 @@ class TestB3_MemoryStore_Concurrency:
     @pytest.mark.asyncio
     async def test_b3_03_concurrent_rule_context(self, tmp_memory):
         """Concurrent set + remove of rule contexts."""
+
         async def set_ctx(i: int):
             tmp_memory.set_rule_context(f"rule_{i}", f"context for {i}")
 
@@ -344,7 +346,9 @@ class TestB3_MemoryStore_Concurrency:
         await asyncio.gather(*(set_ctx(i) for i in range(20)))
 
         # Remove first 10 while setting 10 more
-        tasks = [remove_ctx(i) for i in range(10)] + [set_ctx(i + 20) for i in range(10)]
+        tasks = [remove_ctx(i) for i in range(10)] + [
+            set_ctx(i + 20) for i in range(10)
+        ]
         await asyncio.gather(*tasks)
 
         content = tmp_memory.read_all()
@@ -370,7 +374,9 @@ class TestB3_MemoryStore_Concurrency:
                     content = tmp_memory.read_all()
                     # Should always be valid markdown (starts with # or empty)
                     if content:
-                        assert content.startswith("# "), f"Corrupt header: {content[:50]}"
+                        assert content.startswith("# "), (
+                            f"Corrupt header: {content[:50]}"
+                        )
                 except Exception as e:
                     errors.append(str(e))
                 await asyncio.sleep(0)
@@ -382,6 +388,7 @@ class TestB3_MemoryStore_Concurrency:
 # ===========================================================================
 # B3T — MemoryStore THREAD-based Tests (real race conditions)
 # ===========================================================================
+
 
 class TestB3T_MemoryStore_ThreadSafety:
     """MemoryStore file operations from multiple THREADS.
@@ -508,7 +515,9 @@ class TestB3T_MemoryStore_ThreadSafety:
         # 2 threads * 5 rules = 10 rule contexts
         for t in [2, 3]:
             for i in range(5):
-                assert f"rule_t{t}_{i}" in content, f"Rule context rule_t{t}_{i} missing!"
+                assert f"rule_t{t}_{i}" in content, (
+                    f"Rule context rule_t{t}_{i} missing!"
+                )
         # 2 threads * 5 prefs = 10 preferences
         for t in [4, 5]:
             for i in range(5):
@@ -540,10 +549,9 @@ class TestB3T_MemoryStore_ThreadSafety:
                 if content and not content.startswith("# Physical MCP Memory"):
                     corrupt_reads.append(content[:100])
 
-        threads = (
-            [threading.Thread(target=writer, args=(w,)) for w in range(N_WRITERS)]
-            + [threading.Thread(target=reader) for _ in range(N_READERS)]
-        )
+        threads = [
+            threading.Thread(target=writer, args=(w,)) for w in range(N_WRITERS)
+        ] + [threading.Thread(target=reader) for _ in range(N_READERS)]
         for t in threads:
             t.start()
         for t in threads:
@@ -558,6 +566,7 @@ class TestB3T_MemoryStore_ThreadSafety:
 # ===========================================================================
 # B4 — AlertQueue Multi-Subscriber (already has asyncio.Lock)
 # ===========================================================================
+
 
 class TestB4_AlertQueue_MultiSubscriber:
     """AlertQueue already uses asyncio.Lock. These benchmarks verify
@@ -629,6 +638,7 @@ class TestB4_AlertQueue_MultiSubscriber:
 # ===========================================================================
 # B5 — Event Bus (NEW COMPONENT — does not exist yet)
 # ===========================================================================
+
 
 class TestB5_EventBus:
     """Event Bus for multi-subscriber alert routing.
@@ -791,6 +801,7 @@ class TestB5_EventBus:
 # B6 — End-to-End Multi-Client Simulation
 # ===========================================================================
 
+
 class TestB6_EndToEnd_MultiClient:
     """Simulate multiple AI clients (Claude, ChatGPT, Cursor)
     all hitting the same physical-mcp daemon simultaneously.
@@ -800,7 +811,7 @@ class TestB6_EndToEnd_MultiClient:
     async def test_b6_01_three_clients_add_rules_simultaneously(self):
         """3 clients each add 5 rules — all 15 should persist."""
         engine = RulesEngine()
-        scene = SceneState()
+        SceneState()  # ensure importable
 
         async def client(name: str, start: int):
             for i in range(5):
@@ -888,7 +899,9 @@ class TestB6_EndToEnd_MultiClient:
             + all_consumed["cursor"]
             + [a.id for a in remaining]
         )
-        assert len(all_ids) == len(set(all_ids)), "Duplicate alert consumption detected!"
+        assert len(all_ids) == len(set(all_ids)), (
+            "Duplicate alert consumption detected!"
+        )
 
     @pytest.mark.asyncio
     async def test_b6_04_memory_concurrent_multi_client(self, tmp_path):
@@ -989,6 +1002,7 @@ class TestB6_EndToEnd_MultiClient:
 # Performance Benchmarks
 # ===========================================================================
 
+
 class TestPerformance:
     """Timing benchmarks — not correctness, just speed gates."""
 
@@ -1043,6 +1057,7 @@ class TestPerformance:
 #   Scale:     N clients x M requests
 #   Threshold: When does it break / what must hold
 # ===========================================================================
+
 
 class TestS_Stress:
     """Stress tests that push the system to realistic and extreme limits.
@@ -1165,8 +1180,7 @@ class TestS_Stress:
                 mem.append_event(f"station_{station_id}_alert_{i}")
 
         threads = [
-            threading.Thread(target=station_logger, args=(s,))
-            for s in range(N_THREADS)
+            threading.Thread(target=station_logger, args=(s,)) for s in range(N_THREADS)
         ]
         for t in threads:
             t.start()
@@ -1247,6 +1261,7 @@ class TestS_Stress:
         def make_handler(sub_id: int):
             async def handler(event: dict):
                 counters[sub_id] += 1
+
             return handler
 
         for s in range(N_SUBS):
@@ -1296,8 +1311,7 @@ class TestS_Stress:
                     mem.set_preference(f"node{node_id}_cfg", f"val_{i}")
 
         threads = [
-            threading.Thread(target=sensor_node, args=(n,))
-            for n in range(N_THREADS)
+            threading.Thread(target=sensor_node, args=(n,)) for n in range(N_THREADS)
         ]
         for t in threads:
             t.start()
@@ -1363,7 +1377,9 @@ class TestS_Stress:
 
                 # 2. Update scene 3 times
                 for i in range(3):
-                    scene.update(f"city_c{cid}_{i}", [f"car_{cid}"], cid % 10, f"traffic_{cid}")
+                    scene.update(
+                        f"city_c{cid}_{i}", [f"car_{cid}"], cid % 10, f"traffic_{cid}"
+                    )
                     await asyncio.sleep(0)
 
                 # 3. Push 2 alerts
@@ -1407,8 +1423,7 @@ class TestS_Stress:
         )
         events = mem.get_recent_events(count=500)
         assert len(events) == N_CLIENTS, (
-            f"City-wide: Expected {N_CLIENTS} memory events, "
-            f"got {len(events)}."
+            f"City-wide: Expected {N_CLIENTS} memory events, got {len(events)}."
         )
 
     # -------------------------------------------------------------------
@@ -1553,8 +1568,7 @@ class TestS_Stress:
         # 1. File must not be corrupt
         content = mem.read_all()
         assert content.startswith("# Physical MCP Memory"), (
-            f"Sustained load: Memory file corrupted! "
-            f"Header: {content[:50]!r}"
+            f"Sustained load: Memory file corrupted! Header: {content[:50]!r}"
         )
 
         # 2. Event count must be exactly MAX_EVENTS (trimmed correctly)

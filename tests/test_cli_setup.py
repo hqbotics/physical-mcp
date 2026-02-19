@@ -11,7 +11,9 @@ from physical_mcp.config import load_config
 
 
 class TestSetupCommand:
-    def test_setup_auto_generates_vision_api_auth_token(self, monkeypatch, tmp_path: Path):
+    def test_setup_auto_generates_vision_api_auth_token(
+        self, monkeypatch, tmp_path: Path
+    ):
         runner = CliRunner()
         config_path = tmp_path / "config.yaml"
 

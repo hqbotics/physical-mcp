@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
 
 from ..camera.base import Frame
 from ..config import PhysicalMCPConfig
@@ -19,11 +18,23 @@ logger = logging.getLogger("physical-mcp")
 def _is_api_error(e: Exception) -> bool:
     """Check if this is a rate-limit, auth, or billing error that should trigger backoff."""
     msg = str(e).lower()
-    return any(keyword in msg for keyword in [
-        "429", "rate", "quota", "resource_exhausted",
-        "401", "403", "unauthorized", "forbidden",
-        "400", "credit", "balance", "billing",
-    ])
+    return any(
+        keyword in msg
+        for keyword in [
+            "429",
+            "rate",
+            "quota",
+            "resource_exhausted",
+            "401",
+            "403",
+            "unauthorized",
+            "forbidden",
+            "400",
+            "credit",
+            "balance",
+            "billing",
+        ]
+    )
 
 
 class FrameAnalyzer:
@@ -105,9 +116,7 @@ class FrameAnalyzer:
 
         try:
             raw = await self._provider.analyze_image_json(image_b64, prompt)
-            return [
-                RuleEvaluation(**ev) for ev in raw.get("evaluations", [])
-            ]
+            return [RuleEvaluation(**ev) for ev in raw.get("evaluations", [])]
         except Exception as e:
             if _is_api_error(e):
                 raise  # Let perception loop handle backoff

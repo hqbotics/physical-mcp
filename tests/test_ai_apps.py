@@ -7,11 +7,9 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from physical_mcp.ai_apps import (
     AIApp,
-    AppStatus,
     KNOWN_APPS,
     _build_mcp_entry,
     _expand_path,
@@ -54,12 +52,16 @@ class TestKnownApps:
     def test_http_apps_have_no_config_paths(self):
         for app in KNOWN_APPS:
             if app.transport == "http":
-                assert app.config_paths == {}, f"{app.name} is HTTP but has config_paths"
+                assert app.config_paths == {}, (
+                    f"{app.name} is HTTP but has config_paths"
+                )
 
     def test_stdio_apps_have_config_paths(self):
         for app in KNOWN_APPS:
             if app.transport == "stdio":
-                assert len(app.config_paths) > 0, f"{app.name} is stdio but has no config_paths"
+                assert len(app.config_paths) > 0, (
+                    f"{app.name} is stdio but has no config_paths"
+                )
 
     def test_trae_in_known_apps(self):
         trae = next((a for a in KNOWN_APPS if a.name == "Trae"), None)
@@ -99,7 +101,8 @@ class TestKnownApps:
 class TestAIApp:
     def test_get_config_path_returns_none_for_unsupported_platform(self):
         app = AIApp(
-            name="Test", transport="stdio",
+            name="Test",
+            transport="stdio",
             config_paths={"darwin": "~/test.json"},
         )
         with patch("physical_mcp.ai_apps.sys") as mock_sys:
@@ -108,7 +111,8 @@ class TestAIApp:
 
     def test_get_config_path_returns_path_for_matching_platform(self):
         app = AIApp(
-            name="Test", transport="stdio",
+            name="Test",
+            transport="stdio",
             config_paths={"darwin": "~/test.json"},
         )
         with patch("physical_mcp.ai_apps.sys") as mock_sys:
@@ -123,7 +127,8 @@ class TestAIApp:
 
     def test_is_configured_returns_false_when_no_config(self):
         app = AIApp(
-            name="Test", transport="stdio",
+            name="Test",
+            transport="stdio",
             config_paths={"darwin": "/nonexistent/path/config.json"},
         )
         assert app.is_configured() is False
@@ -153,7 +158,8 @@ class TestConfigureApp:
     def test_writes_json_to_new_file(self, tmp_path: Path):
         config_path = tmp_path / "claude" / "config.json"
         app = AIApp(
-            name="Test", transport="stdio",
+            name="Test",
+            transport="stdio",
             config_paths={},
             server_key="mcpServers",
         )
@@ -172,7 +178,8 @@ class TestConfigureApp:
         config_path.write_text(json.dumps(existing))
 
         app = AIApp(
-            name="Test", transport="stdio",
+            name="Test",
+            transport="stdio",
             config_paths={},
             server_key="mcpServers",
         )
@@ -188,7 +195,8 @@ class TestConfigureApp:
         config_path.write_text('{"existing": true}')
 
         app = AIApp(
-            name="Test", transport="stdio",
+            name="Test",
+            transport="stdio",
             config_paths={},
             server_key="mcpServers",
         )
@@ -209,7 +217,8 @@ class TestConfigureApp:
         config_path.write_text(json.dumps(existing))
 
         app = AIApp(
-            name="Test", transport="stdio",
+            name="Test",
+            transport="stdio",
             config_paths={},
             server_key="mcpServers",
         )
@@ -225,11 +234,16 @@ class TestConfigureApp:
         config_path = tmp_path / "Trae" / "User" / "mcp.json"
         # Pre-populate with existing Trae servers
         config_path.parent.mkdir(parents=True)
-        existing = {"mcpServers": {"GitHub": {"command": "npx", "args": ["-y", "@mcp/server-github"]}}}
+        existing = {
+            "mcpServers": {
+                "GitHub": {"command": "npx", "args": ["-y", "@mcp/server-github"]}
+            }
+        }
         config_path.write_text(json.dumps(existing))
 
         app = AIApp(
-            name="Trae", transport="stdio",
+            name="Trae",
+            transport="stdio",
             config_paths={},
             server_key="mcpServers",
         )
@@ -246,7 +260,8 @@ class TestConfigureApp:
         config_path.write_text("{}")
 
         app = AIApp(
-            name="Test", transport="stdio",
+            name="Test",
+            transport="stdio",
             config_paths={},
             server_key="mcpServers",
         )

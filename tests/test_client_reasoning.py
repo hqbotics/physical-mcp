@@ -1,9 +1,5 @@
 """Tests for client-side reasoning — process_client_evaluations."""
 
-from datetime import datetime
-
-import pytest
-
 from physical_mcp.perception.scene_state import SceneState
 from physical_mcp.rules.engine import RulesEngine
 from physical_mcp.rules.models import WatchRule, RulePriority, NotificationTarget
@@ -109,8 +105,8 @@ class TestClientEvaluations:
 
         evaluations = [
             {"triggered": True},  # Missing rule_id
-            {"rule_id": "r_1"},   # Missing triggered (defaults False)
-            "not a dict",         # Completely wrong type
+            {"rule_id": "r_1"},  # Missing triggered (defaults False)
+            "not a dict",  # Completely wrong type
         ]
 
         # Should not crash — malformed entries are skipped

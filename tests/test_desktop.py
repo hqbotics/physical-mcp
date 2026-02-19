@@ -1,7 +1,6 @@
 """Tests for desktop notification delivery."""
 
-import time
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from physical_mcp.notifications.desktop import DesktopNotifier, _escape
 

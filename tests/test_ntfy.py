@@ -2,7 +2,6 @@
 
 import base64
 from contextlib import asynccontextmanager
-from datetime import datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -32,7 +31,9 @@ def _make_alert(priority: str = "high", frame: str | None = None) -> AlertEvent:
         reasoning="I saw something happen",
     )
     return AlertEvent(
-        rule=rule, evaluation=evaluation, scene_summary="Test scene",
+        rule=rule,
+        evaluation=evaluation,
+        scene_summary="Test scene",
         frame_base64=frame,
     )
 
@@ -230,7 +231,10 @@ class TestNtfyNotifier:
         notifier._session = mock_session
 
         result = await notifier.notify_scene_change(
-            "test-topic", "major", ["Front door"], frame_base64=_FAKE_FRAME,
+            "test-topic",
+            "major",
+            ["Front door"],
+            frame_base64=_FAKE_FRAME,
         )
 
         assert result is True
@@ -258,7 +262,9 @@ class TestNtfyNotifier:
         notifier._session = mock_session
 
         result = await notifier.notify_scene_change(
-            "test-topic", "minor", ["Baby monitor"],
+            "test-topic",
+            "minor",
+            ["Baby monitor"],
         )
 
         assert result is True

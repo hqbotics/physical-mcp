@@ -79,7 +79,9 @@ class NtfyNotifier:
                     ok = resp.status < 400
             else:
                 # POST text body (no image)
-                async with session.post(url, data=message.encode(), headers=headers) as resp:
+                async with session.post(
+                    url, data=message.encode(), headers=headers
+                ) as resp:
                     ok = resp.status < 400
 
             if ok:
@@ -112,9 +114,7 @@ class NtfyNotifier:
             f"Confidence: {alert.evaluation.confidence:.0%}"
         )
 
-        return await self._send(
-            url, message, headers, frame_base64=alert.frame_base64
-        )
+        return await self._send(url, message, headers, frame_base64=alert.frame_base64)
 
     async def notify_scene_change(
         self,
@@ -133,10 +133,7 @@ class NtfyNotifier:
             "Priority": "2",
             "Tags": "camera,mag",
         }
-        message = (
-            f"Monitoring: {', '.join(rule_names)}\n"
-            f"Evaluating camera now..."
-        )
+        message = f"Monitoring: {', '.join(rule_names)}\nEvaluating camera now..."
 
         return await self._send(url, message, headers, frame_base64=frame_base64)
 

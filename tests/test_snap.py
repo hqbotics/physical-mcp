@@ -78,9 +78,7 @@ class TestSnap:
                 "physical_mcp.snap.capture_frame_sync",
                 return_value=b"fakepng",
             ) as mock_cap,
-            patch(
-                "physical_mcp.clipboard.copy_image_to_clipboard"
-            ) as mock_copy,
+            patch("physical_mcp.clipboard.copy_image_to_clipboard") as mock_copy,
         ):
             result = snap(device_index=0)
 
@@ -97,9 +95,7 @@ class TestSnap:
                 return_value=b"fakepng",
             ),
             patch("physical_mcp.clipboard.copy_image_to_clipboard"),
-            patch(
-                "physical_mcp.clipboard.simulate_paste"
-            ) as mock_paste,
+            patch("physical_mcp.clipboard.simulate_paste") as mock_paste,
             patch("time.sleep"),
         ):
             result = snap(device_index=0, paste=True)
@@ -132,9 +128,7 @@ class TestSnap:
                 return_value=b"fakepng",
             ),
             patch("physical_mcp.clipboard.copy_image_to_clipboard"),
-            patch(
-                "physical_mcp.clipboard.simulate_paste"
-            ) as mock_paste,
+            patch("physical_mcp.clipboard.simulate_paste") as mock_paste,
         ):
             snap(device_index=0, paste=False)
             mock_paste.assert_not_called()
@@ -237,8 +231,6 @@ class TestVisionAPIConfig:
     def test_config_from_dict(self):
         from physical_mcp.config import PhysicalMCPConfig
 
-        cfg = PhysicalMCPConfig(
-            vision_api={"enabled": False, "port": 9000}
-        )
+        cfg = PhysicalMCPConfig(vision_api={"enabled": False, "port": 9000})
         assert cfg.vision_api.enabled is False
         assert cfg.vision_api.port == 9000

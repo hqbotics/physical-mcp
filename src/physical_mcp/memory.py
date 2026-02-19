@@ -10,7 +10,6 @@ out a month ago").
 
 from __future__ import annotations
 
-import re
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -78,8 +77,9 @@ class MemoryStore:
             sections = self._parse()
             # Remove existing entry for this rule_id
             sections["rules"] = [
-                l for l in sections["rules"]
-                if not l.startswith(f"- {rule_id} |")
+                line
+                for line in sections["rules"]
+                if not line.startswith(f"- {rule_id} |")
             ]
             sections["rules"].append(f"- {rule_id} | {context}")
             self._write(sections)
@@ -91,8 +91,9 @@ class MemoryStore:
                 return
             sections = self._parse()
             sections["rules"] = [
-                l for l in sections["rules"]
-                if not l.startswith(f"- {rule_id} |")
+                line
+                for line in sections["rules"]
+                if not line.startswith(f"- {rule_id} |")
             ]
             self._write(sections)
 
@@ -102,8 +103,7 @@ class MemoryStore:
             self._ensure_file()
             sections = self._parse()
             sections["prefs"] = [
-                l for l in sections["prefs"]
-                if not l.startswith(f"- {key} |")
+                line for line in sections["prefs"] if not line.startswith(f"- {key} |")
             ]
             sections["prefs"].append(f"- {key} | {value}")
             self._write(sections)

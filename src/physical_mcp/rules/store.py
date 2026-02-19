@@ -29,4 +29,6 @@ class RulesStore:
     def save(self, rules: list[WatchRule]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         data = {"rules": [r.model_dump(mode="json") for r in rules]}
-        self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        self._path.write_text(
+            yaml.dump(data, default_flow_style=False, sort_keys=False)
+        )

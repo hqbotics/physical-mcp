@@ -150,12 +150,16 @@ def install_autostart(transport: str = "streamable-http", port: int = 8400) -> b
 
 
 def _install_launchd(command: str, port: int) -> bool:
-    plist_path = Path("~/Library/LaunchAgents/com.physical-mcp.server.plist").expanduser()
+    plist_path = Path(
+        "~/Library/LaunchAgents/com.physical-mcp.server.plist"
+    ).expanduser()
     log_dir = get_data_dir() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
     plist_content = _LAUNCHD_PLIST.format(
-        command=command, port=port, log_dir=str(log_dir),
+        command=command,
+        port=port,
+        log_dir=str(log_dir),
     )
     plist_path.parent.mkdir(parents=True, exist_ok=True)
     plist_path.write_text(plist_content)
@@ -167,7 +171,8 @@ def _install_launchd(command: str, port: int) -> bool:
     )
     subprocess.run(
         ["launchctl", "load", str(plist_path)],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     return True
 
@@ -179,10 +184,13 @@ def _install_systemd(command: str, port: int) -> bool:
     unit_content = _SYSTEMD_UNIT.format(command=command, port=port)
     unit_path.write_text(unit_content)
 
-    subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, capture_output=True)
+    subprocess.run(
+        ["systemctl", "--user", "daemon-reload"], check=True, capture_output=True
+    )
     subprocess.run(
         ["systemctl", "--user", "enable", "--now", "physical-mcp"],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     return True
 
@@ -190,14 +198,20 @@ def _install_systemd(command: str, port: int) -> bool:
 def _install_schtasks(command: str, port: int) -> bool:
     subprocess.run(
         [
-            "schtasks", "/create",
-            "/tn", "PhysicalMCP",
-            "/tr", f'"{command}" --transport streamable-http --port {port}',
-            "/sc", "onlogon",
-            "/rl", "limited",
+            "schtasks",
+            "/create",
+            "/tn",
+            "PhysicalMCP",
+            "/tr",
+            f'"{command}" --transport streamable-http --port {port}',
+            "/sc",
+            "onlogon",
+            "/rl",
+            "limited",
             "/f",
         ],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     return True
 
@@ -206,9 +220,13 @@ def uninstall_autostart() -> bool:
     """Remove the physical-mcp background service."""
     try:
         if sys.platform == "darwin":
-            plist_path = Path("~/Library/LaunchAgents/com.physical-mcp.server.plist").expanduser()
+            plist_path = Path(
+                "~/Library/LaunchAgents/com.physical-mcp.server.plist"
+            ).expanduser()
             if plist_path.exists():
-                subprocess.run(["launchctl", "unload", str(plist_path)], capture_output=True)
+                subprocess.run(
+                    ["launchctl", "unload", str(plist_path)], capture_output=True
+                )
                 plist_path.unlink()
                 return True
         elif sys.platform == "linux":
@@ -234,7 +252,11 @@ def uninstall_autostart() -> bool:
 def is_autostart_installed() -> bool:
     """Check if the background service is registered."""
     if sys.platform == "darwin":
-        return Path("~/Library/LaunchAgents/com.physical-mcp.server.plist").expanduser().exists()
+        return (
+            Path("~/Library/LaunchAgents/com.physical-mcp.server.plist")
+            .expanduser()
+            .exists()
+        )
     elif sys.platform == "linux":
         return Path("~/.config/systemd/user/physical-mcp.service").expanduser().exists()
     elif sys.platform == "win32":

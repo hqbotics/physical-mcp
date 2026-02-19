@@ -2,12 +2,10 @@
 
 from datetime import datetime, timedelta
 
-import pytest
 
 from physical_mcp.perception.scene_state import SceneState
 from physical_mcp.rules.engine import RulesEngine
 from physical_mcp.rules.models import (
-    AlertEvent,
     NotificationTarget,
     RuleEvaluation,
     RulePriority,
@@ -26,7 +24,9 @@ def _make_rule(id: str = "r1", cooldown: int = 60) -> WatchRule:
     )
 
 
-def _make_eval(rule_id: str = "r1", triggered: bool = True, confidence: float = 0.9) -> RuleEvaluation:
+def _make_eval(
+    rule_id: str = "r1", triggered: bool = True, confidence: float = 0.9
+) -> RuleEvaluation:
     return RuleEvaluation(
         rule_id=rule_id,
         triggered=triggered,
