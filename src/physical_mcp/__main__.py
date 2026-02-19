@@ -345,7 +345,7 @@ def setup(config_path: str | None, advanced: bool) -> None:
     camera_configs: list[CameraConfig] = []
 
     if detected:
-        click.echo(f"Found {len(detected)} camera(s):")
+        click.echo(f"Found {len(detected)} USB camera(s):")
         for cam in detected:
             click.echo(f"  Index {cam['index']}: {cam['width']}x{cam['height']}")
         for cam in detected:
@@ -358,7 +358,39 @@ def setup(config_path: str | None, advanced: bool) -> None:
                 )
             )
     else:
-        click.echo("No cameras detected. You can configure one manually later.")
+        click.echo("No USB cameras detected.")
+
+    # ── 1b. RTSP / IP camera support ─────────────────────
+    add_rtsp = click.confirm(
+        "\nAdd an RTSP/IP camera? (Reolink, Tapo, Hikvision, etc.)",
+        default=False,
+    )
+    while add_rtsp:
+        click.echo("\n  Common RTSP URL formats:")
+        click.echo("    Reolink:   rtsp://admin:password@IP:554/h264Preview_01_main")
+        click.echo("    Tapo:      rtsp://user:pass@IP:554/stream1")
+        click.echo("    Hikvision: rtsp://admin:pass@IP:554/Streaming/Channels/101")
+        click.echo("    Generic:   rtsp://IP:554/stream")
+        rtsp_url = click.prompt("  RTSP URL")
+        cam_name = click.prompt("  Camera name (e.g. front-door)", default="")
+        cam_id = (
+            cam_name.replace(" ", "-").lower()
+            if cam_name
+            else f"rtsp:{len(camera_configs)}"
+        )
+        camera_configs.append(
+            CameraConfig(
+                id=cam_id,
+                name=cam_name,
+                type="rtsp",
+                url=rtsp_url,
+            )
+        )
+        click.echo(f"  ✓ Added RTSP camera: {cam_id}")
+        add_rtsp = click.confirm("  Add another RTSP camera?", default=False)
+
+    if not camera_configs:
+        click.echo("No cameras configured. You can add them manually later.")
         camera_configs.append(CameraConfig(id="usb:0", device_index=0))
 
     # ── 2. Auto-detect AI apps (simple) or provider (advanced) ─
