@@ -484,6 +484,29 @@ class TestHealthAndAlerts:
             assert health["last_success_at"] is None
 
     @pytest.mark.asyncio
+    async def test_health_single_partial_row_is_normalized(self, state_with_data):
+        state_with_data["camera_health"] = {
+            "usb:0": {
+                "status": "degraded",
+                "last_error": "provider timeout",
+            }
+        }
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/health/usb:0")
+            assert resp.status == 200
+            data = await resp.json()
+            health = data["health"]
+            assert health["camera_id"] == "usb:0"
+            assert health["camera_name"] == "usb:0"
+            assert health["status"] == "degraded"
+            assert health["last_error"] == "provider timeout"
+            assert health["consecutive_errors"] == 0
+            assert health["backoff_until"] is None
+            assert health["last_success_at"] is None
+            assert health["last_frame_at"] is None
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "status,errors,backoff,last_error",
         [

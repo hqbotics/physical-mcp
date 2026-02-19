@@ -126,6 +126,18 @@ def _default_camera_health(camera_id: str) -> dict[str, Any]:
     }
 
 
+def _normalize_camera_health(camera_id: str, health: dict[str, Any] | None) -> dict[str, Any]:
+    """Fill missing camera-health keys with safe defaults."""
+    base = _default_camera_health(camera_id)
+    if not isinstance(health, dict):
+        return base
+    merged = {**base, **health}
+    merged["camera_id"] = str(merged.get("camera_id") or camera_id)
+    if not merged.get("camera_name"):
+        merged["camera_name"] = merged["camera_id"]
+    return merged
+
+
 def create_vision_routes(state: dict[str, Any]) -> web.Application:
     """Create aiohttp app with vision API routes.
 
@@ -492,9 +504,14 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         if camera_id:
             return web.json_response({
                 "camera_id": camera_id,
-                "health": health.get(camera_id, _default_camera_health(camera_id)),
+                "health": _normalize_camera_health(camera_id, health.get(camera_id)),
             })
-        return web.json_response({"cameras": health, "timestamp": time.time()})
+
+        normalized = {
+            cid: _normalize_camera_health(cid, row)
+            for cid, row in health.items()
+        }
+        return web.json_response({"cameras": normalized, "timestamp": time.time()})
 
     @routes.get("/alerts")
     async def get_alerts(request: web.Request) -> web.Response:

@@ -150,6 +150,33 @@ async def _flush_pending_session_logs(shared_state: dict[str, Any] | None) -> in
     return flushed
 
 
+def _default_camera_health(camera_id: str) -> dict[str, Any]:
+    """Consistent fallback shape for unknown/malformed camera health."""
+    return {
+        "camera_id": camera_id,
+        "camera_name": camera_id,
+        "consecutive_errors": 0,
+        "backoff_until": None,
+        "last_success_at": None,
+        "last_error": "",
+        "last_frame_at": None,
+        "status": "unknown",
+        "message": "No health data yet. Start monitoring first.",
+    }
+
+
+def _normalize_camera_health(camera_id: str, health: dict[str, Any] | None) -> dict[str, Any]:
+    """Fill missing camera-health keys with safe defaults."""
+    base = _default_camera_health(camera_id)
+    if not isinstance(health, dict):
+        return base
+    merged = {**base, **health}
+    merged["camera_id"] = str(merged.get("camera_id") or camera_id)
+    if not merged.get("camera_name"):
+        merged["camera_name"] = merged["camera_id"]
+    return merged
+
+
 def _record_alert_event(
     shared_state: dict[str, Any] | None,
     *,
@@ -1596,19 +1623,14 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         if camera_id:
             return {
                 "camera_id": camera_id,
-                "health": health_map.get(camera_id, {
-                    "camera_id": camera_id,
-                    "camera_name": camera_id,
-                    "consecutive_errors": 0,
-                    "backoff_until": None,
-                    "last_success_at": None,
-                    "last_error": "",
-                    "last_frame_at": None,
-                    "status": "unknown",
-                    "message": "No health data yet. Start monitoring first.",
-                }),
+                "health": _normalize_camera_health(camera_id, health_map.get(camera_id)),
             }
-        return {"cameras": health_map}
+        return {
+            "cameras": {
+                cid: _normalize_camera_health(cid, row)
+                for cid, row in health_map.items()
+            }
+        }
 
     @mcp.tool()
     async def configure_provider(

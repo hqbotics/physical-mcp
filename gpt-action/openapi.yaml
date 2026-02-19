@@ -231,6 +231,19 @@ paths:
                       last_error: Provider timeout
                       last_frame_at: "2026-02-18T02:12:00.000000"
                       status: degraded
+                unknown_default_shape:
+                  summary: Unknown camera returns full default health shape
+                  value:
+                    camera_id: usb:9
+                    health:
+                      camera_id: usb:9
+                      camera_name: usb:9
+                      consecutive_errors: 0
+                      backoff_until: null
+                      last_success_at: null
+                      last_error: ""
+                      last_frame_at: null
+                      status: unknown
   /alerts:
     get:
       operationId: replayAlerts
