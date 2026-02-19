@@ -35,3 +35,26 @@ class TestSetupCommand:
         assert token != ""
         # token_urlsafe(32) usually yields >= 43 chars
         assert len(token) >= 43
+
+    def test_setup_prints_masked_auth_token_preview(self, monkeypatch, tmp_path: Path):
+        runner = CliRunner()
+        config_path = tmp_path / "config.yaml"
+
+        monkeypatch.setattr(
+            "physical_mcp.camera.usb.USBCamera.enumerate_cameras",
+            lambda: [],
+        )
+        monkeypatch.setattr(
+            "physical_mcp.ai_apps.configure_all",
+            lambda: [],
+        )
+        monkeypatch.setattr(
+            "secrets.token_urlsafe",
+            lambda _: "tok_abcdefghijklmnopqrstuvwxyz_0123456789",
+        )
+
+        result = runner.invoke(main, ["setup", "--config", str(config_path)])
+
+        assert result.exit_code == 0
+        assert "Vision API auth token generated: tok_ab...6789" in result.output
+        assert "tok_abcdefghijklmnopqrstuvwxyz_0123456789" not in result.output

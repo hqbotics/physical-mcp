@@ -448,6 +448,13 @@ def setup(config_path: str | None, advanced: bool) -> None:
     saved_path = save_config(config, config_file)
     click.echo(f"\nConfig saved to {saved_path}")
 
+    masked_token = (
+        f"{vision_api_token[:6]}...{vision_api_token[-4:]}"
+        if len(vision_api_token) > 12
+        else "(hidden)"
+    )
+    click.echo(f"Vision API auth token generated: {masked_token}")
+
     if not advanced:
         click.echo("Run 'physical-mcp setup --advanced' for provider & notification options.")
 
@@ -464,6 +471,8 @@ def setup(config_path: str | None, advanced: bool) -> None:
 
         click.echo(f"\nFor phone / LAN apps:")
         click.echo(f"  {local_url}")
+        click.echo("  Include auth token when calling Vision API endpoints:")
+        click.echo("    Authorization: Bearer <vision_api.auth_token>")
         if lan_ip:
             click.echo("")
             print_qr_code(f"http://{lan_ip}:{port}/mcp")
