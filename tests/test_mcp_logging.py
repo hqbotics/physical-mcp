@@ -903,6 +903,27 @@ class TestStartupFallbackWarning:
         assert f"event_id={evt['event_id']}" in pending[0]["data"]
 
 
+class TestGetCameraHealthContract:
+    @pytest.mark.asyncio
+    async def test_get_camera_health_unknown_camera_returns_consistent_shape(self):
+        mcp = create_server(PhysicalMCPConfig())
+        tool = mcp._tool_manager._tools["get_camera_health"]
+        get_camera_health_fn = tool.fn
+
+        closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
+        closure_state.update({"camera_health": {}})
+
+        result = await get_camera_health_fn(camera_id="usb:9")
+
+        assert result["camera_id"] == "usb:9"
+        health = result["health"]
+        assert health["status"] == "unknown"
+        assert health["camera_id"] == "usb:9"
+        assert health["consecutive_errors"] == 0
+        assert health["backoff_until"] is None
+        assert health["last_success_at"] is None
+
+
 class TestConfigureProviderContract:
     @pytest.mark.asyncio
     async def test_runtime_downgrade_emits_warning_and_sets_contract_flag(self, monkeypatch):

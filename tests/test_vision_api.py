@@ -476,7 +476,12 @@ class TestHealthAndAlerts:
             assert resp.status == 200
             data = await resp.json()
             assert data["camera_id"] == "usb:9"
-            assert data["health"]["status"] == "unknown"
+            health = data["health"]
+            assert health["status"] == "unknown"
+            assert health["camera_id"] == "usb:9"
+            assert health["consecutive_errors"] == 0
+            assert health["backoff_until"] is None
+            assert health["last_success_at"] is None
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

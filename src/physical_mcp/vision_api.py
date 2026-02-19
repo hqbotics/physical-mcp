@@ -111,6 +111,21 @@ def _event_sort_key(event: dict[str, Any]) -> tuple[datetime, str]:
     return (ts, str(event.get("event_id", "")))
 
 
+def _default_camera_health(camera_id: str) -> dict[str, Any]:
+    """Consistent unknown-health shape for cameras without data yet."""
+    return {
+        "camera_id": camera_id,
+        "camera_name": camera_id,
+        "consecutive_errors": 0,
+        "backoff_until": None,
+        "last_success_at": None,
+        "last_error": "",
+        "last_frame_at": None,
+        "status": "unknown",
+        "message": "No health data yet.",
+    }
+
+
 def create_vision_routes(state: dict[str, Any]) -> web.Application:
     """Create aiohttp app with vision API routes.
 
@@ -177,6 +192,55 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             content_type="image/jpeg",
             headers={"Cache-Control": "no-cache"},
         )
+
+    # ── Snapshot (JSON with base64 image — for GPT Actions) ─
+
+    @routes.get("/snapshot")
+    @routes.get("/snapshot/{camera_id}")
+    async def get_snapshot(request: web.Request) -> web.Response:
+        """Return latest frame as JSON with base64-encoded JPEG.
+
+        ChatGPT GPT Actions can't handle binary image responses,
+        so this endpoint wraps the frame in JSON with a data URL.
+        """
+        camera_id = request.match_info.get("camera_id", "")
+        quality = _parse_int(request.query.get("quality", "60"), default=60, minimum=1, maximum=100)
+        buffers = state.get("frame_buffers", {})
+
+        if not buffers:
+            return _json_error(503, "no_cameras_active", "No cameras active")
+
+        if camera_id and camera_id in buffers:
+            buf = buffers[camera_id]
+            resolved_id = camera_id
+        elif not camera_id:
+            resolved_id = next(iter(buffers.keys()))
+            buf = buffers[resolved_id]
+        else:
+            return _json_error(
+                404,
+                "camera_not_found",
+                f"Camera '{camera_id}' not found",
+                camera_id=camera_id,
+            )
+
+        frame = await buf.latest()
+        if frame is None:
+            return _json_error(503, "no_frame_available", "No frame available yet")
+
+        # Build the public frame URL so ChatGPT can render it inline.
+        host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or request.host
+        scheme = request.headers.get("X-Forwarded-Proto") or request.scheme
+        frame_url = f"{scheme}://{host}/frame/{resolved_id}?quality={quality}"
+
+        return web.json_response({
+            "camera_id": resolved_id,
+            "image_url": frame_url,
+            "width": frame.resolution[0],
+            "height": frame.resolution[1],
+            "timestamp": frame.timestamp.isoformat(),
+            "display": f"![Camera {resolved_id}]({frame_url})",
+        })
 
     # ── MJPEG Stream ────────────────────────────────────────
 
@@ -428,10 +492,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         if camera_id:
             return web.json_response({
                 "camera_id": camera_id,
-                "health": health.get(camera_id, {
-                    "status": "unknown",
-                    "message": "No health data yet.",
-                }),
+                "health": health.get(camera_id, _default_camera_health(camera_id)),
             })
         return web.json_response({"cameras": health, "timestamp": time.time()})
 
@@ -485,8 +546,68 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             "timestamp": time.time(),
         })
 
-    # ── CORS middleware (no extra deps) ────────────────────────
+    # ── Dashboard + PWA routes ─────────────────────────
+    from .dashboard import DASHBOARD_HTML, MANIFEST_JSON
 
+    @routes.get("/dashboard")
+    async def get_dashboard(request: web.Request) -> web.Response:
+        """Serve the web dashboard (mobile-friendly, works on iOS)."""
+        return web.Response(text=DASHBOARD_HTML, content_type="text/html")
+
+    @routes.get("/manifest.json")
+    async def get_manifest(request: web.Request) -> web.Response:
+        """PWA manifest for Add to Home Screen."""
+        return web.Response(text=MANIFEST_JSON, content_type="application/manifest+json")
+
+    @routes.get("/rules")
+    async def get_rules(request: web.Request) -> web.Response:
+        """Return active watch rules as JSON."""
+        engine = state.get("rules_engine")
+        if engine is None:
+            return web.json_response({"rules": [], "count": 0})
+        rules = engine.list_rules()
+        return web.json_response({
+            "rules": [
+                {
+                    "id": r.id,
+                    "name": r.name,
+                    "condition": r.condition,
+                    "camera_id": r.camera_id,
+                    "priority": r.priority.value if hasattr(r.priority, "value") else str(r.priority),
+                    "enabled": r.enabled,
+                    "cooldown_seconds": r.cooldown_seconds,
+                    "last_triggered": r.last_triggered.isoformat() if r.last_triggered else None,
+                }
+                for r in rules
+            ],
+            "count": len(rules),
+        })
+
+    # ── Auth middleware ─────────────────────────────────
+    config = state.get("config")
+    auth_token = (config.vision_api.auth_token if config else "") or ""
+
+    @web.middleware
+    async def auth_middleware(
+        request: web.Request,
+        handler: Any,
+    ) -> web.Response:
+        """Optional bearer token authentication."""
+        if not auth_token:
+            return await handler(request)
+        # Skip auth for CORS preflight and PWA manifest
+        if request.method == "OPTIONS" or request.path == "/manifest.json":
+            return await handler(request)
+        # Check Authorization header
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header == f"Bearer {auth_token}":
+            return await handler(request)
+        # Also accept ?token= query param (for browser streams/img tags)
+        if request.query.get("token") == auth_token:
+            return await handler(request)
+        return _json_error(401, "unauthorized", "Invalid or missing auth token")
+
+    # ── CORS middleware ──────────────────────────────────
     @web.middleware
     async def cors_middleware(
         request: web.Request,
@@ -499,9 +620,9 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             resp = await handler(request)
         resp.headers["Access-Control-Allow-Origin"] = "*"
         resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "*"
+        resp.headers["Access-Control-Allow-Headers"] = "*, Authorization"
         return resp
 
-    app = web.Application(middlewares=[cors_middleware])
+    app = web.Application(middlewares=[auth_middleware, cors_middleware])
     app.add_routes(routes)
     return app

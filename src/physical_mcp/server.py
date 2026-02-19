@@ -1597,6 +1597,13 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             return {
                 "camera_id": camera_id,
                 "health": health_map.get(camera_id, {
+                    "camera_id": camera_id,
+                    "camera_name": camera_id,
+                    "consecutive_errors": 0,
+                    "backoff_until": None,
+                    "last_success_at": None,
+                    "last_error": "",
+                    "last_frame_at": None,
                     "status": "unknown",
                     "message": "No health data yet. Start monitoring first.",
                 }),
