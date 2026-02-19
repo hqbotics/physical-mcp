@@ -29,7 +29,9 @@ from aiohttp import web
 logger = logging.getLogger("physical-mcp")
 
 
-def _json_error(status: int, code: str, message: str, camera_id: str = "") -> web.Response:
+def _json_error(
+    status: int, code: str, message: str, camera_id: str = ""
+) -> web.Response:
     """Consistent JSON error payload for API + GPT Action compatibility."""
     payload = {"code": code, "message": message}
     if camera_id:
@@ -37,7 +39,9 @@ def _json_error(status: int, code: str, message: str, camera_id: str = "") -> we
     return web.json_response(payload, status=status)
 
 
-def _parse_int(value: str, *, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
+def _parse_int(
+    value: str, *, default: int, minimum: int | None = None, maximum: int | None = None
+) -> int:
     """Parse integer query params with clamping and fallback default."""
     try:
         parsed = int(value)
@@ -126,7 +130,9 @@ def _default_camera_health(camera_id: str) -> dict[str, Any]:
     }
 
 
-def _normalize_camera_health(camera_id: str, health: dict[str, Any] | None) -> dict[str, Any]:
+def _normalize_camera_health(
+    camera_id: str, health: dict[str, Any] | None
+) -> dict[str, Any]:
     """Fill missing camera-health keys with safe defaults."""
     base = _default_camera_health(camera_id)
     if not isinstance(health, dict):
@@ -152,30 +158,34 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
     async def index(request: web.Request) -> web.Response:
         """API overview with available cameras and endpoints."""
         cameras = list(state.get("scene_states", {}).keys())
-        return web.json_response({
-            "name": "physical-mcp",
-            "description": "24/7 camera vision API",
-            "cameras": cameras,
-            "endpoints": {
-                "GET /frame": "Latest camera frame (JPEG)",
-                "GET /frame/{camera_id}": "Frame from specific camera",
-                "GET /stream": "MJPEG video stream (use in <img> tags)",
-                "GET /stream/{camera_id}": "MJPEG stream from specific camera",
-                "GET /events": "SSE stream of scene changes (real-time)",
-                "GET /scene": "Current scene summaries (JSON)",
-                "GET /scene/{camera_id}": "Scene for specific camera",
-                "GET /changes": "Recent changes (?wait=true for long-poll)",
-                "GET /health": "Per-camera health (errors/backoff/last success)",
-                "GET /alerts": "Replay recent alert events",
-            },
-        })
+        return web.json_response(
+            {
+                "name": "physical-mcp",
+                "description": "24/7 camera vision API",
+                "cameras": cameras,
+                "endpoints": {
+                    "GET /frame": "Latest camera frame (JPEG)",
+                    "GET /frame/{camera_id}": "Frame from specific camera",
+                    "GET /stream": "MJPEG video stream (use in <img> tags)",
+                    "GET /stream/{camera_id}": "MJPEG stream from specific camera",
+                    "GET /events": "SSE stream of scene changes (real-time)",
+                    "GET /scene": "Current scene summaries (JSON)",
+                    "GET /scene/{camera_id}": "Scene for specific camera",
+                    "GET /changes": "Recent changes (?wait=true for long-poll)",
+                    "GET /health": "Per-camera health (errors/backoff/last success)",
+                    "GET /alerts": "Replay recent alert events",
+                },
+            }
+        )
 
     @routes.get("/frame")
     @routes.get("/frame/{camera_id}")
     async def get_frame(request: web.Request) -> web.Response:
         """Return latest camera frame as JPEG image."""
         camera_id = request.match_info.get("camera_id", "")
-        quality = _parse_int(request.query.get("quality", "80"), default=80, minimum=1, maximum=100)
+        quality = _parse_int(
+            request.query.get("quality", "80"), default=80, minimum=1, maximum=100
+        )
         buffers = state.get("frame_buffers", {})
 
         if not buffers:
@@ -216,7 +226,9 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         so this endpoint wraps the frame in JSON with a data URL.
         """
         camera_id = request.match_info.get("camera_id", "")
-        quality = _parse_int(request.query.get("quality", "60"), default=60, minimum=1, maximum=100)
+        quality = _parse_int(
+            request.query.get("quality", "60"), default=60, minimum=1, maximum=100
+        )
         buffers = state.get("frame_buffers", {})
 
         if not buffers:
@@ -241,18 +253,24 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             return _json_error(503, "no_frame_available", "No frame available yet")
 
         # Build the public frame URL so ChatGPT can render it inline.
-        host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or request.host
+        host = (
+            request.headers.get("X-Forwarded-Host")
+            or request.headers.get("Host")
+            or request.host
+        )
         scheme = request.headers.get("X-Forwarded-Proto") or request.scheme
         frame_url = f"{scheme}://{host}/frame/{resolved_id}?quality={quality}"
 
-        return web.json_response({
-            "camera_id": resolved_id,
-            "image_url": frame_url,
-            "width": frame.resolution[0],
-            "height": frame.resolution[1],
-            "timestamp": frame.timestamp.isoformat(),
-            "display": f"![Camera {resolved_id}]({frame_url})",
-        })
+        return web.json_response(
+            {
+                "camera_id": resolved_id,
+                "image_url": frame_url,
+                "width": frame.resolution[0],
+                "height": frame.resolution[1],
+                "timestamp": frame.timestamp.isoformat(),
+                "display": f"![Camera {resolved_id}]({frame_url})",
+            }
+        )
 
     # ── MJPEG Stream ────────────────────────────────────────
 
@@ -270,8 +288,12 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             quality: JPEG quality 1-100 (default: 60)
         """
         camera_id = request.match_info.get("camera_id", "")
-        fps = _parse_int(request.query.get("fps", "5"), default=5, minimum=1, maximum=30)
-        quality = _parse_int(request.query.get("quality", "60"), default=60, minimum=1, maximum=100)
+        fps = _parse_int(
+            request.query.get("fps", "5"), default=5, minimum=1, maximum=30
+        )
+        quality = _parse_int(
+            request.query.get("quality", "60"), default=60, minimum=1, maximum=100
+        )
         buffers = state.get("frame_buffers", {})
 
         if not buffers:
@@ -295,8 +317,12 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             headers={
                 "Content-Type": f"multipart/x-mixed-replace; boundary={boundary}",
                 "Cache-Control": "no-cache, no-store",
+                "Pragma": "no-cache",
                 "Connection": "keep-alive",
                 "Access-Control-Allow-Origin": "*",
+                # Disable proxy buffering for low-latency multi-client streaming
+                # (notably nginx-compatible reverse proxies).
+                "X-Accel-Buffering": "no",
             },
         )
         await resp.prepare(request)
@@ -313,8 +339,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
                 await resp.write(
                     f"--{boundary}\r\n"
                     f"Content-Type: image/jpeg\r\n"
-                    f"Content-Length: {len(jpeg_bytes)}\r\n\r\n"
-                    .encode()
+                    f"Content-Length: {len(jpeg_bytes)}\r\n\r\n".encode()
                     + jpeg_bytes
                     + b"\r\n"
                 )
@@ -375,9 +400,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
                             scene_data["name"] = cam_cfg.name
                         scene_data["camera_id"] = cid
                         await resp.write(
-                            f"event: scene\n"
-                            f"data: {json.dumps(scene_data)}\n\n"
-                            .encode()
+                            f"event: scene\ndata: {json.dumps(scene_data)}\n\n".encode()
                         )
 
                     # Emit change events from the change log
@@ -392,8 +415,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
                                 ):
                                     await resp.write(
                                         f"event: change\n"
-                                        f"data: {json.dumps({'camera_id': cid, **entry})}\n\n"
-                                        .encode()
+                                        f"data: {json.dumps({'camera_id': cid, **entry})}\n\n".encode()
                                     )
                             last_change_times[cid + "_sent"] = latest_ts
 
@@ -416,10 +438,12 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             cam_cfg = state.get("camera_configs", {}).get(cid)
             if cam_cfg and cam_cfg.name:
                 result[cid]["name"] = cam_cfg.name
-        return web.json_response({
-            "cameras": result,
-            "timestamp": time.time(),
-        })
+        return web.json_response(
+            {
+                "cameras": result,
+                "timestamp": time.time(),
+            }
+        )
 
     @routes.get("/scene/{camera_id}")
     async def get_scene_camera(request: web.Request) -> web.Response:
@@ -450,10 +474,14 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             timeout:   Max wait time in seconds for long-poll (default: 30)
             since:     ISO timestamp — only return changes after this time
         """
-        minutes = _parse_int(request.query.get("minutes", "5"), default=5, minimum=1, maximum=120)
+        minutes = _parse_int(
+            request.query.get("minutes", "5"), default=5, minimum=1, maximum=120
+        )
         camera_id = request.query.get("camera_id", "").strip()
         wait = request.query.get("wait", "").lower() == "true"
-        timeout = _parse_float(request.query.get("timeout", "30"), default=30.0, minimum=1.0, maximum=120.0)
+        timeout = _parse_float(
+            request.query.get("timeout", "30"), default=30.0, minimum=1.0, maximum=120.0
+        )
         since = _validated_since(request.query.get("since", ""))
 
         def _get_changes() -> dict:
@@ -470,9 +498,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
 
         if not wait:
             result = _get_changes()
-            return web.json_response(
-                {"changes": result, "minutes": minutes}
-            )
+            return web.json_response({"changes": result, "minutes": minutes})
 
         # Long-poll: wait for new changes
         start = time.monotonic()
@@ -485,9 +511,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             current = _get_changes()
             current_count = sum(len(v) for v in current.values())
             if current_count > initial_count:
-                return web.json_response(
-                    {"changes": current, "minutes": minutes}
-                )
+                return web.json_response({"changes": current, "minutes": minutes})
 
         # Timeout — return whatever we have
         result = _get_changes()
@@ -502,14 +526,17 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         camera_id = request.match_info.get("camera_id", "")
         health = state.get("camera_health", {})
         if camera_id:
-            return web.json_response({
-                "camera_id": camera_id,
-                "health": _normalize_camera_health(camera_id, health.get(camera_id)),
-            })
+            return web.json_response(
+                {
+                    "camera_id": camera_id,
+                    "health": _normalize_camera_health(
+                        camera_id, health.get(camera_id)
+                    ),
+                }
+            )
 
         normalized = {
-            cid: _normalize_camera_health(cid, row)
-            for cid, row in health.items()
+            cid: _normalize_camera_health(cid, row) for cid, row in health.items()
         }
         return web.json_response({"cameras": normalized, "timestamp": time.time()})
 
@@ -523,7 +550,9 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             camera_id: filter by camera id
             event_type: filter by event type
         """
-        limit = _parse_int(request.query.get("limit", "50"), default=50, minimum=1, maximum=500)
+        limit = _parse_int(
+            request.query.get("limit", "50"), default=50, minimum=1, maximum=500
+        )
         since = _validated_since(request.query.get("since", ""))
         since_dt = _parse_iso_datetime(since) if since else None
         camera_id = request.query.get("camera_id", "").strip()
@@ -557,11 +586,13 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         if limit > 0:
             events = events[-limit:]
 
-        return web.json_response({
-            "events": events,
-            "count": len(events),
-            "timestamp": time.time(),
-        })
+        return web.json_response(
+            {
+                "events": events,
+                "count": len(events),
+                "timestamp": time.time(),
+            }
+        )
 
     # ── Dashboard + PWA routes ─────────────────────────
     from .dashboard import DASHBOARD_HTML, MANIFEST_JSON
@@ -574,7 +605,9 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
     @routes.get("/manifest.json")
     async def get_manifest(request: web.Request) -> web.Response:
         """PWA manifest for Add to Home Screen."""
-        return web.Response(text=MANIFEST_JSON, content_type="application/manifest+json")
+        return web.Response(
+            text=MANIFEST_JSON, content_type="application/manifest+json"
+        )
 
     @routes.get("/rules")
     async def get_rules(request: web.Request) -> web.Response:
@@ -583,22 +616,28 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         if engine is None:
             return web.json_response({"rules": [], "count": 0})
         rules = engine.list_rules()
-        return web.json_response({
-            "rules": [
-                {
-                    "id": r.id,
-                    "name": r.name,
-                    "condition": r.condition,
-                    "camera_id": r.camera_id,
-                    "priority": r.priority.value if hasattr(r.priority, "value") else str(r.priority),
-                    "enabled": r.enabled,
-                    "cooldown_seconds": r.cooldown_seconds,
-                    "last_triggered": r.last_triggered.isoformat() if r.last_triggered else None,
-                }
-                for r in rules
-            ],
-            "count": len(rules),
-        })
+        return web.json_response(
+            {
+                "rules": [
+                    {
+                        "id": r.id,
+                        "name": r.name,
+                        "condition": r.condition,
+                        "camera_id": r.camera_id,
+                        "priority": r.priority.value
+                        if hasattr(r.priority, "value")
+                        else str(r.priority),
+                        "enabled": r.enabled,
+                        "cooldown_seconds": r.cooldown_seconds,
+                        "last_triggered": r.last_triggered.isoformat()
+                        if r.last_triggered
+                        else None,
+                    }
+                    for r in rules
+                ],
+                "count": len(rules),
+            }
+        )
 
     # ── Auth middleware ─────────────────────────────────
     config = state.get("config")

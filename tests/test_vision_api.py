@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -303,6 +302,60 @@ class TestMJPEGStream:
             resp = await client.get("/stream/usb:0")
             assert resp.status == 200
 
+    @pytest.mark.asyncio
+    async def test_stream_sets_low_latency_headers(self, state_with_data):
+        """Stream response carries anti-buffering headers for proxy/LAN clients."""
+
+        call_count = 0
+        mock_frame = MagicMock()
+        mock_frame.to_jpeg_bytes.return_value = b"\xff\xd8\xff\xe0jpeg"
+
+        async def _wait(timeout=5.0):
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                raise asyncio.CancelledError()
+            return mock_frame
+
+        state_with_data["frame_buffers"]["usb:0"].wait_for_frame = _wait
+
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/stream")
+            assert resp.status == 200
+            assert resp.headers.get("Pragma") == "no-cache"
+            assert resp.headers.get("X-Accel-Buffering") == "no"
+
+    @pytest.mark.asyncio
+    async def test_stream_supports_three_concurrent_clients(self, state_with_data):
+        """At least 3 simultaneous clients can receive MJPEG chunks."""
+
+        mock_frame = MagicMock()
+        mock_frame.to_jpeg_bytes.return_value = b"\xff\xd8\xff\xe0multi"
+
+        async def _wait(timeout=5.0):
+            await asyncio.sleep(0)
+            return mock_frame
+
+        state_with_data["frame_buffers"]["usb:0"].wait_for_frame = _wait
+
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+
+            async def _open_and_read() -> tuple[int, bytes]:
+                resp = await client.get("/stream/usb:0?fps=5")
+                body = await resp.content.read(256)
+                await resp.release()
+                return resp.status, body
+
+            results = await asyncio.gather(
+                _open_and_read(), _open_and_read(), _open_and_read()
+            )
+            for status, body in results:
+                assert status == 200
+                assert b"--frame" in body
+                assert b"\xff\xd8" in body
+
 
 # ── SSE events endpoint ──────────────────────────────────────
 
@@ -484,7 +537,9 @@ class TestHealthAndAlerts:
             assert health["last_success_at"] is None
 
     @pytest.mark.asyncio
-    async def test_health_single_non_dict_row_falls_back_to_defaults(self, state_with_data):
+    async def test_health_single_non_dict_row_falls_back_to_defaults(
+        self, state_with_data
+    ):
         state_with_data["camera_health"] = {
             "usb:0": ["bad", "row"],
         }
@@ -503,7 +558,9 @@ class TestHealthAndAlerts:
             assert health["message"] == "No health data yet."
 
     @pytest.mark.asyncio
-    async def test_health_single_malformed_row_contains_required_camera_health_keys(self, state_with_data):
+    async def test_health_single_malformed_row_contains_required_camera_health_keys(
+        self, state_with_data
+    ):
         state_with_data["camera_health"] = {
             "usb:0": "malformed",
         }
@@ -526,7 +583,9 @@ class TestHealthAndAlerts:
             assert required.issubset(set(health.keys()))
 
     @pytest.mark.asyncio
-    async def test_health_single_malformed_row_nullable_fields_remain_null(self, state_with_data):
+    async def test_health_single_malformed_row_nullable_fields_remain_null(
+        self, state_with_data
+    ):
         state_with_data["camera_health"] = {
             "usb:0": "malformed",
         }
@@ -564,7 +623,9 @@ class TestHealthAndAlerts:
             assert health["last_frame_at"] is None
 
     @pytest.mark.asyncio
-    async def test_health_all_normalizes_empty_camera_name_to_camera_id(self, state_with_data):
+    async def test_health_all_normalizes_empty_camera_name_to_camera_id(
+        self, state_with_data
+    ):
         state_with_data["camera_health"] = {
             "usb:0": {
                 "camera_id": "usb:0",
@@ -583,7 +644,9 @@ class TestHealthAndAlerts:
             assert health["status"] == "running"
 
     @pytest.mark.asyncio
-    async def test_health_all_normalizes_missing_camera_id_to_map_key(self, state_with_data):
+    async def test_health_all_normalizes_missing_camera_id_to_map_key(
+        self, state_with_data
+    ):
         state_with_data["camera_health"] = {
             "usb:0": {
                 "camera_id": "",
@@ -602,7 +665,9 @@ class TestHealthAndAlerts:
             assert health["status"] == "running"
 
     @pytest.mark.asyncio
-    async def test_health_all_non_dict_row_falls_back_to_defaults(self, state_with_data):
+    async def test_health_all_non_dict_row_falls_back_to_defaults(
+        self, state_with_data
+    ):
         state_with_data["camera_health"] = {
             "usb:0": "corrupted-row",
         }
@@ -620,7 +685,9 @@ class TestHealthAndAlerts:
             assert health["last_success_at"] is None
 
     @pytest.mark.asyncio
-    async def test_health_all_normalization_matrix_unknown_empty_malformed(self, state_with_data):
+    async def test_health_all_normalization_matrix_unknown_empty_malformed(
+        self, state_with_data
+    ):
         state_with_data["camera_health"] = {
             "usb:0": {
                 "camera_id": "usb:0",
@@ -657,7 +724,9 @@ class TestHealthAndAlerts:
             assert unknown["message"] == "No health data yet."
 
     @pytest.mark.asyncio
-    async def test_health_all_rows_always_include_required_camera_health_keys(self, state_with_data):
+    async def test_health_all_rows_always_include_required_camera_health_keys(
+        self, state_with_data
+    ):
         state_with_data["camera_health"] = {
             "usb:0": {
                 "camera_id": "",
@@ -767,7 +836,9 @@ class TestHealthAndAlerts:
         ]
         app = create_vision_routes(state_with_data)
         async with TestClient(TestServer(app)) as client:
-            resp = await client.get("/alerts?camera_id=usb:0&event_type=watch_rule_triggered")
+            resp = await client.get(
+                "/alerts?camera_id=usb:0&event_type=watch_rule_triggered"
+            )
             assert resp.status == 200
             data = await resp.json()
             assert data["count"] == 1
@@ -822,7 +893,9 @@ class TestJsonErrorContract:
 
 class TestAlertsSinceAndLimit:
     @pytest.mark.asyncio
-    async def test_since_then_limit_returns_most_recent_filtered_events(self, state_with_data):
+    async def test_since_then_limit_returns_most_recent_filtered_events(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_001",
@@ -1148,13 +1221,17 @@ class TestAlertsSinceAndLimit:
         ]
         app = create_vision_routes(state_with_data)
         async with TestClient(TestServer(app)) as client:
-            resp = await client.get("/alerts?since=2026-02-18T02:11:00&event_type=provider_error")
+            resp = await client.get(
+                "/alerts?since=2026-02-18T02:11:00&event_type=provider_error"
+            )
             assert resp.status == 200
             data = await resp.json()
             assert [e["event_id"] for e in data["events"]] == ["evt_402"]
 
     @pytest.mark.asyncio
-    async def test_since_plus_limit_when_only_boundary_equal_events(self, state_with_data):
+    async def test_since_plus_limit_when_only_boundary_equal_events(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_500",
@@ -1188,7 +1265,9 @@ class TestAlertsSinceAndLimit:
             assert data["events"] == []
 
     @pytest.mark.asyncio
-    async def test_event_type_filter_matches_stored_uppercase_values(self, state_with_data):
+    async def test_event_type_filter_matches_stored_uppercase_values(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_600",
@@ -1254,7 +1333,9 @@ class TestAlertsSinceAndLimit:
             assert data["events"][0]["event_id"] == "evt_710"
 
     @pytest.mark.asyncio
-    async def test_invalid_since_with_normalized_stored_fields_and_limit(self, state_with_data):
+    async def test_invalid_since_with_normalized_stored_fields_and_limit(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_801",
@@ -1298,7 +1379,9 @@ class TestAlertsSinceAndLimit:
             assert data["events"][0]["event_id"] == "evt_802"
 
     @pytest.mark.asyncio
-    async def test_boundary_since_excludes_equal_with_normalized_stored_fields(self, state_with_data):
+    async def test_boundary_since_excludes_equal_with_normalized_stored_fields(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_811",
@@ -1331,7 +1414,9 @@ class TestAlertsSinceAndLimit:
             assert [e["event_id"] for e in data["events"]] == ["evt_812"]
 
     @pytest.mark.asyncio
-    async def test_boundary_since_with_limit_one_normalized_fields(self, state_with_data):
+    async def test_boundary_since_with_limit_one_normalized_fields(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_821",
@@ -1375,7 +1460,9 @@ class TestAlertsSinceAndLimit:
             assert data["events"][0]["event_id"] == "evt_823"
 
     @pytest.mark.asyncio
-    async def test_camera_alert_pending_eval_filter_normalized_and_limited(self, state_with_data):
+    async def test_camera_alert_pending_eval_filter_normalized_and_limited(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_901",
@@ -1420,7 +1507,9 @@ class TestAlertsSinceAndLimit:
             assert data["events"][0]["event_type"] == "CAMERA_ALERT_PENDING_EVAL"
 
     @pytest.mark.asyncio
-    async def test_malformed_timestamps_are_tolerated_and_sorted_deterministically(self, state_with_data):
+    async def test_malformed_timestamps_are_tolerated_and_sorted_deterministically(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_malformed_b",
@@ -1510,7 +1599,9 @@ class TestAlertsSinceAndLimit:
             assert data["events"][0]["event_id"] == "evt_good_since"
 
     @pytest.mark.asyncio
-    async def test_since_cursor_accepts_z_timezone_and_skips_malformed(self, state_with_data):
+    async def test_since_cursor_accepts_z_timezone_and_skips_malformed(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_bad_z",
@@ -1554,7 +1645,9 @@ class TestAlertsSinceAndLimit:
             assert data["events"][0]["event_id"] == "evt_good_z_new"
 
     @pytest.mark.asyncio
-    async def test_limit_with_mixed_timezone_rows_returns_newest_deterministically(self, state_with_data):
+    async def test_limit_with_mixed_timezone_rows_returns_newest_deterministically(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_tz_1",
@@ -1642,7 +1735,9 @@ class TestAlertsSinceAndLimit:
             assert data["events"][0]["event_id"] == "evt_mix_3"
 
     @pytest.mark.asyncio
-    async def test_boundary_equal_since_exclusive_with_mixed_timezone_rows(self, state_with_data):
+    async def test_boundary_equal_since_exclusive_with_mixed_timezone_rows(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_bmix_1",
@@ -1685,7 +1780,9 @@ class TestAlertsSinceAndLimit:
             assert [e["event_id"] for e in data["events"]] == ["evt_bmix_3"]
 
     @pytest.mark.asyncio
-    async def test_invalid_since_with_mixed_timezones_and_limit_uses_unfiltered_cursor(self, state_with_data):
+    async def test_invalid_since_with_mixed_timezones_and_limit_uses_unfiltered_cursor(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_ims_1",
@@ -1729,7 +1826,9 @@ class TestAlertsSinceAndLimit:
             assert data["events"][0]["event_id"] == "evt_ims_2"
 
     @pytest.mark.asyncio
-    async def test_malformed_timestamp_rows_with_equal_event_id_prefixes_sort_stably(self, state_with_data):
+    async def test_malformed_timestamp_rows_with_equal_event_id_prefixes_sort_stably(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_bad_2",
@@ -1774,7 +1873,9 @@ class TestAlertsSinceAndLimit:
             ]
 
     @pytest.mark.asyncio
-    async def test_limit_with_compound_filters_when_malformed_and_valid_rows_coexist(self, state_with_data):
+    async def test_limit_with_compound_filters_when_malformed_and_valid_rows_coexist(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_lmv_1",
@@ -1828,7 +1929,9 @@ class TestAlertsSinceAndLimit:
             assert data["events"][0]["event_id"] == "evt_lmv_2"
 
     @pytest.mark.asyncio
-    async def test_valid_since_excludes_malformed_rows_under_compound_filters_and_limit(self, state_with_data):
+    async def test_valid_since_excludes_malformed_rows_under_compound_filters_and_limit(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_vsm_1",
@@ -1927,7 +2030,9 @@ class TestAlertsSinceAndLimit:
             ]
 
     @pytest.mark.asyncio
-    async def test_equivalent_instant_since_plus_limit_returns_latest(self, state_with_data):
+    async def test_equivalent_instant_since_plus_limit_returns_latest(
+        self, state_with_data
+    ):
         state_with_data["alert_events"] = [
             {
                 "event_id": "evt_eqs_1",
