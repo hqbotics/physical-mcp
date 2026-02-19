@@ -995,6 +995,28 @@ class TestGetCameraHealthContract:
         assert health["camera_name"] == "Office"
         assert health["status"] == "running"
 
+    @pytest.mark.asyncio
+    async def test_get_camera_health_all_non_dict_row_falls_back_to_defaults(self):
+        mcp = create_server(PhysicalMCPConfig())
+        tool = mcp._tool_manager._tools["get_camera_health"]
+        get_camera_health_fn = tool.fn
+
+        closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
+        closure_state.update({
+            "camera_health": {
+                "usb:0": ["bad", "row"],
+            }
+        })
+
+        result = await get_camera_health_fn()
+        health = result["cameras"]["usb:0"]
+        assert health["camera_id"] == "usb:0"
+        assert health["camera_name"] == "usb:0"
+        assert health["status"] == "unknown"
+        assert health["consecutive_errors"] == 0
+        assert health["backoff_until"] is None
+        assert health["last_success_at"] is None
+
 
 class TestConfigureProviderContract:
     @pytest.mark.asyncio

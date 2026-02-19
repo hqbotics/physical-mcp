@@ -545,6 +545,24 @@ class TestHealthAndAlerts:
             assert health["status"] == "running"
 
     @pytest.mark.asyncio
+    async def test_health_all_non_dict_row_falls_back_to_defaults(self, state_with_data):
+        state_with_data["camera_health"] = {
+            "usb:0": "corrupted-row",
+        }
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/health")
+            assert resp.status == 200
+            data = await resp.json()
+            health = data["cameras"]["usb:0"]
+            assert health["camera_id"] == "usb:0"
+            assert health["camera_name"] == "usb:0"
+            assert health["status"] == "unknown"
+            assert health["consecutive_errors"] == 0
+            assert health["backoff_until"] is None
+            assert health["last_success_at"] is None
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "status,errors,backoff,last_error",
         [
