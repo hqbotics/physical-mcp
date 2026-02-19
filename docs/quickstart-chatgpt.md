@@ -1,28 +1,33 @@
 # Quickstart: ChatGPT + physical-mcp
 
-## Prerequisites
-- ChatGPT account with custom connector/GPT Action capability
-- Python 3.10+
-- A USB/UVC camera connected
+Use physical-mcp as a GPT Action backend so ChatGPT can see camera events.
 
-## Install
+## 1) Install and run
 ```bash
-pip install 'physical-mcp[tunnel]'
+pip install physical-mcp
 physical-mcp
-physical-mcp tunnel
 ```
-Copy the HTTPS URL from `physical-mcp tunnel`.
 
-## Verify
-1. In ChatGPT, create/update your connector/GPT Action.
-2. Set OpenAPI URL to your tunneled HTTPS endpoint.
-3. Run a test action: list/get alerts or fetch a frame.
+## 2) Start Vision API
+```bash
+physical-mcp serve --vision-api --host 0.0.0.0 --port 8000
+```
 
-## First use
-Try prompts:
-- `Check my latest camera frame and summarize it.`
-- `Create a watch rule for package delivery events.`
+## 3) Expose endpoint (if needed)
+Use your preferred tunnel (Cloudflare/ngrok) and copy the HTTPS URL.
+
+## 4) Configure GPT Action
+In ChatGPT Actions:
+- Import physical-mcp OpenAPI spec
+- Set server URL to your HTTPS endpoint
+- Save and test
+
+## 5) Test prompt
+`Check the latest frame and tell me if the pantry shelf looks low.`
+
+## Why this matters
+Most camera apps stop at a push alert. physical-mcp enables event -> reasoning -> action workflows from ChatGPT.
 
 ## Troubleshooting
-- ChatGPT cannot use localhost directly; use HTTPS tunnel.
-- If actions fail, keep tunnel process running and re-test.
+- Action can’t call endpoint: verify HTTPS tunnel is live.
+- Empty camera response: run `physical-mcp doctor` and validate camera access.

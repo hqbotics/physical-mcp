@@ -1,27 +1,34 @@
 # Quickstart: OpenClaw + physical-mcp
 
-## Prerequisites
-- OpenClaw running
-- Python 3.10+
-- A USB/UVC camera connected
+Use physical-mcp as the vision provider for OpenClaw automations.
 
-## Install
+## 1) Install and initialize
 ```bash
 pip install physical-mcp
 physical-mcp
 ```
-Keep physical-mcp running locally or as a background service.
+During setup, enable OpenClaw client config.
 
-## Verify
-1. In OpenClaw, connect to the physical-mcp MCP endpoint.
-2. Ask your agent: `List available camera tools.`
-3. Confirm tool calls like `capture_frame` succeed.
+## 2) Start service
+```bash
+physical-mcp serve --vision-api --host 0.0.0.0 --port 8000
+```
+(Optional) run as background service for always-on monitoring.
 
-## First use
-Try:
-- `Capture and analyze the current frame.`
-- `Set a watch rule for front-door package arrival.`
+## 3) Connect in OpenClaw
+Add/use the physical-mcp endpoint in your OpenClaw workflow tools.
+
+## 4) First automation example
+Rule:
+- Pantry shelf looks low
+Action:
+- OpenClaw sends webhook -> shopping list updated
+
+## Why this combo is strong
+- Camera event -> AI reasoning -> workflow action
+- Open interfaces (MCP + REST)
+- Works with existing USB/IP cameras
 
 ## Troubleshooting
-- If endpoint is unreachable, check host/port and firewall.
-- For remote access, use `physical-mcp tunnel` and HTTPS endpoint.
+- Endpoint not reachable: verify host/port and firewall.
+- No detections: check camera framing, light, and watch rule threshold.

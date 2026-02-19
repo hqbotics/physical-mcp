@@ -1,27 +1,31 @@
 # Quickstart: VS Code + physical-mcp
 
-## Prerequisites
-- VS Code with MCP-compatible extension/workflow
-- Python 3.10+
-- A USB/UVC camera connected
+Turn VS Code into a live vision-aware assistant workspace.
 
-## Install
+## 1) Install physical-mcp
 ```bash
 pip install physical-mcp
 physical-mcp
 ```
-The setup wizard writes MCP config for supported VS Code workflows.
+Select VS Code integration when prompted.
 
-## Verify
-1. Restart VS Code.
-2. Open your AI assistant panel.
-3. Ask: `What MCP tools are connected?`
+## 2) Reload VS Code
+Run “Developer: Reload Window” or restart VS Code.
 
-## First use
-Try:
-- `Capture a frame from camera 0.`
-- `Watch this camera and notify when a package appears.`
+## 3) Validate MCP connection
+In your AI assistant panel, run:
+- `List physical-mcp MCP tools`
+- `Capture one frame and describe scene changes`
+
+## 4) Add a practical watch rule
+Example:
+`Watch front door camera and send me context-rich alerts, not just motion pings.`
+
+## Why use this setup
+- AI reasoning + action hooks, not dead-end notifications
+- Open source and local-first
+- No 5-minute blind spot behavior on free usage path
 
 ## Troubleshooting
-- Re-run `physical-mcp` after VS Code updates/extensions change.
-- Check camera permissions if frame capture fails.
+- No tools loaded: rerun setup and check VS Code MCP config path.
+- Camera unavailable: test with `physical-mcp doctor`.

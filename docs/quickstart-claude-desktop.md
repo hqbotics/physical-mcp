@@ -1,27 +1,33 @@
 # Quickstart: Claude Desktop + physical-mcp
 
-## Prerequisites
-- macOS or Windows with Claude Desktop installed
-- Python 3.10+
-- A USB/UVC camera connected
+Give your AI eyes in ~5 minutes.
 
-## Install
+## 1) Install
 ```bash
 pip install physical-mcp
 physical-mcp
 ```
-The setup wizard auto-detects camera + Claude Desktop and writes config.
+During setup, pick your camera and enable Claude Desktop integration.
 
-## Verify
-1. Restart Claude Desktop.
-2. In Claude, ask: `List available MCP tools.`
-3. Confirm tools like `capture_frame` appear.
+## 2) Restart Claude Desktop
+Completely quit and reopen Claude Desktop.
 
-## First use
-Prompt Claude:
+## 3) Verify tools
+Ask Claude:
+- `List available MCP tools from physical-mcp.`
 - `Capture a frame and describe what you see.`
-- `Watch for changes at my desk and alert me.`
+
+You should see tools like `capture_frame`, `watch_scene`, and alert tools.
+
+## 4) First automation
+Try:
+`Create a watch rule for my pantry shelf and alert me when items look low.`
+
+## Why this beats app-only camera alerts
+- Open workflow (MCP + REST), not dead-end notifications
+- No 5-minute blind spot behavior on free usage path
+- Works with your existing camera hardware
 
 ## Troubleshooting
-- If no tools appear, run `physical-mcp` again and restart Claude.
-- If no camera is found, test another USB port and re-run setup.
+- No tools in Claude: run `physical-mcp` again, then restart Claude.
+- Camera not found: reconnect camera and run `physical-mcp doctor`.

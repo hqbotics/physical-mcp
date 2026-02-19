@@ -1,27 +1,30 @@
 # Quickstart: Cursor + physical-mcp
 
-## Prerequisites
-- Cursor installed
-- Python 3.10+
-- A USB/UVC camera connected
+Connect real camera events to your coding workflow.
 
-## Install
+## 1) Install
 ```bash
 pip install physical-mcp
 physical-mcp
 ```
-Setup auto-configures Cursor MCP settings.
+Choose Cursor when prompted for MCP client setup.
 
-## Verify
-1. Restart Cursor.
-2. Ask Cursor agent: `Show available MCP tools.`
-3. Confirm `capture_frame` and related tools are visible.
+## 2) Restart Cursor
+Fully restart Cursor so MCP config reloads.
 
-## First use
-Use prompts:
-- `Capture a frame and tell me what changed since last frame.`
-- `Create a rule to alert when motion persists for 2 minutes.`
+## 3) Verify in chat
+Ask Cursor:
+- `List physical-mcp tools.`
+- `Capture a frame from camera usb:0 and summarize it.`
+
+## 4) Useful dev rule
+`Watch my 3D printer area and alert me in this chat when print failure is likely.`
+
+## Why this beats consumer camera apps
+- You get AI context in your dev environment
+- Open APIs for downstream actions
+- Not locked to one camera brand or app
 
 ## Troubleshooting
-- If tools are missing, re-run `physical-mcp` then restart Cursor.
-- If camera is busy, close other camera apps and retry.
+- MCP tools missing: rerun `physical-mcp` setup and reselect Cursor.
+- Frame timeouts: reduce resolution/FPS in config and retry.
