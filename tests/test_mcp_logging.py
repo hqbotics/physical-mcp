@@ -118,6 +118,7 @@ class TestMcpLogFormatting:
         assert payload["rule_id"] == "r_42"
         assert payload["level"] == "warning"
         assert payload["logger"] == "physical-mcp"
+        assert "T" in payload["timestamp"]
         assert payload["data"].startswith(
             "PMCP[PROVIDER_ERROR] | event_id=evt_struct | camera_id=usb:0 | rule_id=r_42 |"
         )
@@ -555,6 +556,30 @@ class TestStartupFallbackWarningLifespan:
         assert topic == "mcp_log"
         assert payload["event_id"] == evt["event_id"]
 
+    @pytest.mark.asyncio
+    async def test_server_lifespan_records_startup_warning_before_any_tool_call(self):
+        cfg = PhysicalMCPConfig()
+        cfg.vision_api.enabled = False
+
+        mcp = create_server(cfg)
+        configure_provider_fn = mcp._tool_manager._tools["configure_provider"].fn
+        state = inspect.getclosurevars(configure_provider_fn).nonlocals["state"]
+
+        assert state == {}
+
+        async with mcp._mcp_server.lifespan(mcp._mcp_server):
+            assert len(state["alert_events"]) == 1
+            evt = state["alert_events"][0]
+            assert evt["event_type"] == "startup_warning"
+            assert evt["camera_id"] == ""
+            assert evt["rule_id"] == ""
+            assert state["_fallback_warning_pending"] is False
+
+            pending = state.get("_pending_session_logs")
+            assert isinstance(pending, list)
+            assert len(pending) == 1
+            assert f"event_id={evt['event_id']}" in pending[0]["data"]
+
 
 class TestStartupFallbackWarning:
     @pytest.mark.asyncio
@@ -709,7 +734,7 @@ class TestStartupFallbackWarning:
 
         topic, payload = event_bus.publish.await_args.args
         assert topic == "mcp_log"
-        for key in ("event_type", "event_id", "level", "data", "logger"):
+        for key in ("event_type", "event_id", "level", "data", "logger", "timestamp"):
             assert key in payload
         assert payload["event_type"] == "startup_warning"
         assert payload["level"] == "warning"

@@ -89,6 +89,7 @@ async def _send_mcp_log(
         "message": message,
         "data": data,
         "logger": "physical-mcp",
+        "timestamp": datetime.now().isoformat(),
     }
 
     # Structured in-process fanout for subscribers (metrics, relays, etc.).
