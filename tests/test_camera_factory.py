@@ -40,7 +40,7 @@ class TestCameraFactory:
         assert isinstance(camera, USBCamera)
 
     def test_error_message_lists_supported_types(self):
-        """Error message includes both supported types."""
-        config = CameraConfig(type="http")
-        with pytest.raises(ValueError, match="usb, rtsp"):
+        """Error message includes all supported types."""
+        config = CameraConfig(type="gopro")
+        with pytest.raises(ValueError, match="usb, rtsp, http"):
             create_camera(config)
