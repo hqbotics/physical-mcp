@@ -691,6 +691,7 @@ class TestStartupFallbackWarning:
         assert topic == "mcp_log"
         assert payload["event_type"] == "startup_warning"
         assert payload["event_id"] == evt["event_id"]
+        assert payload["timestamp"] == evt["timestamp"]
         assert payload["message"].startswith("Server is running in fallback client-side reasoning mode")
         assert payload["message"].lower().startswith("server is running in fallback client-side reasoning mode")
         assert payload["message"].lower().split(".")[0] == "server is running in fallback client-side reasoning mode"
@@ -930,6 +931,7 @@ class TestConfigureProviderContract:
         topic, payload = event_bus.publish.await_args.args
         assert topic == "mcp_log"
         assert payload["event_id"] == evt["event_id"]
+        assert payload["timestamp"] == evt["timestamp"]
         assert payload["message"].startswith("Runtime switched to fallback client-side reasoning mode")
         assert payload["message"].lower().startswith("runtime switched to fallback client-side reasoning mode")
         assert payload["message"].lower().split(".")[0] == "runtime switched to fallback client-side reasoning mode"

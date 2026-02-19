@@ -66,6 +66,7 @@ async def _send_mcp_log(
     camera_id: str = "",
     rule_id: str = "",
     event_id: str = "",
+    timestamp: str = "",
 ) -> None:
     """Best-effort MCP log emission + structured internal fanout."""
     if not shared_state:
@@ -89,7 +90,7 @@ async def _send_mcp_log(
         "message": message,
         "data": data,
         "logger": "physical-mcp",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": timestamp or datetime.now().isoformat(),
     }
 
     # Structured in-process fanout for subscribers (metrics, relays, etc.).
@@ -223,12 +224,19 @@ async def _emit_fallback_mode_warning(
         event_type="startup_warning",
         message=replay_message,
     )
+    event_timestamp = ""
+    for event in reversed(shared_state.get("alert_events", [])):
+        if event.get("event_id") == event_id:
+            event_timestamp = str(event.get("timestamp", ""))
+            break
+
     await _send_mcp_log(
         shared_state,
         "warning",
         log_message,
         event_type="startup_warning",
         event_id=event_id,
+        timestamp=event_timestamp,
     )
     return True
 

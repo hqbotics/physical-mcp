@@ -235,7 +235,7 @@ paths:
     get:
       operationId: replayAlerts
       summary: Replay recent alert events
-      description: Returns events in deterministic order (oldest to newest by timestamp, tie-break by event_id).
+      description: Returns events in deterministic order (oldest to newest by timestamp, tie-break by event_id). Startup fallback warnings are recorded at server startup before any MCP tool calls; if MCP session logging is attached later, the same warning is replayed with the same event_id.
       parameters:
         - in: query
           name: limit
@@ -244,17 +244,32 @@ paths:
             minimum: 1
             maximum: 500
             default: 50
+          examples:
+            latest_one:
+              summary: Return only the latest matching replay row
+              value: 1
+            operator_default:
+              summary: Default replay window for triage
+              value: 50
         - in: query
           name: since
           schema:
             type: string
             format: date-time
           description: ISO timestamp cursor (exclusive). Invalid values are ignored (treated as no cursor).
+          examples:
+            after_runtime_downgrade:
+              summary: Replay only events after a known downgrade moment
+              value: "2026-02-18T20:06:00Z"
         - in: query
           name: camera_id
           schema:
             type: string
           description: Camera id filter (leading/trailing whitespace is ignored; replayed stored camera_id values are normalized too).
+          examples:
+            normalized_input:
+              summary: Space-padded user input is normalized
+              value: " usb:0 "
         - in: query
           name: event_type
           schema:
@@ -267,6 +282,13 @@ paths:
               - startup_warning
               - system
           description: Event type filter (case-insensitive; replayed stored event_type values are normalized too).
+          examples:
+            startup_path:
+              summary: Startup fallback warning replay
+              value: startup_warning
+            pending_eval_uppercase_input:
+              summary: Case-insensitive matching accepts uppercase query
+              value: CAMERA_ALERT_PENDING_EVAL
       responses:
         '200':
           description: Recent alert events
