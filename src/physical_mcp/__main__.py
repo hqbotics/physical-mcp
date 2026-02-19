@@ -548,7 +548,7 @@ def tunnel(port: int, provider: str) -> None:
             assert proc.stdout is not None
             start_deadline = time.time() + 20
             for line in proc.stdout:
-                match = re.search(r"https://[a-zA-Z0-9.-]+trycloudflare\\.com", line)
+                match = re.search(r"https://[a-zA-Z0-9.-]+trycloudflare\.com", line)
                 if match:
                     https_url = match.group(0)
                     break
