@@ -972,6 +972,29 @@ class TestGetCameraHealthContract:
         assert health["camera_name"] == "usb:0"
         assert health["status"] == "running"
 
+    @pytest.mark.asyncio
+    async def test_get_camera_health_all_normalizes_missing_camera_id_to_map_key(self):
+        mcp = create_server(PhysicalMCPConfig())
+        tool = mcp._tool_manager._tools["get_camera_health"]
+        get_camera_health_fn = tool.fn
+
+        closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
+        closure_state.update({
+            "camera_health": {
+                "usb:0": {
+                    "camera_id": "",
+                    "camera_name": "Office",
+                    "status": "running",
+                }
+            }
+        })
+
+        result = await get_camera_health_fn()
+        health = result["cameras"]["usb:0"]
+        assert health["camera_id"] == "usb:0"
+        assert health["camera_name"] == "Office"
+        assert health["status"] == "running"
+
 
 class TestConfigureProviderContract:
     @pytest.mark.asyncio
