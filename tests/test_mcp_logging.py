@@ -1228,6 +1228,45 @@ class TestGetCameraHealthContract:
             for field in ("backoff_until", "last_success_at", "last_frame_at"):
                 assert mcp_health[field] == api_health[field]
 
+    @pytest.mark.asyncio
+    async def test_health_message_field_difference_is_consistent_across_mixed_rows(self):
+        mixed = {
+            "usb:0": {
+                "camera_id": "",
+                "camera_name": "",
+                "status": "running",
+            },
+            "usb:1": "malformed",
+            "usb:2": {
+                "camera_id": "usb:2",
+                "camera_name": "Lab",
+                "consecutive_errors": 2,
+                "backoff_until": "2026-02-18T02:35:00",
+                "last_success_at": None,
+                "last_error": "timeout",
+                "last_frame_at": None,
+                "status": "degraded",
+            },
+        }
+
+        mcp = create_server(PhysicalMCPConfig())
+        tool = mcp._tool_manager._tools["get_camera_health"]
+        get_camera_health_fn = tool.fn
+        closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
+        closure_state.update({"camera_health": mixed})
+
+        mcp_result = await get_camera_health_fn()
+
+        app = create_vision_routes({"camera_health": mixed})
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/health")
+            assert resp.status == 200
+            api_result = await resp.json()
+
+        for cid in mixed:
+            assert mcp_result["cameras"][cid]["message"] == "No health data yet. Start monitoring first."
+            assert api_result["cameras"][cid]["message"] == "No health data yet."
+
 
 class TestConfigureProviderContract:
     @pytest.mark.asyncio
