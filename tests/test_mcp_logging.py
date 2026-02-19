@@ -403,12 +403,13 @@ class TestPerceptionLoopProviderErrorCorrelation:
         replay_evt = shared_state["alert_events"][0]
         assert replay_evt["event_type"] == "provider_error"
 
-        # EventBus fanout should carry same event_id
+        # EventBus fanout should carry same event_id/timestamp
         topic, payload = event_bus.publish.await_args.args
         assert topic == "mcp_log"
         assert payload["event_type"] == "provider_error"
         assert payload["event_id"] == replay_evt["event_id"]
         assert payload["camera_id"] == "usb:0"
+        assert payload["timestamp"] == replay_evt["timestamp"]
 
         # Session log should carry same event_id too
         kwargs = session.send_log_message.await_args.kwargs
@@ -499,6 +500,89 @@ class TestPerceptionLoopProviderErrorCorrelation:
         assert mcp_payload["event_id"] == replay_evt["event_id"]
         assert mcp_payload["camera_id"] == "usb:0"
         assert mcp_payload["rule_id"] == "r_123"
+        assert mcp_payload["timestamp"] == replay_evt["timestamp"]
+
+        kwargs = session.send_log_message.await_args.kwargs
+        assert f"event_id={replay_evt['event_id']}" in kwargs["data"]
+
+    @pytest.mark.asyncio
+    async def test_camera_alert_pending_eval_branch_replay_and_mcp_log_fanout_share_event_id_and_timestamp(self):
+        frame = MagicMock()
+        frame.to_base64.return_value = "fake-b64"
+
+        camera = AsyncMock()
+        camera.grab_frame = AsyncMock(side_effect=[frame, asyncio.CancelledError()])
+
+        frame_buffer = AsyncMock()
+        sampler = MagicMock()
+        change = SimpleNamespace(
+            level=SimpleNamespace(value="major"),
+            description="major scene change",
+            hash_distance=22,
+            pixel_diff_pct=42.0,
+        )
+        sampler.should_analyze.return_value = (True, change)
+
+        analyzer = MagicMock()
+        analyzer.has_provider = False
+
+        scene_state = MagicMock()
+        scene_state.to_context_string.return_value = "person near door"
+        rules_engine = MagicMock()
+        active_rule = SimpleNamespace(
+            id="r_123", name="Front Door Watch", condition="person at door",
+            priority=SimpleNamespace(value="high"),
+        )
+        rules_engine.get_active_rules.return_value = [active_rule]
+
+        stats = MagicMock()
+        stats.budget_exceeded.return_value = False
+
+        config = PhysicalMCPConfig()
+        config.perception.capture_fps = 1000
+
+        alert_queue = AsyncMock()
+        session = AsyncMock()
+        session.check_client_capability = MagicMock(return_value=False)
+        event_bus = AsyncMock()
+        shared_state = {
+            "_session": session,
+            "event_bus": event_bus,
+            "alert_events": [],
+            "alert_events_max": 50,
+            "camera_health": {},
+        }
+
+        with pytest.raises(asyncio.CancelledError):
+            await _perception_loop(
+                camera=camera,
+                frame_buffer=frame_buffer,
+                sampler=sampler,
+                analyzer=analyzer,
+                scene_state=scene_state,
+                rules_engine=rules_engine,
+                stats=stats,
+                config=config,
+                alert_queue=alert_queue,
+                notifier=None,
+                memory=None,
+                shared_state=shared_state,
+                camera_id="usb:0",
+                camera_name="Office",
+            )
+
+        replay_evt = shared_state["alert_events"][0]
+        assert replay_evt["event_type"] == "camera_alert_pending_eval"
+
+        publish_calls = event_bus.publish.await_args_list
+        mcp_calls = [c for c in publish_calls if c.args and c.args[0] == "mcp_log"]
+        assert len(mcp_calls) >= 1
+        _, mcp_payload = mcp_calls[-1].args
+
+        assert mcp_payload["event_type"] == "camera_alert_pending_eval"
+        assert mcp_payload["event_id"] == replay_evt["event_id"]
+        assert mcp_payload["camera_id"] == "usb:0"
+        assert mcp_payload["timestamp"] == replay_evt["timestamp"]
 
         kwargs = session.send_log_message.await_args.kwargs
         assert f"event_id={replay_evt['event_id']}" in kwargs["data"]

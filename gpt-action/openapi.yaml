@@ -623,6 +623,21 @@ paths:
                         timestamp: "2026-02-18T03:43:00.000000"
                     count: 1
                     timestamp: 1771386180.10
+                rule_eval_error_event_id_timestamp_correlation:
+                  summary: Rule-eval-error replay row for parity triage
+                  description: Correlate (`event_id`, `timestamp`) with PMCP/EventBus `mcp_log` payload for rule_eval_error triage.
+                  value:
+                    events:
+                      - event_id: evt_re_corr_401
+                        event_type: rule_eval_error
+                        camera_id: usb:0
+                        camera_name: Front Door
+                        rule_id: ""
+                        rule_name: ""
+                        message: Rule evaluation failed: provider malformed JSON
+                        timestamp: "2026-02-18T04:25:00.200000"
+                    count: 1
+                    timestamp: 1771388700.20
                 event_variant_startup_warning:
                   value:
                     events:
