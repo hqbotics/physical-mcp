@@ -507,6 +507,25 @@ class TestHealthAndAlerts:
             assert health["last_frame_at"] is None
 
     @pytest.mark.asyncio
+    async def test_health_all_normalizes_empty_camera_name_to_camera_id(self, state_with_data):
+        state_with_data["camera_health"] = {
+            "usb:0": {
+                "camera_id": "usb:0",
+                "camera_name": "",
+                "status": "running",
+            }
+        }
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/health")
+            assert resp.status == 200
+            data = await resp.json()
+            health = data["cameras"]["usb:0"]
+            assert health["camera_id"] == "usb:0"
+            assert health["camera_name"] == "usb:0"
+            assert health["status"] == "running"
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "status,errors,backoff,last_error",
         [

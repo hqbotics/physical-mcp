@@ -180,6 +180,7 @@ paths:
     get:
       operationId: getHealthAll
       summary: Get per-camera health snapshots
+      description: Health rows are normalized server-side; missing keys are filled with safe defaults and empty camera_name falls back to camera_id.
       responses:
         '200':
           description: Health state for all cameras
@@ -205,6 +206,7 @@ paths:
     get:
       operationId: getHealthByCamera
       summary: Get per-camera health for one camera
+      description: Returns normalized health shape for known and unknown cameras; missing keys are defaulted for contract stability.
       parameters:
         - in: path
           name: camera_id
