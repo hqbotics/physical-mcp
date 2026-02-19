@@ -182,6 +182,20 @@ def _record_alert_event(
     return event_id
 
 
+def _alert_event_timestamp(
+    shared_state: dict[str, Any] | None,
+    event_id: str,
+) -> str:
+    """Resolve recorded alert-event timestamp for a known event id."""
+    if not shared_state or not event_id:
+        return ""
+
+    for event in reversed(shared_state.get("alert_events", [])):
+        if event.get("event_id") == event_id:
+            return str(event.get("timestamp", ""))
+    return ""
+
+
 async def _emit_fallback_mode_warning(
     shared_state: dict[str, Any] | None,
     *,
@@ -224,11 +238,7 @@ async def _emit_fallback_mode_warning(
         event_type="startup_warning",
         message=replay_message,
     )
-    event_timestamp = ""
-    for event in reversed(shared_state.get("alert_events", [])):
-        if event.get("event_id") == event_id:
-            event_timestamp = str(event.get("timestamp", ""))
-            break
+    event_timestamp = _alert_event_timestamp(shared_state, event_id)
 
     await _send_mcp_log(
         shared_state,
@@ -435,6 +445,7 @@ async def _evaluate_via_sampling(
                 camera_id=camera_id,
                 rule_id=alert.rule.id,
                 event_id=event_id,
+                timestamp=_alert_event_timestamp(shared_state, event_id),
             )
     except Exception as e:
         logger.error(f"Sampling evaluation parse error: {e}")
@@ -552,6 +563,7 @@ async def _perception_loop(
                         event_type="provider_error",
                         camera_id=camera_id,
                         event_id=event_id,
+                        timestamp=_alert_event_timestamp(shared_state, event_id),
                     )
                     await asyncio.sleep(interval)
                     continue
@@ -594,6 +606,7 @@ async def _perception_loop(
                             event_type="rule_eval_error",
                             camera_id=camera_id,
                             event_id=event_id,
+                            timestamp=_alert_event_timestamp(shared_state, event_id),
                         )
                         await asyncio.sleep(interval)
                         continue
@@ -643,6 +656,7 @@ async def _perception_loop(
                             camera_id=camera_id,
                             rule_id=alert.rule.id,
                             event_id=event_id,
+                            timestamp=_alert_event_timestamp(shared_state, event_id),
                         )
                     stats.record_analysis()
 
@@ -722,6 +736,7 @@ async def _perception_loop(
                                 event_type="camera_alert_pending_eval",
                                 camera_id=camera_id,
                                 event_id=event_id,
+                                timestamp=_alert_event_timestamp(shared_state, event_id),
                             )
 
                         # Publish scene change to EventBus
@@ -1416,6 +1431,7 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
                 event_type="watch_rule_triggered",
                 rule_id=alert.rule.id,
                 event_id=event_id,
+                timestamp=_alert_event_timestamp(state, event_id),
             )
 
         return {

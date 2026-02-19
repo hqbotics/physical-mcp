@@ -195,6 +195,7 @@ class TestMcpReplayAndFanoutCorrelation:
             event_type="provider_error",
             camera_id="usb:0",
             event_id=evt_id,
+            timestamp=state["alert_events"][0]["timestamp"],
         )
 
         assert state["alert_events"][0]["event_id"] == evt_id
@@ -204,6 +205,7 @@ class TestMcpReplayAndFanoutCorrelation:
         assert payload["event_type"] == "provider_error"
         assert payload["event_id"] == evt_id
         assert payload["camera_id"] == "usb:0"
+        assert payload["timestamp"] == state["alert_events"][0]["timestamp"]
 
         kwargs = session.send_log_message.await_args.kwargs
         assert f"event_id={evt_id}" in kwargs["data"]
@@ -237,6 +239,7 @@ class TestMcpReplayAndFanoutCorrelation:
             camera_id="usb:0",
             rule_id="r_123",
             event_id=evt_id,
+            timestamp=state["alert_events"][0]["timestamp"],
         )
 
         assert state["alert_events"][0]["event_id"] == evt_id
@@ -247,6 +250,7 @@ class TestMcpReplayAndFanoutCorrelation:
         assert payload["event_id"] == evt_id
         assert payload["camera_id"] == "usb:0"
         assert payload["rule_id"] == "r_123"
+        assert payload["timestamp"] == state["alert_events"][0]["timestamp"]
 
         kwargs = session.send_log_message.await_args.kwargs
         assert f"event_id={evt_id}" in kwargs["data"]
