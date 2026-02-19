@@ -27,7 +27,7 @@ class TestSetupCommand:
         )
 
         result = runner.invoke(
-            main, ["setup", "--config", str(config_path)], input="n\n"
+            main, ["setup", "--config", str(config_path)], input="n\nn\n"
         )
 
         assert result.exit_code == 0
@@ -58,7 +58,7 @@ class TestSetupCommand:
         )
 
         result = runner.invoke(
-            main, ["setup", "--config", str(config_path)], input="n\n"
+            main, ["setup", "--config", str(config_path)], input="n\nn\n"
         )
 
         assert result.exit_code == 0

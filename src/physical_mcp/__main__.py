@@ -360,9 +360,44 @@ def setup(config_path: str | None, advanced: bool) -> None:
     else:
         click.echo("No USB cameras detected.")
 
-    # ── 1b. RTSP / IP camera support ─────────────────────
+    # ── 1b. Scan LAN for IP cameras ──────────────────────
+    scan_lan = click.confirm(
+        "\nScan LAN for IP cameras? (takes ~3 seconds)",
+        default=True,
+    )
+    if scan_lan:
+        import asyncio
+
+        from .camera.discovery import discover_cameras
+
+        click.echo("Scanning network...")
+        try:
+            ip_cameras = asyncio.run(discover_cameras(timeout=2.0))
+        except Exception:
+            ip_cameras = []
+
+        if ip_cameras:
+            click.echo(f"Found {len(ip_cameras)} IP camera(s):")
+            for i, cam in enumerate(ip_cameras):
+                click.echo(f"  {i + 1}. {cam.host}:{cam.port} ({cam.type})")
+            add_found = click.confirm("Add these cameras?", default=True)
+            if add_found:
+                for cam in ip_cameras:
+                    camera_configs.append(
+                        CameraConfig(
+                            id=cam.suggested_id,
+                            name=cam.name,
+                            type=cam.type,
+                            url=cam.url,
+                        )
+                    )
+                    click.echo(f"  ✓ Added: {cam.suggested_id}")
+        else:
+            click.echo("No IP cameras found on the local network.")
+
+    # ── 1c. Manual RTSP / IP camera entry ──────────────────
     add_rtsp = click.confirm(
-        "\nAdd an RTSP/IP camera? (Reolink, Tapo, Hikvision, etc.)",
+        "\nAdd an RTSP/IP camera manually?",
         default=False,
     )
     while add_rtsp:
