@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -13,6 +14,9 @@ from .prompts import build_analysis_prompt, build_rule_eval_prompt
 from .providers.base import VisionProvider
 
 logger = logging.getLogger("physical-mcp")
+
+# Maximum time to wait for an LLM API call before giving up (seconds)
+LLM_CALL_TIMEOUT = 30.0
 
 
 def _is_api_error(e: Exception) -> bool:
@@ -82,7 +86,13 @@ class FrameAnalyzer:
         )
 
         try:
-            return await self._provider.analyze_image_json(image_b64, prompt)
+            return await asyncio.wait_for(
+                self._provider.analyze_image_json(image_b64, prompt),
+                timeout=LLM_CALL_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Scene analysis timed out after %.0fs", LLM_CALL_TIMEOUT)
+            return {"summary": "", "objects": [], "people_count": 0}
         except json.JSONDecodeError:
             # JSON parse failure — don't retry (same response likely).
             # Return empty summary so the caller keeps the previous good scene data.
@@ -91,7 +101,7 @@ class FrameAnalyzer:
         except Exception as e:
             if _is_api_error(e):
                 raise  # Let perception loop handle backoff
-            logger.error(f"Scene analysis failed: {e}")
+            logger.error("Scene analysis failed: %s", e)
             return {"summary": f"Analysis error: {e}", "objects": [], "people_count": 0}
 
     async def evaluate_rules(
@@ -115,10 +125,16 @@ class FrameAnalyzer:
         )
 
         try:
-            raw = await self._provider.analyze_image_json(image_b64, prompt)
+            raw = await asyncio.wait_for(
+                self._provider.analyze_image_json(image_b64, prompt),
+                timeout=LLM_CALL_TIMEOUT,
+            )
             return [RuleEvaluation(**ev) for ev in raw.get("evaluations", [])]
+        except asyncio.TimeoutError:
+            logger.warning("Rule evaluation timed out after %.0fs", LLM_CALL_TIMEOUT)
+            return []
         except Exception as e:
             if _is_api_error(e):
                 raise  # Let perception loop handle backoff
-            logger.error(f"Rule evaluation failed: {e}")
+            logger.error("Rule evaluation failed: %s", e)
             return []

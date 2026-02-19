@@ -8,12 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- RTSP camera backend with auto-reconnect, TCP transport, credential masking
+- HTTP MJPEG camera backend for ESP32-CAM, OctoPrint, and cheap IP cameras
+- LAN camera auto-discovery (async TCP port scan for RTSP/HTTP on /24 subnet)
+- Setup wizard: LAN camera scan + manual RTSP entry flow
+- Cloudflare tunnel support (`physical-mcp tunnel`) with auto-detect fallback to ngrok
+- mDNS/Bonjour advertisement for zero-config LAN discovery
+- Structured logging with console + rotating file handler (~/.physical-mcp/logs/)
+- SIGTERM/SIGINT signal handlers for graceful shutdown (flush state, close cameras)
+- LLM call timeouts (30s max per analysis, prevents perception loop hangs)
 - `physical-mcp doctor` command for system diagnostics
 - `physical-mcp --version` flag
 - GitHub Actions CI/CD (test matrix: macOS/Linux/Windows x Python 3.10-3.13)
 - PyPI release workflow (trusted publishing on tag push)
 - Makefile for standard dev workflow
+- Vision API bearer token auth (auto-generated on setup)
 - CHANGELOG.md
+
+### Fixed
+- Robust JSON extraction across all vision providers (4-stage fallback: strip markdown fences, direct parse, boundary extraction, truncation repair)
+- Scene state overwrite protection in both MCP server and Vision API perception loops
+- Google Gemini provider max_output_tokens increased from 500 to 1024
+- Anthropic provider max_output_tokens increased from 500 to 1024
+
+### Changed
+- All vision providers now share `json_extract.extract_json()` for consistent JSON parsing
+- Camera factory now supports 3 types: usb, rtsp, http
 
 ## [0.1.0] - 2026-02-17
 

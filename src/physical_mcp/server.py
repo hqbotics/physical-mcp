@@ -614,12 +614,25 @@ async def _perception_loop(
                     await asyncio.sleep(interval)
                     continue
 
-                scene_state.update(
-                    summary=scene_data.get("summary", ""),
-                    objects=scene_data.get("objects", []),
-                    people_count=scene_data.get("people_count", 0),
-                    change_desc=change.description,
-                )
+                # Only update scene if we got a real summary
+                # (not an error placeholder or empty response)
+                summary = scene_data.get("summary", "")
+                if (
+                    summary
+                    and not summary.startswith("Analysis error:")
+                    and not summary.lstrip().startswith("```")
+                ):
+                    scene_state.update(
+                        summary=summary,
+                        objects=scene_data.get("objects", []),
+                        people_count=scene_data.get("people_count", 0),
+                        change_desc=change.description,
+                    )
+                else:
+                    logger.info(
+                        "[%s] Analysis returned no data, keeping previous scene",
+                        cam_label,
+                    )
                 stats.record_analysis()
                 consecutive_errors = 0
                 if health is not None:
@@ -1313,12 +1326,18 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             )
             stats_tracker.record_analysis()
 
-            scene.update(
-                summary=result.get("summary", ""),
-                objects=result.get("objects", []),
-                people_count=result.get("people_count", 0),
-                change_desc="Manual analysis",
-            )
+            summary = result.get("summary", "")
+            if (
+                summary
+                and not summary.startswith("Analysis error:")
+                and not summary.lstrip().startswith("```")
+            ):
+                scene.update(
+                    summary=summary,
+                    objects=result.get("objects", []),
+                    people_count=result.get("people_count", 0),
+                    change_desc="Manual analysis",
+                )
             return [
                 TextContent(
                     type="text",

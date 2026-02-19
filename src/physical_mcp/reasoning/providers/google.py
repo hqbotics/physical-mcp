@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import base64
-import json
 
 from .base import VisionProvider
+from .json_extract import extract_json
 
 
 class GoogleProvider(VisionProvider):
@@ -29,17 +29,13 @@ class GoogleProvider(VisionProvider):
         response = await self._client.aio.models.generate_content(
             model=self._model,
             contents=[image_part, text_part],
-            config=types.GenerateContentConfig(max_output_tokens=500),
+            config=types.GenerateContentConfig(max_output_tokens=1024),
         )
         return response.text
 
     async def analyze_image_json(self, image_b64: str, prompt: str) -> dict:
         text = await self.analyze_image(image_b64, prompt)
-        text = text.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = "\n".join(lines[1:-1])
-        return json.loads(text)
+        return extract_json(text)
 
     @property
     def provider_name(self) -> str:

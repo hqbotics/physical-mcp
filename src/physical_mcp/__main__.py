@@ -2,10 +2,50 @@
 
 from __future__ import annotations
 
-import click
+import logging
+import signal
+import sys
 from pathlib import Path
 
+import click
+
 from . import __version__
+
+
+def _configure_logging(verbose: bool = False) -> None:
+    """Set up structured logging with console and optional file output."""
+    log_level = logging.DEBUG if verbose else logging.INFO
+    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    date_format = "%Y-%m-%d %H:%M:%S"
+
+    # Console handler (stderr so it doesn't interfere with MCP stdio)
+    console = logging.StreamHandler(sys.stderr)
+    console.setLevel(log_level)
+    console.setFormatter(logging.Formatter(log_format, datefmt=date_format))
+
+    # File handler (optional, best-effort)
+    handlers: list[logging.Handler] = [console]
+    log_dir = Path("~/.physical-mcp/logs").expanduser()
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        from logging.handlers import RotatingFileHandler
+
+        file_handler = RotatingFileHandler(
+            log_dir / "physical-mcp.log",
+            maxBytes=5 * 1024 * 1024,  # 5 MB
+            backupCount=3,
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(logging.Formatter(log_format, datefmt=date_format))
+        handlers.append(file_handler)
+    except Exception:
+        pass  # File logging is best-effort
+
+    logging.basicConfig(level=log_level, handlers=handlers, force=True)
+
+    # Suppress noisy third-party loggers
+    for noisy in ("httpcore", "httpx", "urllib3", "asyncio"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 # ── Helpers ──────────────────────────────────────────────
@@ -40,6 +80,8 @@ def main(
     """Physical MCP — Give your AI eyes."""
     if ctx.invoked_subcommand is not None:
         return
+
+    _configure_logging()
 
     # Auto-setup: if no config exists, run the setup wizard first
     config_file = Path(config_path or "~/.physical-mcp/config.yaml").expanduser()
@@ -89,6 +131,21 @@ def main(
             from .alert_queue import AlertQueue
             from aiohttp import web as aio_web
             import uvicorn
+
+            _logger = logging.getLogger("physical-mcp")
+            _shutdown_event = asyncio.Event()
+
+            def _signal_handler(signum: int, _frame: object) -> None:
+                sig_name = signal.Signals(signum).name
+                _logger.info("Received %s — initiating graceful shutdown...", sig_name)
+                _shutdown_event.set()
+
+            # Install signal handlers (best-effort; may fail in threads)
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                try:
+                    signal.signal(sig, _signal_handler)
+                except (OSError, ValueError):
+                    pass  # Cannot set signal handler from non-main thread
 
             # Build shared state with live cameras for the Vision API.
             vision_state = {
@@ -179,7 +236,7 @@ def main(
                     last_analysis = 0.0
                     frame_count = 0
 
-                    while True:
+                    while not _shutdown_event.is_set():
                         try:
                             frame = await cam.grab_frame()
                             await fb.push(frame)
@@ -297,15 +354,42 @@ def main(
             try:
                 await server.serve()
             finally:
+                _logger.info("Shutting down Physical MCP...")
+                _shutdown_event.set()  # Signal all loops
+
+                # Cancel capture tasks
                 for t in capture_tasks:
                     t.cancel()
+                # Wait briefly for tasks to finish
+                if capture_tasks:
+                    await asyncio.gather(*capture_tasks, return_exceptions=True)
+
+                # Flush rules/memory state to disk
+                rules_engine = vision_state.get("rules_engine")
+                if rules_engine and hasattr(rules_engine, "save"):
+                    try:
+                        rules_engine.save()
+                    except Exception:
+                        pass
+
+                # Close mDNS
                 if mdns_publisher:
                     mdns_publisher.close()
+
+                # Close Vision API
                 if vision_runner:
                     await vision_runner.cleanup()
-                for cam in vision_state["cameras"].values():
+
+                # Close all cameras
+                for cam_id, cam in vision_state["cameras"].items():
                     if cam:
-                        await cam.close()
+                        try:
+                            await cam.close()
+                            _logger.info("Camera %s closed", cam_id)
+                        except Exception as e:
+                            _logger.warning("Error closing camera %s: %s", cam_id, e)
+
+                _logger.info("Physical MCP shut down cleanly.")
 
         anyio.run(_run_with_vision_api)
     else:

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import json
-
 from .base import VisionProvider
+from .json_extract import extract_json
 
 
 class AnthropicProvider(VisionProvider):
@@ -21,7 +20,7 @@ class AnthropicProvider(VisionProvider):
     async def analyze_image(self, image_b64: str, prompt: str) -> str:
         response = await self._client.messages.create(
             model=self._model,
-            max_tokens=500,
+            max_tokens=1024,
             messages=[
                 {
                     "role": "user",
@@ -43,12 +42,7 @@ class AnthropicProvider(VisionProvider):
 
     async def analyze_image_json(self, image_b64: str, prompt: str) -> dict:
         text = await self.analyze_image(image_b64, prompt)
-        # Extract JSON from response — handle markdown code blocks
-        text = text.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = "\n".join(lines[1:-1])
-        return json.loads(text)
+        return extract_json(text)
 
     @property
     def provider_name(self) -> str:
