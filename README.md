@@ -52,6 +52,7 @@ physical-mcp
 - [Cursor quickstart](docs/quickstart-cursor.md)
 - [VS Code quickstart](docs/quickstart-vscode.md)
 - [OpenClaw quickstart](docs/quickstart-openclaw.md)
+- [Windows PowerShell quickstart](docs/quickstart-windows-powershell-v1.md)
 - [Gemini quickstart](docs/quickstart-gemini.md)
 - [Windsurf quickstart](docs/quickstart-windsurf.md)
 - [Trae quickstart](docs/quickstart-trae.md)
