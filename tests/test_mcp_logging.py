@@ -975,6 +975,26 @@ class TestGetCameraHealthContract:
         assert required.issubset(set(health.keys()))
 
     @pytest.mark.asyncio
+    async def test_get_camera_health_single_malformed_row_nullable_fields_stay_none(self):
+        mcp = create_server(PhysicalMCPConfig())
+        tool = mcp._tool_manager._tools["get_camera_health"]
+        get_camera_health_fn = tool.fn
+
+        closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
+        closure_state.update({
+            "camera_health": {
+                "usb:0": "malformed",
+            }
+        })
+
+        result = await get_camera_health_fn(camera_id="usb:0")
+        health = result["health"]
+        assert health["backoff_until"] is None
+        assert health["last_success_at"] is None
+        assert health["last_frame_at"] is None
+        assert health["last_error"] == ""
+
+    @pytest.mark.asyncio
     async def test_health_fallback_message_difference_is_intentional(self):
         mcp = create_server(PhysicalMCPConfig())
         tool = mcp._tool_manager._tools["get_camera_health"]

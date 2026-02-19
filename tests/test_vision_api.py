@@ -526,6 +526,21 @@ class TestHealthAndAlerts:
             assert required.issubset(set(health.keys()))
 
     @pytest.mark.asyncio
+    async def test_health_single_malformed_row_nullable_fields_remain_null(self, state_with_data):
+        state_with_data["camera_health"] = {
+            "usb:0": "malformed",
+        }
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/health/usb:0")
+            assert resp.status == 200
+            health = (await resp.json())["health"]
+            assert health["backoff_until"] is None
+            assert health["last_success_at"] is None
+            assert health["last_frame_at"] is None
+            assert health["last_error"] == ""
+
+    @pytest.mark.asyncio
     async def test_health_single_partial_row_is_normalized(self, state_with_data):
         state_with_data["camera_health"] = {
             "usb:0": {
