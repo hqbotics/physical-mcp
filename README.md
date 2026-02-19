@@ -53,7 +53,10 @@ physical-mcp
 - [VS Code quickstart](docs/quickstart-vscode.md)
 - [OpenClaw quickstart](docs/quickstart-openclaw.md)
 - [Gemini quickstart](docs/quickstart-gemini.md)
+- [Windsurf quickstart](docs/quickstart-windsurf.md)
+- [Trae quickstart](docs/quickstart-trae.md)
 - [Generic MCP client quickstart](docs/quickstart-generic-mcp-client.md)
+- [First 10 minutes playbook](docs/first-10-minutes-playbook-v1.md)
 
 ---
 
