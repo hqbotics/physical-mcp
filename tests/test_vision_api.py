@@ -657,6 +657,45 @@ class TestHealthAndAlerts:
             assert unknown["message"] == "No health data yet."
 
     @pytest.mark.asyncio
+    async def test_health_all_rows_always_include_required_camera_health_keys(self, state_with_data):
+        state_with_data["camera_health"] = {
+            "usb:0": {
+                "camera_id": "",
+                "camera_name": "",
+                "status": "running",
+            },
+            "usb:1": "malformed",
+            "usb:2": {
+                "camera_id": "usb:2",
+                "camera_name": "Lab",
+                "consecutive_errors": 2,
+                "backoff_until": "2026-02-18T02:35:00",
+                "last_success_at": None,
+                "last_error": "timeout",
+                "last_frame_at": None,
+                "status": "degraded",
+            },
+        }
+        app = create_vision_routes(state_with_data)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/health")
+            assert resp.status == 200
+            data = await resp.json()
+
+            required = {
+                "camera_id",
+                "camera_name",
+                "consecutive_errors",
+                "backoff_until",
+                "last_success_at",
+                "last_error",
+                "last_frame_at",
+                "status",
+            }
+            for health in data["cameras"].values():
+                assert required.issubset(set(health.keys()))
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "status,errors,backoff,last_error",
         [

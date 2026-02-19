@@ -36,6 +36,7 @@ Use the printed **Public URL** as your GPT Action server URL.
 - Use `/changes?wait=true` for non-blocking monitoring
 - Pull `/frame/{camera_id}` only when visual confirmation is required
 - Use `/health` if monitoring quality appears degraded (provider/backoff visibility)
+- Health fallback wording intentionally differs by surface: Vision API returns `No health data yet.`, while MCP tool `get_camera_health` returns `No health data yet. Start monitoring first.`
 - Use `/alerts` for replay after reconnects or missed turns
 - PMCP logs are now mirrored to structured internal `mcp_log` events (same `event_id`) for subscriber integrations/observability.
 - Keep polling interval >= 10s to reduce load
