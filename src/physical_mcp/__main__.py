@@ -243,6 +243,7 @@ def main(
 
             # Start Vision API
             vision_runner = None
+            mdns_publisher = None
             try:
                 vision_app = create_vision_routes(vision_state)
                 vision_runner = aio_web.AppRunner(vision_app)
@@ -261,6 +262,7 @@ def main(
 
                 # Print dashboard URL for phone/browser access
                 from .platform import get_lan_ip, print_qr_code
+                from .mdns import publish_vision_api_mdns
 
                 lan_ip = get_lan_ip()
                 dash_host = lan_ip or "127.0.0.1"
@@ -270,6 +272,12 @@ def main(
                 if auth_tok:
                     dash_url += f"?token={auth_tok}"
                 click.echo(f"Dashboard: {dash_url}")
+
+                # Advertise on LAN via mDNS/Bonjour for zero-config discovery.
+                mdns_publisher = publish_vision_api_mdns(dash_port, ip=lan_ip)
+                if mdns_publisher:
+                    click.echo(f"mDNS: http://physical-mcp.local:{dash_port}")
+
                 if lan_ip:
                     click.echo("")
                     print_qr_code(dash_url)
@@ -291,6 +299,8 @@ def main(
             finally:
                 for t in capture_tasks:
                     t.cancel()
+                if mdns_publisher:
+                    mdns_publisher.close()
                 if vision_runner:
                     await vision_runner.cleanup()
                 for cam in vision_state["cameras"].values():
