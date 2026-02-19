@@ -73,6 +73,7 @@ class VisionAPIConfig(BaseModel):
     enabled: bool = True  # ON by default — the whole point
     host: str = "0.0.0.0"  # Listen on all interfaces (LAN + mobile access)
     port: int = 8090
+    auth_token: str = ""  # Bearer token for API access (empty = no auth)
 
 
 class PhysicalMCPConfig(BaseModel):

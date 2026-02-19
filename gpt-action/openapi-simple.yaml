@@ -1,0 +1,123 @@
+openapi: 3.1.0
+info:
+  title: Physical MCP Camera API
+  version: 1.0.0
+  description: Camera vision API — get scene descriptions, frames, and health status.
+servers:
+  - url: https://unplentiful-ha-wingedly.ngrok-free.dev
+paths:
+  /scene:
+    get:
+      operationId: getScene
+      summary: Get AI scene description for all cameras
+      responses:
+        "200":
+          description: Scene summaries keyed by camera ID
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cameras:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        summary:
+                          type: string
+                        objects_present:
+                          type: array
+                          items:
+                            type: string
+                        people_count:
+                          type: integer
+                        last_updated:
+                          type: string
+                  timestamp:
+                    type: number
+  /scene/{camera_id}:
+    get:
+      operationId: getSceneByCamera
+      summary: Get AI scene description for one camera
+      parameters:
+        - in: path
+          name: camera_id
+          required: true
+          schema:
+            type: string
+          description: Camera ID (e.g. usb:0)
+      responses:
+        "200":
+          description: Scene summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    type: string
+                  objects_present:
+                    type: array
+                    items:
+                      type: string
+                  people_count:
+                    type: integer
+                  last_updated:
+                    type: string
+                  update_count:
+                    type: integer
+        "404":
+          description: Camera not found
+  /health:
+    get:
+      operationId: getHealth
+      summary: Get camera health status
+      responses:
+        "200":
+          description: Health state for all cameras
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cameras:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        status:
+                          type: string
+                        consecutive_errors:
+                          type: integer
+                        last_frame_at:
+                          type: string
+                  timestamp:
+                    type: number
+  /changes:
+    get:
+      operationId: getChanges
+      summary: Get recent scene changes
+      parameters:
+        - in: query
+          name: minutes
+          schema:
+            type: integer
+            default: 5
+        - in: query
+          name: wait
+          schema:
+            type: boolean
+            default: false
+          description: Long-poll until a change occurs
+      responses:
+        "200":
+          description: Recent changes by camera
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  changes:
+                    type: object
+                  minutes:
+                    type: integer

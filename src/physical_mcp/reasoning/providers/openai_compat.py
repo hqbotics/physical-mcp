@@ -34,7 +34,7 @@ class OpenAICompatProvider(VisionProvider):
     async def analyze_image(self, image_b64: str, prompt: str) -> str:
         response = await self._client.chat.completions.create(
             model=self._model,
-            max_tokens=500,
+            max_tokens=1024,
             messages=[
                 {
                     "role": "user",
@@ -51,15 +51,61 @@ class OpenAICompatProvider(VisionProvider):
                 }
             ],
         )
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        if content is None:
+            # Some providers return None for content (e.g. refusal, empty response)
+            raise ValueError("Provider returned empty content (None)")
+        return content
 
     async def analyze_image_json(self, image_b64: str, prompt: str) -> dict:
         text = await self.analyze_image(image_b64, prompt)
+        return self._extract_json(text)
+
+    @staticmethod
+    def _extract_json(text: str) -> dict:
+        """Extract JSON from LLM response, handling markdown fences and noise.
+
+        Tries multiple strategies:
+        1. Strip markdown code fences (```json ... ```)
+        2. Direct JSON parse
+        3. Find outermost { } boundaries and parse
+        4. Truncation repair (close open brackets/braces)
+        """
         text = text.strip()
+
+        # Strip markdown code fences
         if text.startswith("```"):
             lines = text.split("\n")
-            text = "\n".join(lines[1:-1])
-        return json.loads(text)
+            end = -1 if lines[-1].strip() == "```" else len(lines)
+            text = "\n".join(lines[1:end]).strip()
+
+        # Strategy 1: Direct parse
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 2: Find JSON object boundaries (handles leading/trailing noise)
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end > start:
+            try:
+                return json.loads(text[start : end + 1])
+            except json.JSONDecodeError:
+                pass
+            # Strategy 3: Truncation repair on the extracted substring
+            fragment = text[start:].rstrip().rstrip(",")
+            open_brackets = fragment.count("[") - fragment.count("]")
+            fragment += "]" * open_brackets
+            open_braces = fragment.count("{") - fragment.count("}")
+            fragment += "}" * open_braces
+            try:
+                return json.loads(fragment)
+            except json.JSONDecodeError:
+                pass
+
+        # Nothing worked
+        raise json.JSONDecodeError("Could not extract JSON from LLM response", text, 0)
 
     @property
     def provider_name(self) -> str:

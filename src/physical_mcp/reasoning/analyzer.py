@@ -73,15 +73,10 @@ class FrameAnalyzer:
         try:
             return await self._provider.analyze_image_json(image_b64, prompt)
         except json.JSONDecodeError:
-            # JSON parse failure — try plain text (the API worked, just bad format)
-            try:
-                text = await self._provider.analyze_image(image_b64, prompt)
-                return {"summary": text, "objects": [], "people_count": 0}
-            except Exception as e2:
-                if _is_api_error(e2):
-                    raise  # Let perception loop handle backoff
-                logger.error(f"Scene analysis retry failed: {e2}")
-                return {"summary": f"Analysis error: {e2}", "objects": [], "people_count": 0}
+            # JSON parse failure — don't retry (same response likely).
+            # Return empty summary so the caller keeps the previous good scene data.
+            logger.warning("Scene analysis returned unparseable JSON")
+            return {"summary": "", "objects": [], "people_count": 0}
         except Exception as e:
             if _is_api_error(e):
                 raise  # Let perception loop handle backoff

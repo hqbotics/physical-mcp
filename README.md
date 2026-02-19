@@ -67,6 +67,7 @@ physical-mcp
 - [Headless Raspberry Pi quickstart](docs/quickstart-headless-raspberry-pi-v1.md)
 - [Windsurf/Trae troubleshooting](docs/quickstart-windsurf-trae-troubleshooting-v1.md)
 - [Common install failures](docs/common-install-failures-v1.md)
+- [Recommended cameras (USB + RTSP)](docs/recommended-cameras.md)
 
 ---
 
