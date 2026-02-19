@@ -5,6 +5,8 @@ from __future__ import annotations
 import click
 from pathlib import Path
 
+from . import __version__
+
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -25,6 +27,7 @@ def _pick_model(provider_name: str, options: list[tuple[str, str]]) -> str:
 
 
 @click.group(invoke_without_command=True)
+@click.version_option(version=__version__, prog_name="physical-mcp")
 @click.option("--config", "config_path", default=None, help="Config file path")
 @click.option("--transport", default=None, help="Override transport: stdio | streamable-http")
 @click.option("--port", default=None, type=int, help="Override HTTP port")
@@ -62,7 +65,228 @@ def main(ctx: click.Context, config_path: str | None, transport: str | None, por
         config.server.host = "0.0.0.0"
 
     mcp_server = create_server(config)
-    mcp_server.run(transport=config.server.transport)
+
+    # In HTTP mode, start Vision API independently so it's available
+    # even before any MCP client connects (needed for ChatGPT GPT Actions).
+    if config.server.transport == "streamable-http" and config.vision_api.enabled:
+        import anyio
+
+        async def _run_with_vision_api():
+            import asyncio
+            from .vision_api import create_vision_routes
+            from .camera.factory import create_camera
+            from .camera.buffer import FrameBuffer
+            from .perception.scene_state import SceneState
+            from .rules.engine import RulesEngine
+            from .alert_queue import AlertQueue
+            from aiohttp import web as aio_web
+            import uvicorn
+
+            # Build shared state with live cameras for the Vision API.
+            vision_state = {
+                "config": config,
+                "rules_engine": RulesEngine(),
+                "scene_state": SceneState(),
+                "alert_queue": AlertQueue(),
+                "cameras": {},
+                "camera_configs": {},
+                "frame_buffers": {},
+                "scene_states": {},
+                "camera_health": {},
+                "alert_events": [],
+                "alert_events_max": 200,
+            }
+
+            # Open all configured cameras
+            opened = 0
+            for cam_config in config.cameras:
+                if not cam_config.enabled:
+                    continue
+                cid = cam_config.id
+                try:
+                    camera = create_camera(cam_config)
+                    await camera.open()
+                    vision_state["cameras"][cid] = camera
+                    vision_state["camera_configs"][cid] = cam_config
+                    vision_state["frame_buffers"][cid] = FrameBuffer(
+                        max_frames=config.perception.buffer_size
+                    )
+                    vision_state["scene_states"][cid] = SceneState()
+                    vision_state["camera_health"][cid] = {
+                        "camera_id": cid,
+                        "camera_name": cam_config.name or cid,
+                        "consecutive_errors": 0,
+                        "backoff_until": None,
+                        "last_success_at": None,
+                        "last_error": "",
+                        "last_frame_at": None,
+                        "status": "running",
+                    }
+                    opened += 1
+                    click.echo(f"Camera {cid} ({cam_config.name or cid}): opened")
+                except Exception as e:
+                    click.echo(f"Camera {cid}: failed to open ({e})", err=True)
+
+            if opened == 0:
+                click.echo("Warning: No cameras opened. Vision API will serve empty data.", err=True)
+
+            # Set up server-side vision analysis (if provider configured)
+            from .reasoning.analyzer import FrameAnalyzer
+            from .server import _create_provider
+
+            provider = _create_provider(config)
+            analyzer = FrameAnalyzer(provider)
+            vision_state["analyzer"] = analyzer
+
+            if analyzer.has_provider:
+                info = analyzer.provider_info
+                click.echo(f"Vision provider: {info['provider']} / {info['model']}")
+            else:
+                click.echo("Vision provider: none (scene analysis disabled)")
+
+            # Analysis interval — how often to call the LLM (seconds)
+            analysis_interval = max(config.perception.sampling.cooldown_seconds, 10.0)
+
+            # Start background frame capture + analysis loop for each camera
+            capture_tasks = []
+            for cid, camera in vision_state["cameras"].items():
+                buf = vision_state["frame_buffers"][cid]
+                scene_st = vision_state["scene_states"][cid]
+                fps = config.perception.capture_fps or 2
+
+                async def _capture_loop(
+                    cam=camera, fb=buf, cam_id=cid,
+                    scene=scene_st, interval=1.0 / fps,
+                ):
+                    """Grab frames, push to buffer, and periodically analyze."""
+                    from datetime import datetime, UTC
+                    import time as _time
+
+                    last_analysis = 0.0
+                    frame_count = 0
+
+                    while True:
+                        try:
+                            frame = await cam.grab_frame()
+                            await fb.push(frame)
+                            frame_count += 1
+                            health = vision_state["camera_health"].get(cam_id)
+                            if health:
+                                health["last_frame_at"] = datetime.now(UTC).isoformat()
+                                health["last_success_at"] = health["last_frame_at"]
+                                health["consecutive_errors"] = 0
+                        except Exception as e:
+                            health = vision_state["camera_health"].get(cam_id)
+                            if health:
+                                health["consecutive_errors"] += 1
+                                health["last_error"] = str(e)
+                            await asyncio.sleep(interval)
+                            continue
+
+                        # Periodic server-side scene analysis
+                        now = _time.monotonic()
+                        if (
+                            analyzer.has_provider
+                            and (now - last_analysis) >= analysis_interval
+                            and frame_count > 1  # skip first frame
+                        ):
+                            try:
+                                scene_data = await analyzer.analyze_scene(
+                                    frame, scene, config
+                                )
+                                # Only update scene if we got a real summary
+                                # (not an error placeholder)
+                                summary = scene_data.get("summary", "")
+                                if (
+                                    summary
+                                    and not summary.startswith("Analysis error:")
+                                    and not summary.lstrip().startswith("```")
+                                ):
+                                    scene.update(
+                                        summary=summary,
+                                        objects=scene_data.get("objects", []),
+                                        people_count=scene_data.get("people_count", 0),
+                                        change_desc="server-side analysis",
+                                    )
+                                    click.echo(
+                                        f"[{cam_id}] Scene: {summary[:80]}"
+                                    )
+                                else:
+                                    click.echo(
+                                        f"[{cam_id}] Analysis returned no data, keeping previous scene",
+                                        err=True,
+                                    )
+                                last_analysis = now
+                            except Exception as e:
+                                click.echo(
+                                    f"[{cam_id}] Analysis error: {e}", err=True
+                                )
+                                # Backoff on API errors
+                                last_analysis = now
+
+                        await asyncio.sleep(interval)
+
+                task = asyncio.create_task(_capture_loop())
+                capture_tasks.append(task)
+
+            # Start Vision API
+            vision_runner = None
+            try:
+                vision_app = create_vision_routes(vision_state)
+                vision_runner = aio_web.AppRunner(vision_app)
+                await vision_runner.setup()
+                site = aio_web.TCPSite(
+                    vision_runner,
+                    config.vision_api.host,
+                    config.vision_api.port,
+                )
+                await site.start()
+                click.echo(
+                    f"Vision API: http://{config.vision_api.host}:"
+                    f"{config.vision_api.port}"
+                    f"  ({opened} camera{'s' if opened != 1 else ''})"
+                )
+
+                # Print dashboard URL for phone/browser access
+                from .platform import get_lan_ip, print_qr_code
+                lan_ip = get_lan_ip()
+                dash_host = lan_ip or "127.0.0.1"
+                dash_port = config.vision_api.port
+                auth_tok = config.vision_api.auth_token
+                dash_url = f"http://{dash_host}:{dash_port}/dashboard"
+                if auth_tok:
+                    dash_url += f"?token={auth_tok}"
+                click.echo(f"Dashboard: {dash_url}")
+                if lan_ip:
+                    click.echo("")
+                    print_qr_code(dash_url)
+                    click.echo("  Scan with your phone to open the dashboard")
+            except Exception as e:
+                click.echo(f"Warning: Vision API failed to start: {e}", err=True)
+
+            # Run MCP server (blocks until shutdown)
+            starlette_app = mcp_server.streamable_http_app()
+            uvi_config = uvicorn.Config(
+                starlette_app,
+                host=config.server.host,
+                port=config.server.port,
+                log_level=mcp_server.settings.log_level.lower(),
+            )
+            server = uvicorn.Server(uvi_config)
+            try:
+                await server.serve()
+            finally:
+                for t in capture_tasks:
+                    t.cancel()
+                if vision_runner:
+                    await vision_runner.cleanup()
+                for cam in vision_state["cameras"].values():
+                    if cam:
+                        await cam.close()
+
+        anyio.run(_run_with_vision_api)
+    else:
+        mcp_server.run(transport=config.server.transport)
 
 
 @main.command()
@@ -284,35 +508,118 @@ def uninstall() -> None:
 
 
 @main.command()
-@click.option("--port", default=8400, type=int, help="Local port to tunnel")
-def tunnel(port: int) -> None:
-    """Expose physical-mcp over HTTPS for ChatGPT (uses ngrok)."""
-    try:
-        from pyngrok import ngrok  # type: ignore[import-untyped]
-    except ImportError:
-        click.echo("Install ngrok support: pip install 'physical-mcp[tunnel]'")
-        click.echo("Or manually: pip install pyngrok")
-        click.echo(f"\nAlternative: install ngrok CLI and run:")
-        click.echo(f"  ngrok http {port}")
+@click.option("--port", default=8090, type=int, help="Local port to tunnel")
+@click.option(
+    "--provider",
+    type=click.Choice(["auto", "cloudflare", "ngrok"]),
+    default="auto",
+    show_default=True,
+    help="Tunnel provider",
+)
+def tunnel(port: int, provider: str) -> None:
+    """Expose physical-mcp over HTTPS for ChatGPT/GPT Actions."""
+    import re
+    import shutil
+    import subprocess
+    import time
+
+    def _run_cloudflare() -> bool:
+        cloudflared = shutil.which("cloudflared")
+        if not cloudflared:
+            if provider == "cloudflare":
+                click.echo("cloudflared not found.")
+                click.echo(
+                    "Install Cloudflare Tunnel: "
+                    "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
+                )
+            return False
+
+        click.echo(f"Starting Cloudflare tunnel to http://localhost:{port}...")
+        proc = subprocess.Popen(
+            [cloudflared, "tunnel", "--url", f"http://localhost:{port}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+        https_url = ""
+        try:
+            assert proc.stdout is not None
+            start_deadline = time.time() + 20
+            for line in proc.stdout:
+                match = re.search(r"https://[a-zA-Z0-9.-]+trycloudflare\\.com", line)
+                if match:
+                    https_url = match.group(0)
+                    break
+                if time.time() > start_deadline:
+                    break
+
+            if not https_url:
+                click.echo("Could not detect Cloudflare public URL from tunnel output.", err=True)
+                proc.terminate()
+                return False
+
+            click.echo(f"\n  Public URL: {https_url}")
+            click.echo("\nUse this as GPT Action server URL (no /mcp suffix for REST Vision API).")
+            click.echo("Press Ctrl+C to stop the tunnel.\n")
+
+            from .platform import print_qr_code
+            print_qr_code(https_url)
+
+            while proc.poll() is None:
+                time.sleep(1)
+            click.echo("Tunnel process exited.")
+            return True
+        except KeyboardInterrupt:
+            click.echo("\nStopping Cloudflare tunnel...")
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            click.echo("Tunnel closed.")
+            return True
+
+    def _run_ngrok() -> bool:
+        try:
+            from pyngrok import ngrok  # type: ignore[import-untyped]
+        except ImportError:
+            click.echo("Install ngrok support: pip install 'physical-mcp[tunnel]'")
+            click.echo("Or manually: pip install pyngrok")
+            click.echo(f"\nAlternative: install ngrok CLI and run:")
+            click.echo(f"  ngrok http {port}")
+            return False
+
+        click.echo(f"Starting ngrok HTTPS tunnel to localhost:{port}...")
+        public_url = ngrok.connect(port, "http").public_url
+        https_url = public_url.replace("http://", "https://")
+        click.echo(f"\n  Public URL: {https_url}")
+        click.echo("\nUse this as GPT Action server URL (no /mcp suffix for REST Vision API).")
+        click.echo("Press Ctrl+C to stop the tunnel.\n")
+
+        from .platform import print_qr_code
+        print_qr_code(https_url)
+
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            ngrok.kill()
+            click.echo("\nTunnel closed.")
+            return True
+
+    if provider == "cloudflare":
+        _run_cloudflare()
+        return
+    if provider == "ngrok":
+        _run_ngrok()
         return
 
-    click.echo(f"Starting HTTPS tunnel to localhost:{port}...")
-    public_url = ngrok.connect(port, "http").public_url
-    https_url = public_url.replace("http://", "https://")
-    click.echo(f"\n  ChatGPT URL: {https_url}/mcp")
-    click.echo(f"\nPaste this into ChatGPT \u2192 Settings \u2192 Connectors \u2192 Developer Mode \u2192 Create")
-    click.echo("Press Ctrl+C to stop the tunnel.\n")
-
-    from .platform import print_qr_code
-    print_qr_code(f"{https_url}/mcp")
-
-    import time
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        ngrok.kill()
-        click.echo("\nTunnel closed.")
+    # provider=auto: prefer Cloudflare (free, stable), fallback to ngrok.
+    if _run_cloudflare():
+        return
+    _run_ngrok()
 
 
 @main.command()
@@ -540,6 +847,115 @@ def watch(camera_index: int, paste: bool, interval: float | None, on_change: boo
             listener.join()
         except KeyboardInterrupt:
             click.echo(f"\nStopped after {snap_count} snaps.")
+
+
+@main.command()
+@click.option("--config", "config_path", default=None, help="Config file path")
+def doctor(config_path: str | None) -> None:
+    """Run diagnostics and check system health."""
+    import sys
+    import socket
+    import importlib
+
+    checks: list[tuple[str, bool, str]] = []
+
+    # 1. Python version
+    ver = sys.version.split()[0]
+    ok = sys.version_info >= (3, 10)
+    checks.append(("Python version", ok, f"{ver} {'(>= 3.10)' if ok else '(need >= 3.10)'}"))
+
+    # 2. Camera detection
+    try:
+        from .camera.usb import USBCamera
+        detected = USBCamera.enumerate_cameras()
+        checks.append(("Camera detection", len(detected) > 0,
+                        f"{len(detected)} camera(s) found" if detected else "no cameras found"))
+    except Exception as e:
+        checks.append(("Camera detection", False, str(e)))
+
+    # 3. Config file
+    config_file = Path(config_path or "~/.physical-mcp/config.yaml").expanduser()
+    if config_file.exists():
+        try:
+            from .config import load_config
+            cfg = load_config(config_path)
+            checks.append(("Config file", True, str(config_file)))
+        except Exception as e:
+            checks.append(("Config file", False, f"invalid: {e}"))
+    else:
+        checks.append(("Config file", False, f"not found ({config_file})"))
+
+    # 4. Optional dependencies
+    optional_deps = [
+        ("openai", "OpenAI / OpenAI-compatible providers"),
+        ("anthropic", "Anthropic Claude provider"),
+        ("google.genai", "Google Gemini provider"),
+        ("pyngrok", "HTTPS tunnel for ChatGPT"),
+        ("pynput", "Global hotkey for watch mode"),
+    ]
+    for mod_name, desc in optional_deps:
+        try:
+            importlib.import_module(mod_name)
+            checks.append((f"  {desc}", True, "installed"))
+        except ImportError:
+            checks.append((f"  {desc}", False, "not installed (optional)"))
+
+    # 5. Port availability
+    for port_num, service in [(8400, "MCP server"), (8090, "Vision API")]:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                s.bind(("127.0.0.1", port_num))
+            checks.append((f"Port {port_num} ({service})", True, "available"))
+        except OSError:
+            checks.append((f"Port {port_num} ({service})", False, "in use (server running?)"))
+
+    # 6. Autostart service
+    try:
+        from .platform import is_autostart_installed
+        installed = is_autostart_installed()
+        checks.append(("Background service", installed,
+                        "installed" if installed else "not installed"))
+    except Exception:
+        checks.append(("Background service", False, "unable to check"))
+
+    # 7. Vision provider connectivity
+    if config_file.exists():
+        try:
+            from .config import load_config
+            cfg = load_config(config_path)
+            if cfg.reasoning.provider:
+                checks.append(("Vision provider", True,
+                                f"{cfg.reasoning.provider} / {cfg.reasoning.model or 'default'}"))
+            else:
+                checks.append(("Vision provider", True, "client-side (no API key needed)"))
+        except Exception:
+            pass
+
+    # Print results
+    click.echo("\nPhysical MCP Doctor")
+    click.echo("=" * 50)
+
+    passed = 0
+    failed = 0
+    for name, ok, detail in checks:
+        icon = click.style("PASS", fg="green") if ok else click.style("FAIL", fg="red")
+        # Don't count optional deps as failures
+        is_optional = name.startswith("  ") and "not installed" in detail
+        if ok:
+            passed += 1
+        elif is_optional:
+            icon = click.style("SKIP", fg="yellow")
+        else:
+            failed += 1
+        click.echo(f"  [{icon}] {name}: {detail}")
+
+    click.echo(f"\n  {passed} passed, {failed} failed")
+    if failed == 0:
+        click.echo(click.style("  All checks passed!", fg="green"))
+    else:
+        click.echo(click.style("  Some checks failed. See above for details.", fg="red"))
+    click.echo("")
 
 
 if __name__ == "__main__":

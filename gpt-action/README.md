@@ -8,7 +8,19 @@ Vision API is on by default (`vision_api.enabled: true`) and serves on port `809
 
 ## 2) Expose HTTPS endpoint
 
-ChatGPT Actions require HTTPS. Use `physical-mcp tunnel` (or Cloudflare/ngrok) and copy the public URL.
+ChatGPT Actions require HTTPS.
+
+Recommended (free, stable, no signup):
+- Install `cloudflared` (Cloudflare Tunnel CLI)
+- Run: `physical-mcp tunnel --provider cloudflare --port 8090`
+
+Auto mode (prefers Cloudflare if installed, falls back to ngrok):
+- Run: `physical-mcp tunnel --provider auto --port 8090`
+
+ngrok-only fallback:
+- Run: `physical-mcp tunnel --provider ngrok --port 8090`
+
+Use the printed **Public URL** as your GPT Action server URL.
 
 ## 3) Create GPT Action
 
