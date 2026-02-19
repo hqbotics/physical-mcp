@@ -297,7 +297,7 @@ def setup(config_path: str | None, advanced: bool) -> None:
     from .camera.usb import USBCamera
     from .config import (
         PhysicalMCPConfig, CameraConfig, ServerConfig, ReasoningConfig,
-        NotificationsConfig, save_config,
+        NotificationsConfig, VisionAPIConfig, save_config,
     )
     from .ai_apps import configure_all
     from .platform import get_lan_ip, print_qr_code
@@ -332,6 +332,9 @@ def setup(config_path: str | None, advanced: bool) -> None:
     model = ""
     base_url = ""
     ntfy_topic = ""
+
+    import secrets
+    vision_api_token = secrets.token_urlsafe(32)
 
     if advanced:
         # Full provider selection
@@ -436,6 +439,9 @@ def setup(config_path: str | None, advanced: bool) -> None:
         notifications=NotificationsConfig(
             desktop_enabled=True,
             ntfy_topic=ntfy_topic,
+        ),
+        vision_api=VisionAPIConfig(
+            auth_token=vision_api_token,
         ),
     )
 
