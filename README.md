@@ -55,8 +55,11 @@ physical-mcp
 - [Gemini quickstart](docs/quickstart-gemini.md)
 - [Windsurf quickstart](docs/quickstart-windsurf.md)
 - [Trae quickstart](docs/quickstart-trae.md)
+- [CodeBuddy quickstart](docs/quickstart-codebuddy.md)
 - [Generic MCP client quickstart](docs/quickstart-generic-mcp-client.md)
 - [First 10 minutes playbook](docs/first-10-minutes-playbook-v1.md)
+- [Windsurf/Trae troubleshooting](docs/quickstart-windsurf-trae-troubleshooting-v1.md)
+- [Common install failures](docs/common-install-failures-v1.md)
 
 ---
 
