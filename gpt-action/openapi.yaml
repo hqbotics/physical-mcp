@@ -180,7 +180,7 @@ paths:
     get:
       operationId: getHealthAll
       summary: Get per-camera health snapshots
-      description: Health rows are normalized server-side; missing keys are filled with safe defaults and empty camera_name falls back to camera_id. Legacy malformed/non-object rows are safely replaced with default health shape.
+      description: Health rows are normalized server-side; missing keys are filled with safe defaults and empty camera_name falls back to camera_id. Legacy malformed/non-object rows are safely replaced with default health shape. After normalization, every row satisfies the `CameraHealth` required key contract.
       responses:
         '200':
           description: Health state for all cameras

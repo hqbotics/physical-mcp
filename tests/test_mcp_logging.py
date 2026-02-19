@@ -8,6 +8,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from aiohttp.test_utils import TestClient, TestServer
+
+from physical_mcp.vision_api import create_vision_routes
 
 from physical_mcp.config import PhysicalMCPConfig
 from physical_mcp.server import (
@@ -1145,6 +1148,44 @@ class TestGetCameraHealthContract:
         }
         for health in result["cameras"].values():
             assert required.issubset(set(health.keys()))
+
+    @pytest.mark.asyncio
+    async def test_health_required_key_sets_match_between_mcp_tool_and_vision_api(self):
+        mixed = {
+            "usb:0": {
+                "camera_id": "",
+                "camera_name": "",
+                "status": "running",
+            },
+            "usb:1": "malformed",
+            "usb:2": {
+                "camera_id": "usb:2",
+                "camera_name": "Lab",
+                "consecutive_errors": 2,
+                "backoff_until": "2026-02-18T02:35:00",
+                "last_success_at": None,
+                "last_error": "timeout",
+                "last_frame_at": None,
+                "status": "degraded",
+            },
+        }
+
+        mcp = create_server(PhysicalMCPConfig())
+        tool = mcp._tool_manager._tools["get_camera_health"]
+        get_camera_health_fn = tool.fn
+        closure_state = inspect.getclosurevars(get_camera_health_fn).nonlocals["state"]
+        closure_state.update({"camera_health": mixed})
+
+        mcp_result = await get_camera_health_fn()
+
+        app = create_vision_routes({"camera_health": mixed})
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/health")
+            assert resp.status == 200
+            api_result = await resp.json()
+
+        for cid in mixed:
+            assert set(mcp_result["cameras"][cid].keys()) == set(api_result["cameras"][cid].keys())
 
 
 class TestConfigureProviderContract:
