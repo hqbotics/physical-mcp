@@ -987,7 +987,13 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         rules_store = RulesStore(config.rules_file)
         rules_engine.load_rules(rules_store.load())
 
-        provider = _create_provider(config)
+        try:
+            provider = _create_provider(config)
+        except Exception as e:
+            logger.warning(
+                "Vision provider init failed (%s) — running without analysis", e
+            )
+            provider = None
         analyzer = FrameAnalyzer(provider)
         stats = StatsTracker(
             daily_budget=config.cost_control.daily_budget_usd,
@@ -1346,6 +1352,9 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             ]
 
         # ── Client-side mode: return frame for client AI ─────
+        # Return the image with descriptive metadata (NOT imperative instructions).
+        # MCP clients like ChatGPT naturally analyze ImageContent — imperative
+        # prompts ("Describe what you see...") get echoed to users as system output.
         result = []
         result.append(
             ImageContent(
@@ -1355,17 +1364,13 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             )
         )
 
-        prompt = f"Analyze this camera frame from {label}."
+        meta = f"Live frame from {label} captured for analysis."
         if scene.summary:
-            prompt += f"\nPrevious scene state: {scene.to_context_string()}"
+            meta += f" Previous scene: {scene.summary}"
         if question:
-            prompt += f"\nSpecific question to answer: {question}"
-        prompt += (
-            "\nDescribe what you see: objects present, people count, "
-            "activity, and anything notable. If a question was asked, answer it."
-        )
+            meta += f" User's question: {question}"
 
-        result.append(TextContent(type="text", text=prompt))
+        result.append(TextContent(type="text", text=meta))
         return result
 
     # ── Client-Side Reasoning Tools ────────────────────────────
@@ -1404,11 +1409,6 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         if not alerts:
             active_count = len(engine.get_active_rules())
             msg = f"No pending camera alerts. Scene is stable. Active watch rules: {active_count}."
-            if active_count > 0:
-                msg += (
-                    " IMPORTANT: You MUST call check_camera_alerts() again in "
-                    "10-15 seconds to continue monitoring. Do not stop polling."
-                )
             return [TextContent(type="text", text=msg)]
 
         latest = alerts[-1]
@@ -1436,20 +1436,13 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             TextContent(
                 type="text",
                 text=(
-                    f"CAMERA ALERT from {cam_label_str}: "
-                    f"{latest.change_level.upper()} scene change detected\n"
+                    f"Camera alert from {cam_label_str}: "
+                    f"{latest.change_level} scene change detected.\n"
                     f"Time: {latest.timestamp.isoformat()}\n"
                     f"Change: {latest.change_description}\n"
-                    f"Scene context: {latest.scene_context}\n\n"
-                    f"ACTIVE WATCH RULES TO EVALUATE:\n{rules_text}\n\n"
-                    f"INSTRUCTIONS: Look at the camera frame image above. "
-                    f"For EACH rule listed, determine if the condition is currently "
-                    f"met based on what you see. Then call report_rule_evaluation() "
-                    f"with your findings. Be conservative — only mark triggered=true "
-                    f"if you are confident (>= 0.7).\n"
-                    f"Alert count in this batch: {len(alerts)}\n\n"
-                    f"After calling report_rule_evaluation(), IMMEDIATELY call "
-                    f"check_camera_alerts() again to continue monitoring."
+                    f"Scene context: {latest.scene_context}\n"
+                    f"Alert count: {len(alerts)}\n\n"
+                    f"Active watch rules:\n{rules_text}"
                 ),
             )
         )

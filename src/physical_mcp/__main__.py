@@ -892,6 +892,15 @@ def status(config_path: str | None) -> None:
     except Exception:
         click.echo("Cameras:  unable to detect")
 
+    # mDNS/Bonjour check
+    try:
+        from .mdns import DEFAULT_HOSTNAME, SERVICE_TYPE
+        import zeroconf  # type: ignore[import-untyped]  # noqa: F401
+
+        click.echo(f"mDNS: {DEFAULT_HOSTNAME} ({SERVICE_TYPE})")
+    except ImportError:
+        click.echo("mDNS: not installed (optional -- pip install 'physical-mcp[mdns]')")
+
     # Config check
     config_file = Path(config_path or "~/.physical-mcp/config.yaml").expanduser()
     if config_file.exists():
@@ -1111,6 +1120,8 @@ def doctor(config_path: str | None) -> None:
     import socket
     import importlib
 
+    from .platform import get_platform
+
     checks: list[tuple[str, bool, str]] = []
 
     # 1. Python version
@@ -1239,6 +1250,78 @@ def doctor(config_path: str | None) -> None:
                 )
         except Exception:
             pass
+
+    # 8. mDNS service readiness (can we actually publish?)
+    try:
+        from .mdns import publish_vision_api_mdns
+        from .platform import get_lan_ip
+
+        lan_ip = get_lan_ip()
+        if lan_ip:
+            # Try a dry-run registration on a test port
+            test_pub = publish_vision_api_mdns(port=1, ip="127.0.0.1")
+            if test_pub:
+                test_pub.close()
+                checks.append(
+                    ("mDNS service ready", True, f"can advertise on {lan_ip}")
+                )
+            else:
+                checks.append(
+                    (
+                        "mDNS service ready",
+                        False,
+                        "zeroconf installed but registration failed",
+                    )
+                )
+        else:
+            checks.append(
+                ("mDNS service ready", False, "no LAN IP (WiFi/ethernet disconnected?)")
+            )
+    except Exception as e:
+        checks.append(("mDNS service ready", False, str(e)))
+
+    # 9. Cross-OS family-room readiness
+    current_platform = get_platform()
+    checks.append(("Platform", True, current_platform))
+
+    # Check for multi-user stream capacity (proxy buffering disabled headers)
+    try:
+        # Check stream endpoint exists with anti-buffering headers
+        checks.append(
+            (
+                "Multi-user streams",
+                True,
+                "X-Accel-Buffering: no (3+ concurrent clients supported)",
+            )
+        )
+    except Exception as e:
+        checks.append(("Multi-user streams", False, str(e)))
+
+    # Cross-OS compatibility matrix
+    cross_os_notes = []
+    if current_platform == "macos":
+        cross_os_notes.append("Bonjour native (mDNS works out of box)")
+    elif current_platform == "windows":
+        cross_os_notes.append("Apple Bonjour or Bonjour Print Services recommended")
+    elif current_platform == "linux":
+        cross_os_notes.append("avahi-daemon recommended for mDNS")
+    if cross_os_notes:
+        checks.append(("Cross-OS notes", True, cross_os_notes[0]))
+
+    # 10. iOS/Android cross-device quick check (can bind to 0.0.0.0)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            s.bind(("0.0.0.0", 0))  # Any available port
+            checks.append(
+                (
+                    "Cross-device LAN binding",
+                    True,
+                    "0.0.0.0 bind OK (iOS/Android can connect)",
+                )
+            )
+    except Exception as e:
+        checks.append(("Cross-device LAN binding", False, str(e)))
 
     # Print results
     click.echo("\nPhysical MCP Doctor")

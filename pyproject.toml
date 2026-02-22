@@ -1,6 +1,6 @@
 [project]
 name = "physical-mcp"
-version = "0.1.0"
+version = "1.0.0"
 description = "Ambient perception MCP server — connect cameras to LLMs"
 readme = "README.md"
 license = "MIT"

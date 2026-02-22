@@ -165,11 +165,12 @@ KNOWN_APPS: list[AIApp] = [
         name="Gemini",
         transport="stdio",
         config_paths={
-            "darwin": "~/Library/Application Support/Gemini/settings.json",
-            "win32": "%APPDATA%/Gemini/settings.json",
-            "linux": "~/.config/gemini/settings.json",
+            "darwin": "~/Library/Application Support/Google/Gemini/settings.json",
+            "win32": "%APPDATA%/Google/Gemini/settings.json",
+            "linux": "~/.config/google-gemini/settings.json",
         },
         server_key="mcpServers",
+        mcp_entry_key="physical-mcp",
     ),
 ]
 

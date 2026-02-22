@@ -174,6 +174,12 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
                     "GET /changes": "Recent changes (?wait=true for long-poll)",
                     "GET /health": "Per-camera health (errors/backoff/last success)",
                     "GET /alerts": "Replay recent alert events",
+                    "GET /cameras": "List all cameras with scene state",
+                    "POST /cameras/open": "Open all configured cameras on demand",
+                    "GET /rules": "List watch rules",
+                    "POST /rules": "Create a new watch rule",
+                    "DELETE /rules/{rule_id}": "Delete a watch rule",
+                    "PUT /rules/{rule_id}/toggle": "Toggle rule on/off",
                 },
             }
         )
@@ -205,6 +211,20 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             )
 
         frame = await buf.latest()
+
+        # Fallback: if buffer is empty (perception loop not running),
+        # grab directly from the camera. This lets Flutter app get frames
+        # even without active watch rules.
+        if frame is None:
+            cameras = state.get("cameras", {})
+            resolved_id = camera_id or next(iter(buffers.keys()), "")
+            cam = cameras.get(resolved_id)
+            if cam and cam.is_open():
+                try:
+                    frame = await cam.grab_frame()
+                except Exception:
+                    pass
+
         if frame is None:
             return _json_error(503, "no_frame_available", "No frame available yet")
 
@@ -249,6 +269,17 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             )
 
         frame = await buf.latest()
+
+        # Fallback: grab directly from camera if buffer empty
+        if frame is None:
+            cameras = state.get("cameras", {})
+            cam = cameras.get(resolved_id)
+            if cam and cam.is_open():
+                try:
+                    frame = await cam.grab_frame()
+                except Exception:
+                    pass
+
         if frame is None:
             return _json_error(503, "no_frame_available", "No frame available yet")
 
@@ -327,10 +358,23 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         )
         await resp.prepare(request)
 
+        # Resolve camera for direct grab fallback
+        cameras = state.get("cameras", {})
+        resolved_id = camera_id or next(iter(buffers.keys()), "")
+        cam = cameras.get(resolved_id)
+
         interval = 1.0 / fps
         try:
             while True:
                 frame = await buf.wait_for_frame(timeout=interval)
+
+                # Fallback: grab directly from camera if buffer empty
+                if frame is None and cam and cam.is_open():
+                    try:
+                        frame = await cam.grab_frame()
+                    except Exception:
+                        pass
+
                 if frame is None:
                     await asyncio.sleep(interval)
                     continue
@@ -609,34 +653,228 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             text=MANIFEST_JSON, content_type="application/manifest+json"
         )
 
+    def _rule_to_dict(r: Any) -> dict[str, Any]:
+        """Convert a WatchRule to a JSON-serializable dict."""
+        return {
+            "id": r.id,
+            "name": r.name,
+            "condition": r.condition,
+            "camera_id": r.camera_id,
+            "priority": r.priority.value
+            if hasattr(r.priority, "value")
+            else str(r.priority),
+            "enabled": r.enabled,
+            "cooldown_seconds": r.cooldown_seconds,
+            "notification_type": r.notification.type
+            if hasattr(r, "notification")
+            else "local",
+            "trigger_count": getattr(r, "trigger_count", 0),
+            "last_triggered": r.last_triggered.isoformat()
+            if r.last_triggered
+            else None,
+            "created_at": r.created_at.isoformat()
+            if hasattr(r, "created_at") and r.created_at
+            else None,
+        }
+
     @routes.get("/rules")
     async def get_rules(request: web.Request) -> web.Response:
         """Return active watch rules as JSON."""
         engine = state.get("rules_engine")
         if engine is None:
-            return web.json_response({"rules": [], "count": 0})
+            return web.json_response([])
         rules = engine.list_rules()
+        return web.json_response([_rule_to_dict(r) for r in rules])
+
+    @routes.post("/rules")
+    async def create_rule(request: web.Request) -> web.Response:
+        """Create a new watch rule via API.
+
+        JSON body: {name, condition, camera_id?, priority?, notification_type?,
+                     cooldown_seconds?}
+        """
+        from .rules.models import NotificationTarget, RulePriority, WatchRule
+        import uuid
+
+        engine = state.get("rules_engine")
+        if engine is None:
+            return _json_error(503, "rules_unavailable", "Rules engine not initialized")
+
+        try:
+            body = await request.json()
+        except Exception:
+            return _json_error(400, "invalid_json", "Request body must be JSON")
+
+        name = body.get("name", "").strip()
+        condition = body.get("condition", "").strip()
+        if not name or not condition:
+            return _json_error(
+                400,
+                "missing_fields",
+                "Both 'name' and 'condition' are required",
+            )
+
+        # Parse priority
+        priority_str = body.get("priority", "medium").lower()
+        try:
+            priority = RulePriority(priority_str)
+        except ValueError:
+            priority = RulePriority.MEDIUM
+
+        # Parse notification
+        notif_type = body.get("notification_type", "local")
+        notification = NotificationTarget(type=notif_type)
+
+        rule = WatchRule(
+            id=f"r_{uuid.uuid4().hex[:8]}",
+            name=name,
+            condition=condition,
+            camera_id=body.get("camera_id", ""),
+            priority=priority,
+            notification=notification,
+            cooldown_seconds=int(body.get("cooldown_seconds", 60)),
+        )
+        engine.add_rule(rule)
+        return web.json_response(_rule_to_dict(rule), status=201)
+
+    @routes.delete("/rules/{rule_id}")
+    async def delete_rule(request: web.Request) -> web.Response:
+        """Delete a watch rule by ID."""
+        engine = state.get("rules_engine")
+        if engine is None:
+            return _json_error(503, "rules_unavailable", "Rules engine not initialized")
+
+        rule_id = request.match_info["rule_id"]
+        removed = engine.remove_rule(rule_id)
+        if not removed:
+            return _json_error(404, "rule_not_found", f"Rule '{rule_id}' not found")
+        return web.json_response({"deleted": rule_id})
+
+    @routes.put("/rules/{rule_id}/toggle")
+    async def toggle_rule(request: web.Request) -> web.Response:
+        """Toggle a watch rule on/off."""
+        engine = state.get("rules_engine")
+        if engine is None:
+            return _json_error(503, "rules_unavailable", "Rules engine not initialized")
+
+        rule_id = request.match_info["rule_id"]
+        # Find the rule
+        rules = engine.list_rules()
+        target = None
+        for r in rules:
+            if r.id == rule_id:
+                target = r
+                break
+
+        if target is None:
+            return _json_error(404, "rule_not_found", f"Rule '{rule_id}' not found")
+
+        target.enabled = not target.enabled
+        return web.json_response(_rule_to_dict(target))
+
+    # ── Cameras endpoint ───────────────────────────────
+
+    @routes.get("/cameras")
+    async def get_cameras(request: web.Request) -> web.Response:
+        """List all cameras with config and current scene state."""
+        scene_states = state.get("scene_states", {})
+        camera_configs = state.get("camera_configs", {})
+        camera_health = state.get("camera_health", {})
+
+        cameras = []
+        for cam_id in scene_states:
+            config = camera_configs.get(cam_id, {})
+            scene = scene_states.get(cam_id)
+            health = _normalize_camera_health(camera_health.get(cam_id, {}), cam_id)
+
+            scene_data = None
+            if scene:
+                summary = scene.summary if hasattr(scene, "summary") else ""
+                objects = scene.objects if hasattr(scene, "objects") else []
+                people = scene.people_count if hasattr(scene, "people_count") else None
+                scene_data = {
+                    "summary": summary,
+                    "objects": objects,
+                    "people_count": people,
+                }
+
+            cam_name = cam_id
+            if hasattr(config, "name") and config.name:
+                cam_name = config.name
+            elif isinstance(config, dict) and config.get("name"):
+                cam_name = config["name"]
+
+            cameras.append(
+                {
+                    "id": cam_id,
+                    "name": cam_name,
+                    "type": "usb"
+                    if cam_id.startswith("usb")
+                    else "rtsp"
+                    if cam_id.startswith("rtsp")
+                    else "http"
+                    if cam_id.startswith("http")
+                    else "unknown",
+                    "enabled": health.get("status") != "error",
+                    "scene": scene_data,
+                }
+            )
+
+        return web.json_response(cameras)
+
+    @routes.post("/cameras/open")
+    async def open_cameras(request: web.Request) -> web.Response:
+        """Open all configured cameras on demand.
+
+        In stdio mode, cameras are lazy-loaded (only opened on MCP tool call).
+        This endpoint lets HTTP clients (like the Flutter app) trigger camera
+        opening without an MCP connection.
+        """
+        from .camera.factory import create_camera
+        from .camera.buffer import FrameBuffer
+        from .perception.scene_state import SceneState
+
+        config = state.get("config")
+        if not config:
+            return _json_error(500, "no_config", "Server config not loaded")
+
+        opened = []
+        failed = []
+        cameras_dict = state.setdefault("cameras", {})
+
+        for cam_config in config.cameras:
+            if not cam_config.enabled:
+                continue
+            cid = cam_config.id
+            # Skip already-open cameras
+            if cid in cameras_dict and cameras_dict[cid].is_open():
+                opened.append(cid)
+                continue
+            try:
+                camera = create_camera(cam_config)
+                await camera.open()
+                cameras_dict[cid] = camera
+                state.setdefault("camera_configs", {})[cid] = cam_config
+                state.setdefault("frame_buffers", {})[cid] = FrameBuffer(
+                    max_frames=config.perception.buffer_size
+                )
+                state.setdefault("scene_states", {})[cid] = SceneState()
+                state.setdefault("camera_health", {})[cid] = {
+                    "camera_id": cid,
+                    "camera_name": cam_config.name or cid,
+                    "consecutive_errors": 0,
+                    "backoff_until": None,
+                    "last_success_at": None,
+                    "last_error": "",
+                    "last_frame_at": None,
+                    "status": "running",
+                }
+                opened.append(cid)
+            except Exception as e:
+                failed.append({"id": cid, "error": str(e)})
+
         return web.json_response(
-            {
-                "rules": [
-                    {
-                        "id": r.id,
-                        "name": r.name,
-                        "condition": r.condition,
-                        "camera_id": r.camera_id,
-                        "priority": r.priority.value
-                        if hasattr(r.priority, "value")
-                        else str(r.priority),
-                        "enabled": r.enabled,
-                        "cooldown_seconds": r.cooldown_seconds,
-                        "last_triggered": r.last_triggered.isoformat()
-                        if r.last_triggered
-                        else None,
-                    }
-                    for r in rules
-                ],
-                "count": len(rules),
-            }
+            {"opened": opened, "failed": failed, "count": len(opened)}
         )
 
     # ── Auth middleware ─────────────────────────────────
@@ -675,7 +913,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         else:
             resp = await handler(request)
         resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "*, Authorization"
         return resp
 

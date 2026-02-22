@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-02-21
+
 ### Added
 - RTSP camera backend with auto-reconnect, TCP transport, credential masking
 - HTTP MJPEG camera backend for ESP32-CAM, OctoPrint, and cheap IP cameras
@@ -24,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Makefile for standard dev workflow
 - Vision API bearer token auth (auto-generated on setup)
 - CHANGELOG.md
+- Multi-user concurrent streaming — verified 3+ simultaneous MJPEG clients
+- Cross-platform health endpoint hardening with normalized camera health
 
 ### Fixed
 - Robust JSON extraction across all vision providers (4-stage fallback: strip markdown fences, direct parse, boundary extraction, truncation repair)

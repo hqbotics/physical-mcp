@@ -1,4 +1,4 @@
-.PHONY: install dev test lint format build publish clean doctor
+.PHONY: install dev test lint format build publish clean doctor debug-app debug-app-clean run-app release-app
 
 install:
 	uv pip install .
@@ -26,3 +26,17 @@ clean:
 
 doctor:
 	uv run physical-mcp doctor
+
+# ── Flutter App ──────────────────────────────────────
+
+debug-app:
+	./scripts/dev.sh
+
+debug-app-clean:
+	./scripts/dev.sh --clean --rebuild-backend
+
+run-app:
+	open "app/build/macos/Build/Products/Debug/Physical MCP.app"
+
+release-app:
+	./scripts/build-release.sh

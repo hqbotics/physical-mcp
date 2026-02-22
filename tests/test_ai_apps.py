@@ -94,6 +94,10 @@ class TestKnownApps:
         assert gemini.transport == "stdio"
         assert gemini.server_key == "mcpServers"
         assert "darwin" in gemini.config_paths
+        assert gemini.mcp_entry_key == "physical-mcp"
+        # Verify platform coverage
+        assert "win32" in gemini.config_paths
+        assert "linux" in gemini.config_paths
 
     def test_setup_hint_empty_for_stdio_apps(self):
         for app in KNOWN_APPS:

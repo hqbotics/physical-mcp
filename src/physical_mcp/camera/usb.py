@@ -41,17 +41,27 @@ class USBCamera(CameraSource):
             raise CameraConnectionError(
                 f"Cannot open camera at index {self._device_index}"
             )
+        # Warmup: kick-start USB cameras that are slow to initialize.
+        # Some cheap USB cameras (e.g. Decxin) need a few read attempts
+        # before they start delivering frames.
+        import time
+
+        for _ in range(5):
+            ret, _ = self._cap.read()
+            if ret:
+                break
+            time.sleep(0.2)
         self._running = True
         self._thread = threading.Thread(target=self._capture_loop, daemon=True)
         self._thread.start()
-        # Wait for first frame
-        for _ in range(50):  # 5 seconds max
+        # Wait for first frame (15 seconds — cheap USB cameras can be very slow)
+        for _ in range(150):  # 15 seconds max
             await asyncio.sleep(0.1)
             with self._lock:
                 if self._latest_frame is not None:
                     return
         raise CameraTimeoutError(
-            "Camera opened but no frames received within 5 seconds"
+            "Camera opened but no frames received within 15 seconds"
         )
 
     def _capture_loop(self) -> None:
