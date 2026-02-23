@@ -5,6 +5,7 @@ Routes alerts to the appropriate channel:
 - "webhook": HTTP POST to a configured URL
 - "desktop": OS-native desktop notification (macOS / Linux / Windows)
 - "ntfy": push notification via ntfy.sh (free, zero-signup)
+- "openclaw": multi-channel delivery via OpenClaw CLI (Telegram, WhatsApp, etc.)
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from ..config import NotificationsConfig
 from ..rules.models import AlertEvent
 from .desktop import DesktopNotifier
 from .ntfy import NtfyNotifier
+from .openclaw import OpenClawNotifier
 from .webhook import WebhookNotifier
 
 logger = logging.getLogger("physical-mcp")
@@ -35,6 +37,10 @@ class NotificationDispatcher:
             default_topic=config.ntfy_topic,
             server_url=config.ntfy_server_url,
         )
+        self._openclaw = OpenClawNotifier(
+            default_channel=config.openclaw_channel,
+            default_target=config.openclaw_target,
+        )
 
     async def dispatch(self, alert: AlertEvent) -> None:
         """Send notification based on rule's notification target."""
@@ -50,7 +56,7 @@ class NotificationDispatcher:
         elif target.type == "desktop":
             if self._desktop:
                 title = f"[{alert.rule.priority.value.upper()}] {alert.rule.name}"
-                body = alert.evaluation.reasoning
+                body = alert.rule.custom_message or alert.evaluation.reasoning
                 self._desktop.notify(title, body)
             else:
                 logger.warning(
@@ -61,7 +67,16 @@ class NotificationDispatcher:
             await self._ntfy.notify(alert, topic)
             # Desktop bonus alongside ntfy (local machine gets popup too)
             if self._desktop:
-                self._desktop.notify(alert.rule.name, alert.evaluation.reasoning)
+                body = alert.rule.custom_message or alert.evaluation.reasoning
+                self._desktop.notify(alert.rule.name, body)
+        elif target.type == "openclaw":
+            channel = target.channel or self._config.openclaw_channel
+            dest = target.target or self._config.openclaw_target
+            await self._openclaw.notify(alert, channel=channel, target=dest)
+            # Desktop bonus alongside openclaw (local machine gets popup too)
+            if self._desktop:
+                body = alert.rule.custom_message or alert.evaluation.reasoning
+                self._desktop.notify(alert.rule.name, body)
         # "local" type = no-op (the MCP tool response IS the notification)
 
     async def notify_scene_change(
@@ -91,3 +106,4 @@ class NotificationDispatcher:
         """Clean up resources."""
         await self._webhook.close()
         await self._ntfy.close()
+        await self._openclaw.close()

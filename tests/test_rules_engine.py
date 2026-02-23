@@ -92,3 +92,26 @@ class TestRulesEngine:
         rule.last_triggered = datetime.now() - timedelta(seconds=120)
         engine.add_rule(rule)
         assert len(engine.get_active_rules()) == 1
+
+    def test_custom_message_field(self):
+        """WatchRule supports custom_message field."""
+        rule = WatchRule(
+            id="r_cm",
+            name="Custom Rule",
+            condition="test",
+            priority=RulePriority.MEDIUM,
+            notification=NotificationTarget(type="local"),
+            custom_message="Hello!",
+        )
+        assert rule.custom_message == "Hello!"
+
+        # Verify serialization round-trip
+        data = rule.model_dump(mode="json")
+        assert data["custom_message"] == "Hello!"
+        restored = WatchRule(**data)
+        assert restored.custom_message == "Hello!"
+
+    def test_custom_message_defaults_to_none(self):
+        """WatchRule without custom_message defaults to None."""
+        rule = _make_rule("r_default")
+        assert rule.custom_message is None

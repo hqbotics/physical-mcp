@@ -10,7 +10,11 @@ from ..camera.base import Frame
 from ..config import PhysicalMCPConfig
 from ..perception.scene_state import SceneState
 from ..rules.models import RuleEvaluation, WatchRule
-from .prompts import build_analysis_prompt, build_rule_eval_prompt
+from .prompts import (
+    build_analysis_prompt,
+    build_combined_prompt,
+    build_rule_eval_prompt,
+)
 from .providers.base import VisionProvider
 
 logger = logging.getLogger("physical-mcp")
@@ -105,6 +109,69 @@ class FrameAnalyzer:
                 raise  # Let perception loop handle backoff
             logger.error("Scene analysis failed: %s", e)
             return {"summary": f"Analysis error: {e}", "objects": [], "people_count": 0}
+
+    async def analyze_and_evaluate(
+        self,
+        frame: Frame,
+        scene_state: SceneState,
+        rules: list[WatchRule],
+        config: PhysicalMCPConfig,
+    ) -> dict:
+        """Combined scene analysis + rule evaluation in ONE LLM call.
+
+        Returns {"scene": {...}, "evaluations": [RuleEvaluation, ...]}.
+        This halves latency by sending a single prompt instead of two sequential calls.
+
+        Raises on API/rate-limit errors so the perception loop can backoff.
+        """
+        if not self._provider:
+            raise RuntimeError("No vision provider configured")
+
+        if not rules:
+            # No rules — fall back to scene-only analysis
+            scene_data = await self.analyze_scene(frame, scene_state, config)
+            return {"scene": scene_data, "evaluations": []}
+
+        prompt = build_combined_prompt(scene_state, rules)
+        image_b64 = frame.to_thumbnail(
+            max_dim=config.reasoning.max_thumbnail_dim,
+            quality=config.reasoning.image_quality,
+        )
+        timeout = getattr(config.reasoning, "llm_timeout_seconds", LLM_CALL_TIMEOUT)
+
+        try:
+            raw = await asyncio.wait_for(
+                self._provider.analyze_image_json(image_b64, prompt),
+                timeout=timeout,
+            )
+            scene_data = raw.get("scene", {})
+            evals_raw = raw.get("evaluations", [])
+            evaluations = [RuleEvaluation(**ev) for ev in evals_raw]
+            return {"scene": scene_data, "evaluations": evaluations}
+        except asyncio.TimeoutError:
+            logger.warning("Combined analysis timed out after %.0fs", timeout)
+            return {
+                "scene": {"summary": "", "objects": [], "people_count": 0},
+                "evaluations": [],
+            }
+        except json.JSONDecodeError:
+            logger.warning("Combined analysis returned unparseable JSON")
+            return {
+                "scene": {"summary": "", "objects": [], "people_count": 0},
+                "evaluations": [],
+            }
+        except Exception as e:
+            if _is_api_error(e):
+                raise  # Let perception loop handle backoff
+            logger.error("Combined analysis failed: %s", e)
+            return {
+                "scene": {
+                    "summary": f"Analysis error: {e}",
+                    "objects": [],
+                    "people_count": 0,
+                },
+                "evaluations": [],
+            }
 
     async def evaluate_rules(
         self,

@@ -64,3 +64,46 @@ Respond in JSON only:
 }}
 
 Be conservative. Only set triggered=true with confidence >= 0.7. False positives waste user attention."""
+
+
+def build_combined_prompt(previous_state: SceneState, rules: list[WatchRule]) -> str:
+    """Build a single prompt that does scene analysis + rule evaluation together.
+
+    This halves latency by making ONE LLM call instead of two sequential calls.
+    """
+    context = ""
+    if previous_state.summary:
+        context = f"""Previous scene state:
+{previous_state.to_context_string()}
+
+"""
+
+    rules_text = "\n".join(
+        f'    {{"id": "{r.id}", "condition": "{r.condition}"}}' for r in rules
+    )
+
+    return f"""Analyze this camera frame AND evaluate watch rules in a single response.
+{context}
+Active watch rules:
+[{rules_text}]
+
+Respond in JSON only:
+{{
+  "scene": {{
+    "summary": "<1-2 sentence description>",
+    "objects": ["<notable objects>"],
+    "people_count": <number>,
+    "activity": "<what is happening>",
+    "notable_changes": "<what changed or 'none'>"
+  }},
+  "evaluations": [
+    {{
+      "rule_id": "<id>",
+      "triggered": true/false,
+      "confidence": 0.0-1.0,
+      "reasoning": "<brief explanation>"
+    }}
+  ]
+}}
+
+Be conservative with rules. Only triggered=true with confidence >= 0.7."""

@@ -43,6 +43,7 @@ class WebhookNotifier:
             "confidence": alert.evaluation.confidence,
             "timestamp": alert.evaluation.timestamp.isoformat(),
             "scene_summary": alert.scene_summary,
+            "custom_message": alert.rule.custom_message,
         }
 
         try:

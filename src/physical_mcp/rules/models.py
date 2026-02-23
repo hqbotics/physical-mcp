@@ -17,9 +17,10 @@ class RulePriority(str, Enum):
 
 
 class NotificationTarget(BaseModel):
-    type: str = "local"
-    url: Optional[str] = None
-    channel: Optional[str] = None
+    type: str = "local"  # "local"|"desktop"|"ntfy"|"webhook"|"openclaw"
+    url: Optional[str] = None  # webhook URL
+    channel: Optional[str] = None  # ntfy topic OR openclaw channel type
+    target: Optional[str] = None  # openclaw destination (chat_id, phone, channel_id)
 
 
 class WatchRule(BaseModel):
@@ -31,6 +32,7 @@ class WatchRule(BaseModel):
     enabled: bool = True
     notification: NotificationTarget = Field(default_factory=NotificationTarget)
     cooldown_seconds: int = 60
+    custom_message: Optional[str] = None  # User-defined notification text
     created_at: datetime = Field(default_factory=datetime.now)
     last_triggered: Optional[datetime] = None
 

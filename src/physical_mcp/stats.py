@@ -42,6 +42,13 @@ class StatsTracker:
     def record_alert(self) -> None:
         self._total_alerts += 1
 
+    def _prune_hour_analyses(self) -> None:
+        """Remove entries older than 1 hour from the hourly window."""
+        from datetime import timedelta
+
+        cutoff = datetime.now() - timedelta(hours=1)
+        self._hour_analyses = [t for t in self._hour_analyses if t >= cutoff]
+
     def budget_exceeded(self) -> bool:
         self._check_day_rollover()
         # Estimate cost: ~$0.003 per analysis (Haiku with vision)
@@ -49,7 +56,8 @@ class StatsTracker:
             estimated_cost = self._today_analyses * 0.003
             if estimated_cost >= self._daily_budget:
                 return True
-        # Hourly rate limit
+        # Hourly rate limit — prune stale entries first
+        self._prune_hour_analyses()
         if len(self._hour_analyses) >= self._max_per_hour:
             return True
         return False

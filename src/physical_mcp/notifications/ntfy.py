@@ -108,11 +108,14 @@ class NtfyNotifier:
             "Tags": _NTFY_TAGS.get(alert.rule.priority.value, "camera"),
         }
 
-        message = (
-            f"{alert.evaluation.reasoning}\n\n"
-            f"Condition: {alert.rule.condition}\n"
-            f"Confidence: {alert.evaluation.confidence:.0%}"
-        )
+        if alert.rule.custom_message:
+            message = alert.rule.custom_message
+        else:
+            message = (
+                f"{alert.evaluation.reasoning}\n\n"
+                f"Condition: {alert.rule.condition}\n"
+                f"Confidence: {alert.evaluation.confidence:.0%}"
+            )
 
         return await self._send(url, message, headers, frame_base64=alert.frame_base64)
 

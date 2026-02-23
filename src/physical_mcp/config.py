@@ -70,6 +70,9 @@ class NotificationsConfig(BaseModel):
     desktop_enabled: bool = True
     ntfy_topic: str = ""
     ntfy_server_url: str = "https://ntfy.sh"
+    # OpenClaw multi-channel delivery (Telegram, WhatsApp, Discord, Slack, etc.)
+    openclaw_channel: str = ""  # "telegram"|"whatsapp"|"discord"|"slack"|"signal"
+    openclaw_target: str = ""  # chat_id, phone number, channel_id
 
 
 class VisionAPIConfig(BaseModel):

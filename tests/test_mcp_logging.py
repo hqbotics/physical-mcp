@@ -365,7 +365,9 @@ class TestPerceptionLoopProviderErrorCorrelation:
 
         analyzer = MagicMock()
         analyzer.has_provider = True
-        analyzer.analyze_scene = AsyncMock(side_effect=Exception("provider timeout"))
+        analyzer.analyze_and_evaluate = AsyncMock(
+            side_effect=Exception("provider timeout")
+        )
 
         scene_state = MagicMock()
         rules_engine = MagicMock()
@@ -443,15 +445,25 @@ class TestPerceptionLoopProviderErrorCorrelation:
 
         analyzer = MagicMock()
         analyzer.has_provider = True
-        analyzer.analyze_scene = AsyncMock(
+        # Combined call returns both scene + evaluations in one result
+        from physical_mcp.rules.models import RuleEvaluation
+
+        analyzer.analyze_and_evaluate = AsyncMock(
             return_value={
-                "summary": "person near door",
-                "objects": ["person", "door"],
-                "people_count": 1,
+                "scene": {
+                    "summary": "person near door",
+                    "objects": ["person", "door"],
+                    "people_count": 1,
+                },
+                "evaluations": [
+                    RuleEvaluation(
+                        rule_id="r_123",
+                        triggered=True,
+                        confidence=0.91,
+                        reasoning="Person detected at the door",
+                    )
+                ],
             }
-        )
-        analyzer.evaluate_rules = AsyncMock(
-            return_value=[{"rule_id": "r_123", "triggered": True}]
         )
 
         scene_state = MagicMock()
@@ -549,6 +561,7 @@ class TestPerceptionLoopProviderErrorCorrelation:
             name="Front Door Watch",
             condition="person at door",
             priority=SimpleNamespace(value="high"),
+            custom_message=None,
         )
         rules_engine.get_active_rules.return_value = [active_rule]
 

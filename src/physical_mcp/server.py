@@ -16,9 +16,12 @@ import asyncio
 import json
 import logging
 import re
+import sys
+import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP
@@ -521,7 +524,6 @@ async def _perception_loop(
     max_backoff = 45.0
     consecutive_errors = 0
     backoff_until = 0.0
-    import time
 
     cam_label = f"{camera_name} ({camera_id})" if camera_name else camera_id
 
@@ -556,7 +558,7 @@ async def _perception_loop(
             if change.level.value != "none":
                 scene_state.record_change(change.description)
 
-            # ── Server-side reasoning mode ───────────────────────
+            # ── Server-side reasoning mode (COMBINED single call) ──
             if should_analyze and analyzer.has_provider and not stats.budget_exceeded():
                 now = time.monotonic()
                 if now < backoff_until:
@@ -570,9 +572,12 @@ async def _perception_loop(
                     await asyncio.sleep(interval)
                     continue
 
+                active_rules = rules_engine.get_active_rules()
+
                 try:
-                    scene_data = await analyzer.analyze_scene(
-                        frame, scene_state, config
+                    # ONE combined call: scene analysis + rule evaluation
+                    result = await analyzer.analyze_and_evaluate(
+                        frame, scene_state, active_rules, config
                     )
                 except Exception as e:
                     consecutive_errors += 1
@@ -586,7 +591,7 @@ async def _perception_loop(
                         health["last_error"] = str(e)[:300]
                         health["status"] = "degraded"
                     logger.error(
-                        f"[{cam_label}] Scene analysis error #{consecutive_errors}, "
+                        f"[{cam_label}] Analysis error #{consecutive_errors}, "
                         f"backing off {wait:.0f}s: {str(e)[:150]}"
                     )
                     event_id = _record_alert_event(
@@ -614,8 +619,10 @@ async def _perception_loop(
                     await asyncio.sleep(interval)
                     continue
 
+                scene_data = result.get("scene", {})
+                evaluations = result.get("evaluations", [])
+
                 # Only update scene if we got a real summary
-                # (not an error placeholder or empty response)
                 summary = scene_data.get("summary", "")
                 if (
                     summary
@@ -628,6 +635,33 @@ async def _perception_loop(
                         people_count=scene_data.get("people_count", 0),
                         change_desc=change.description,
                     )
+                    # Dump scene state to cache file for Vision API proxy
+                    try:
+                        import os
+
+                        _cache_dir = os.path.expanduser("~/.physical-mcp")
+                        os.makedirs(_cache_dir, exist_ok=True)
+                        _cache_path = os.path.join(_cache_dir, "scene_cache.json")
+                        _cache_data = {
+                            "cameras": {
+                                camera_id: {
+                                    "summary": scene_state.summary,
+                                    "objects_present": scene_state.objects_present,
+                                    "people_count": scene_state.people_count,
+                                    "last_updated": scene_state.last_updated.isoformat()
+                                    if scene_state.last_updated
+                                    else None,
+                                    "last_change": scene_state.last_change_description,
+                                    "update_count": scene_state.update_count,
+                                }
+                            },
+                            "timestamp": time.time(),
+                        }
+                        with open(_cache_path, "w") as _f:
+                            json.dump(_cache_data, _f)
+                    except Exception as _cache_err:
+                        logger.warning(f"[{cam_label}] Cache dump failed: {_cache_err}")
+                        pass  # Non-critical — proxy may serve stale data
                 else:
                     logger.info(
                         "[%s] Analysis returned no data, keeping previous scene",
@@ -645,35 +679,8 @@ async def _perception_loop(
                     f"[{cam_label}] Scene: {scene_data.get('summary', '')[:100]}"
                 )
 
-                active_rules = rules_engine.get_active_rules()
-                if active_rules:
-                    try:
-                        evaluations = await analyzer.evaluate_rules(
-                            frame, scene_state, active_rules, config
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"[{cam_label}] Rule evaluation error: {str(e)[:150]}"
-                        )
-                        event_id = _record_alert_event(
-                            shared_state,
-                            event_type="rule_eval_error",
-                            camera_id=camera_id,
-                            camera_name=camera_name,
-                            message=f"[{cam_label}] Rule evaluation failed: {str(e)[:120]}",
-                        )
-                        await _send_mcp_log(
-                            shared_state,
-                            "warning",
-                            f"[{cam_label}] Rule evaluation failed: {str(e)[:120]}",
-                            event_type="rule_eval_error",
-                            camera_id=camera_id,
-                            event_id=event_id,
-                            timestamp=_alert_event_timestamp(shared_state, event_id),
-                        )
-                        await asyncio.sleep(interval)
-                        continue
-
+                # ── Process rule evaluations from combined call ──
+                if evaluations and active_rules:
                     frame_b64 = frame.to_base64(quality=config.reasoning.image_quality)
                     alerts = rules_engine.process_evaluations(
                         evaluations,
@@ -726,7 +733,6 @@ async def _perception_loop(
                             event_id=event_id,
                             timestamp=_alert_event_timestamp(shared_state, event_id),
                         )
-                    stats.record_analysis()
 
             # ── Client-side reasoning mode ───────────────────────
             elif should_analyze and not analyzer.has_provider:
@@ -777,6 +783,7 @@ async def _perception_loop(
                                     "name": r.name,
                                     "condition": r.condition,
                                     "priority": r.priority.value,
+                                    "custom_message": r.custom_message,
                                 }
                                 for r in active_rules
                             ],
@@ -893,6 +900,11 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
 
             if state.get("_fallback_warning_pending"):
                 asyncio.create_task(_emit_startup_fallback_warning(state))
+
+            # Auto-start perception loops if rules exist from previous session
+            engine = state.get("rules_engine")
+            if engine and engine.get_active_rules():
+                asyncio.create_task(_ensure_perception_loops())
 
     async def _ensure_cameras() -> dict:
         """Open ALL enabled cameras. Lazy — only opens cameras not yet open."""
@@ -1088,9 +1100,38 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
                 logger.warning(f"Vision API failed to start: {e}")
                 vision_runner = None
 
+        # ── Spawn vision proxy with perception loop (background daemon) ──
+        proxy_proc = None
+        if config.server.transport == "stdio":
+            try:
+                import subprocess as _sp
+
+                proxy_script = (
+                    Path(__file__).resolve().parent.parent.parent / "vision_proxy.py"
+                )
+                if proxy_script.exists():
+                    proxy_log = Path.home() / ".physical-mcp" / "proxy.log"
+                    proxy_log.parent.mkdir(parents=True, exist_ok=True)
+                    log_fh = open(proxy_log, "a")
+                    proxy_proc = _sp.Popen(
+                        [sys.executable, str(proxy_script), "--port", "8090"],
+                        stdout=log_fh,
+                        stderr=log_fh,
+                        start_new_session=True,
+                    )
+                    logger.info(f"Vision proxy spawned (PID {proxy_proc.pid})")
+            except Exception as e:
+                logger.warning(f"Vision proxy spawn failed: {e}")
+
         try:
             yield
         finally:
+            if proxy_proc and proxy_proc.poll() is None:
+                proxy_proc.terminate()
+                try:
+                    proxy_proc.wait(timeout=5)
+                except Exception:
+                    proxy_proc.kill()
             if vision_runner:
                 await vision_runner.cleanup()
             for task in state.get("_loop_tasks", {}).values():
@@ -1574,6 +1615,7 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         notification_url: str = "",
         notification_channel: str = "",
         cooldown_seconds: int = 60,
+        custom_message: str = "",
         ctx: Context = None,
     ) -> dict:
         """Set up continuous monitoring for a physical condition or event.
@@ -1594,6 +1636,7 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         - "Keep an eye on the stove" -> condition="something is burning or smoke is visible"
         - "Monitor the baby" -> condition="baby is crying, in distress, or has left the crib"
         - "Tell me if the dog gets on the couch" -> condition="a dog is on the couch"
+        - "Say 'hello!' when someone waves" -> condition="person waving", custom_message="hello!"
 
         Args:
             name: Human-readable name for this rule (e.g., "Front door watch")
@@ -1604,11 +1647,15 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             priority: "low", "medium", "high", or "critical"
             notification_type: "local" (in-chat only, default), "desktop"
                 (OS notification), "ntfy" (push to phone via ntfy.sh),
-                "webhook" (HTTP POST)
+                "webhook" (HTTP POST), "openclaw" (deliver to Telegram,
+                WhatsApp, Discord, Slack, Signal via OpenClaw)
             notification_url: URL for webhook notifications (leave empty otherwise)
             notification_channel: ntfy topic override for this rule (uses
                 server default if empty)
             cooldown_seconds: Min seconds between repeated alerts (default 60)
+            custom_message: Custom notification text sent when rule triggers.
+                When set, this exact text replaces the default alert format.
+                Use when the user says "say X when Y happens" or "reply X".
         """
         engine: RulesEngine = state["rules_engine"]
         store: RulesStore = state["rules_store"]
@@ -1618,9 +1665,19 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
 
         from .rules.models import WatchRule, NotificationTarget, RulePriority
 
+        # Auto-use openclaw when channel is configured and user didn't override
+        if notification_type == "local" and config.notifications.openclaw_channel:
+            notification_type = "openclaw"
         # Auto-use ntfy when topic is configured and user didn't override
-        if notification_type == "local" and config.notifications.ntfy_topic:
+        elif notification_type == "local" and config.notifications.ntfy_topic:
             notification_type = "ntfy"
+
+        # Resolve notification target fields
+        notif_channel = notification_channel if notification_channel else None
+        notif_target = None
+        if notification_type == "openclaw":
+            notif_channel = notif_channel or config.notifications.openclaw_channel
+            notif_target = config.notifications.openclaw_target or None
 
         rule = WatchRule(
             id=f"r_{uuid.uuid4().hex[:8]}",
@@ -1631,9 +1688,11 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             notification=NotificationTarget(
                 type=notification_type,
                 url=notification_url if notification_url else None,
-                channel=notification_channel if notification_channel else None,
+                channel=notif_channel,
+                target=notif_target,
             ),
             cooldown_seconds=cooldown_seconds,
+            custom_message=custom_message if custom_message else None,
         )
         engine.add_rule(rule)
         store.save(engine.list_rules())

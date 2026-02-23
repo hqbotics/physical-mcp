@@ -173,6 +173,53 @@ class TestNtfyNotifier:
         await notifier.close()
 
     @pytest.mark.asyncio
+    async def test_custom_message_used_as_body(self):
+        """custom_message replaces default body text."""
+        notifier = NtfyNotifier("test-topic")
+        rule = WatchRule(
+            id="r_custom",
+            name="Gesture detector",
+            condition="person waving",
+            priority=RulePriority.HIGH,
+            notification=NotificationTarget(type="ntfy", channel="test-topic"),
+            custom_message="Hello there!",
+        )
+        evaluation = RuleEvaluation(
+            rule_id="r_custom",
+            triggered=True,
+            confidence=0.9,
+            reasoning="Person is waving at camera",
+        )
+        alert = AlertEvent(
+            rule=rule,
+            evaluation=evaluation,
+            scene_summary="Test scene",
+        )
+
+        captured_body = b""
+
+        @asynccontextmanager
+        async def mock_post(url, data=None, headers=None):
+            nonlocal captured_body
+            captured_body = data
+            resp = AsyncMock()
+            resp.status = 200
+            yield resp
+
+        mock_session = AsyncMock()
+        mock_session.post = mock_post
+        notifier._session = mock_session
+
+        await notifier.notify(alert)
+
+        body_text = captured_body.decode()
+        assert body_text == "Hello there!"
+        assert "Person is waving" not in body_text
+        assert "90%" not in body_text
+
+        await notifier.close()
+
+    @pytest.mark.asyncio
     async def test_priority_mapping(self):
         """Test all priority levels map correctly."""
         from physical_mcp.notifications.ntfy import _NTFY_PRIORITY

@@ -721,9 +721,25 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         except ValueError:
             priority = RulePriority.MEDIUM
 
-        # Parse notification
+        # Parse notification — auto-fill openclaw from config if available
         notif_type = body.get("notification_type", "local")
-        notification = NotificationTarget(type=notif_type)
+        notif_channel = body.get("notification_channel") or None
+        notif_target = body.get("notification_target") or None
+        config = state.get("config")
+        if (
+            notif_type == "local"
+            and config
+            and getattr(getattr(config, "notifications", None), "openclaw_channel", "")
+        ):
+            notif_type = "openclaw"
+            notif_channel = notif_channel or config.notifications.openclaw_channel
+            notif_target = notif_target or config.notifications.openclaw_target
+        notification = NotificationTarget(
+            type=notif_type,
+            url=body.get("notification_url") or None,
+            channel=notif_channel,
+            target=notif_target,
+        )
 
         rule = WatchRule(
             id=f"r_{uuid.uuid4().hex[:8]}",
