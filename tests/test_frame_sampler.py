@@ -388,6 +388,22 @@ class TestHeartbeat:
         should2, _ = sampler.should_analyze(f2, has_active_rules=True)
         assert should2 is True
 
+    def test_heartbeat_disabled_when_zero(self):
+        """heartbeat_interval=0 means no periodic analysis, ever."""
+        t0 = datetime(2026, 1, 1, 12, 0, 0)
+        detector = _mock_detector(ChangeLevel.NONE)
+        sampler = FrameSampler(
+            detector,
+            cooldown_seconds=0,
+            heartbeat_interval=0,  # Disabled
+        )
+        sampler._last_analysis = t0
+
+        # Even after a very long time, no heartbeat fires
+        frame = _make_frame(seq=1, timestamp=t0 + timedelta(hours=24))
+        should, _ = sampler.should_analyze(frame, has_active_rules=True)
+        assert should is False
+
     def test_heartbeat_does_not_fire_without_rules(self):
         """Heartbeat should NOT trigger without active rules."""
         t0 = datetime(2026, 1, 1, 12, 0, 0)

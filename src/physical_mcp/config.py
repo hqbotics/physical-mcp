@@ -30,7 +30,9 @@ class ChangeDetectionConfig(BaseModel):
 
 
 class SamplingConfig(BaseModel):
-    heartbeat_interval: float = 300.0  # 5 minutes — only runs if watch rules exist
+    heartbeat_interval: float = (
+        0.0  # 0 = disabled (only analyze on change). Set >0 for periodic checks.
+    )
     debounce_seconds: float = 3.0
     cooldown_seconds: float = 10.0  # Min 10s between LLM calls
 

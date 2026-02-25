@@ -121,8 +121,8 @@ class FrameSampler:
             return False, result
 
         # NONE: no change detected — only heartbeat can trigger
-        # Heartbeat: periodic check (only with active rules)
-        if since_last >= self._heartbeat:
+        # Heartbeat: periodic check (only with active rules, disabled when 0)
+        if self._heartbeat > 0 and since_last >= self._heartbeat:
             self._last_analysis = now
             return True, result
 
