@@ -51,9 +51,9 @@ class StatsTracker:
 
     def budget_exceeded(self) -> bool:
         self._check_day_rollover()
-        # Estimate cost: ~$0.003 per analysis (Haiku with vision)
+        # Estimate cost: ~$0.0003 per analysis (vision LLM with image)
         if self._daily_budget > 0:
-            estimated_cost = self._today_analyses * 0.003
+            estimated_cost = self._today_analyses * 0.0003
             if estimated_cost >= self._daily_budget:
                 return True
         # Hourly rate limit — prune stale entries first
@@ -64,7 +64,7 @@ class StatsTracker:
 
     def summary(self) -> dict:
         self._check_day_rollover()
-        estimated_today_cost = self._today_analyses * 0.003
+        estimated_today_cost = self._today_analyses * 0.0003
         uptime = (datetime.now() - self._start_time).total_seconds()
         return {
             "total_analyses": self._total_analyses,

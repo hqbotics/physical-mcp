@@ -1,0 +1,28 @@
+version: "3.8"
+
+services:
+  physical-mcp:
+    build: .
+    ports:
+      - "8090:8090"   # Vision API (frame ingestion, dashboard, REST)
+      - "8400:8400"   # MCP server (streamable-http)
+    volumes:
+      - pmcp-config:/root/.physical-mcp
+    environment:
+      # Vision AI provider (required for scene analysis)
+      - REASONING_PROVIDER=${REASONING_PROVIDER:-openai-compatible}
+      - REASONING_API_KEY=${REASONING_API_KEY}
+      - REASONING_MODEL=${REASONING_MODEL:-google/gemini-2.0-flash-001}
+      - REASONING_BASE_URL=${REASONING_BASE_URL:-https://openrouter.ai/api/v1}
+      # Optional: Vision API auth token (empty = no auth)
+      - VISION_API_AUTH_TOKEN=${VISION_API_AUTH_TOKEN:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  pmcp-config:

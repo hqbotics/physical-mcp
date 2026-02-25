@@ -22,11 +22,42 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
+import yaml
 from aiohttp import web
 
+from .health import normalize_camera_health as _normalize_camera_health
+
 logger = logging.getLogger("physical-mcp")
+
+
+# ── Pending cameras persistence ────────────────────
+_PENDING_PATH = Path("~/.physical-mcp/pending.yaml").expanduser()
+
+
+def _save_pending(pending: dict[str, Any]) -> None:
+    """Persist pending camera registrations to disk."""
+    try:
+        _PENDING_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _PENDING_PATH.write_text(
+            yaml.dump(pending, default_flow_style=False, sort_keys=False)
+        )
+    except Exception as e:
+        logger.warning("Could not save pending cameras: %s", e)
+
+
+def _load_pending() -> dict[str, Any]:
+    """Load pending camera registrations from disk."""
+    if not _PENDING_PATH.exists():
+        return {}
+    try:
+        data = yaml.safe_load(_PENDING_PATH.read_text())
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        logger.warning("Could not load pending cameras: %s", e)
+        return {}
 
 
 def _json_error(
@@ -115,35 +146,6 @@ def _event_sort_key(event: dict[str, Any]) -> tuple[datetime, str]:
     return (ts, str(event.get("event_id", "")))
 
 
-def _default_camera_health(camera_id: str) -> dict[str, Any]:
-    """Consistent unknown-health shape for cameras without data yet."""
-    return {
-        "camera_id": camera_id,
-        "camera_name": camera_id,
-        "consecutive_errors": 0,
-        "backoff_until": None,
-        "last_success_at": None,
-        "last_error": "",
-        "last_frame_at": None,
-        "status": "unknown",
-        "message": "No health data yet.",
-    }
-
-
-def _normalize_camera_health(
-    camera_id: str, health: dict[str, Any] | None
-) -> dict[str, Any]:
-    """Fill missing camera-health keys with safe defaults."""
-    base = _default_camera_health(camera_id)
-    if not isinstance(health, dict):
-        return base
-    merged = {**base, **health}
-    merged["camera_id"] = str(merged.get("camera_id") or camera_id)
-    if not merged.get("camera_name"):
-        merged["camera_name"] = merged["camera_id"]
-    return merged
-
-
 def create_vision_routes(state: dict[str, Any]) -> web.Application:
     """Create aiohttp app with vision API routes.
 
@@ -151,6 +153,10 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         state: Shared state dict from the MCP server. Contains
             scene_states, frame_buffers, camera_configs, etc.
     """
+
+    # Load any persisted pending cameras from disk
+    if "pending_cameras" not in state:
+        state["pending_cameras"] = _load_pending()
 
     routes = web.RouteTableDef()
 
@@ -675,15 +681,31 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             "created_at": r.created_at.isoformat()
             if hasattr(r, "created_at") and r.created_at
             else None,
+            "owner_id": getattr(r, "owner_id", ""),
+            "owner_name": getattr(r, "owner_name", ""),
+            "custom_message": getattr(r, "custom_message", None),
         }
 
     @routes.get("/rules")
     async def get_rules(request: web.Request) -> web.Response:
-        """Return active watch rules as JSON."""
+        """Return active watch rules as JSON.
+
+        Query params:
+            owner_id: Filter to rules owned by this user (+ global rules with empty owner_id)
+        """
         engine = state.get("rules_engine")
         if engine is None:
             return web.json_response([])
         rules = engine.list_rules()
+        # Filter by owner_id if provided
+        owner_id = request.query.get("owner_id", "").strip()
+        if owner_id:
+            rules = [
+                r
+                for r in rules
+                if getattr(r, "owner_id", "") == owner_id
+                or getattr(r, "owner_id", "") == ""
+            ]
         return web.json_response([_rule_to_dict(r) for r in rules])
 
     @routes.post("/rules")
@@ -749,18 +771,44 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             priority=priority,
             notification=notification,
             cooldown_seconds=int(body.get("cooldown_seconds", 60)),
+            owner_id=body.get("owner_id", ""),
+            owner_name=body.get("owner_name", ""),
+            custom_message=body.get("custom_message") or None,
         )
         engine.add_rule(rule)
         return web.json_response(_rule_to_dict(rule), status=201)
 
     @routes.delete("/rules/{rule_id}")
     async def delete_rule(request: web.Request) -> web.Response:
-        """Delete a watch rule by ID."""
+        """Delete a watch rule by ID.
+
+        Query params:
+            owner_id: If provided, only delete if the rule belongs to this owner.
+                      Returns 403 if the rule belongs to a different owner.
+        """
         engine = state.get("rules_engine")
         if engine is None:
             return _json_error(503, "rules_unavailable", "Rules engine not initialized")
 
         rule_id = request.match_info["rule_id"]
+        owner_id = request.query.get("owner_id", "").strip()
+
+        # Ownership check: find the rule first
+        if owner_id:
+            rules = engine.list_rules()
+            target = None
+            for r in rules:
+                if r.id == rule_id:
+                    target = r
+                    break
+            if target is None:
+                return _json_error(404, "rule_not_found", f"Rule '{rule_id}' not found")
+            rule_owner = getattr(target, "owner_id", "")
+            if rule_owner and rule_owner != owner_id:
+                return _json_error(
+                    403, "forbidden", f"Rule '{rule_id}' belongs to another user"
+                )
+
         removed = engine.remove_rule(rule_id)
         if not removed:
             return _json_error(404, "rule_not_found", f"Rule '{rule_id}' not found")
@@ -893,6 +941,309 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             {"opened": opened, "failed": failed, "count": len(opened)}
         )
 
+    # ── Cloud camera frame ingestion ─────────────────────
+    @routes.post("/ingest/{camera_id}")
+    async def ingest_frame(request: web.Request) -> web.Response:
+        """Receive a JPEG frame pushed from a cloud camera.
+
+        Cloud cameras POST raw JPEG bytes with per-camera auth token.
+        This endpoint bypasses the global Vision API auth (handled in
+        auth_middleware skip list) and uses per-camera token validation.
+
+        Headers:
+            Authorization: Bearer <per-camera-token>
+        Body:
+            Raw JPEG bytes (max 5MB)
+        """
+        from .camera.cloud import CloudCamera
+
+        camera_id = request.match_info["camera_id"]
+
+        # Find the camera in state
+        cameras = state.get("cameras", {})
+        camera = cameras.get(camera_id)
+
+        if camera is None:
+            # Check pending registrations
+            pending = state.get("pending_cameras", {})
+            if camera_id in pending:
+                return _json_error(
+                    403, "camera_pending", f"Camera '{camera_id}' is pending approval"
+                )
+            return _json_error(
+                404, "camera_not_found", f"Camera '{camera_id}' not registered"
+            )
+
+        # Must be a CloudCamera
+        if not isinstance(camera, CloudCamera):
+            return _json_error(
+                400, "not_cloud_camera", "Only cloud cameras accept pushed frames"
+            )
+
+        # Validate per-camera auth token
+        auth_header = request.headers.get("Authorization", "")
+        token = (
+            auth_header.removeprefix("Bearer ").strip()
+            if auth_header.startswith("Bearer ")
+            else ""
+        )
+        if not camera.validate_token(token):
+            return _json_error(401, "invalid_camera_token", "Invalid camera auth token")
+
+        # Read JPEG body
+        body = await request.read()
+        if len(body) == 0:
+            return _json_error(400, "empty_body", "No JPEG data in request body")
+        if len(body) > 5 * 1024 * 1024:  # 5MB limit
+            return _json_error(413, "frame_too_large", "Frame exceeds 5MB limit")
+
+        try:
+            frame = await camera.receive_frame(body)
+        except ValueError as e:
+            return _json_error(400, "invalid_jpeg", str(e))
+
+        # Push to FrameBuffer so streaming endpoints (/frame, /stream) work
+        buf = state.get("frame_buffers", {}).get(camera_id)
+        if buf and frame:
+            await buf.push(frame)
+
+        # Update camera health — track last frame time
+        health = state.get("camera_health", {}).get(camera_id)
+        if health:
+            health["last_frame_at"] = datetime.now(timezone.utc).isoformat()
+            health["last_success_at"] = health["last_frame_at"]
+            health["consecutive_errors"] = 0
+            health["status"] = "running"
+
+        return web.json_response({"status": "ok", "camera_id": camera_id})
+
+    # ── Camera status polling (for camera firmware) ────
+    @routes.get("/cameras/{camera_id}/status")
+    async def camera_registration_status(request: web.Request) -> web.Response:
+        """Camera polls this after registering to learn if it's been accepted.
+
+        Returns:
+            - ``{"status": "pending"}`` while waiting for admin approval.
+            - ``{"status": "accepted", "auth_token": "...", "ingest_url": "..."}``
+              once accepted.
+            - 404 if the camera_id is unknown.
+
+        This endpoint is **unauthenticated** — the camera doesn't have a token
+        until it's accepted.
+        """
+        camera_id = request.match_info["camera_id"]
+
+        # Check pending first
+        pending = state.get("pending_cameras", {})
+        if camera_id in pending:
+            return web.json_response(
+                {
+                    "status": "pending",
+                    "camera_id": camera_id,
+                    "message": "Waiting for admin approval.",
+                }
+            )
+
+        # Check active cameras
+        cameras = state.get("cameras", {})
+        if camera_id in cameras:
+            # Find auth_token from the camera object
+            camera = cameras[camera_id]
+            auth_token_val = getattr(camera, "_auth_token", "")
+            return web.json_response(
+                {
+                    "status": "accepted",
+                    "camera_id": camera_id,
+                    "auth_token": auth_token_val,
+                    "ingest_url": f"/ingest/{camera_id}",
+                }
+            )
+
+        return _json_error(404, "not_found", f"Camera '{camera_id}' is not registered")
+
+    # ── Camera self-registration ──────────────────────
+    @routes.post("/cameras/register")
+    async def register_camera(request: web.Request) -> web.Response:
+        """Camera self-registration endpoint.
+
+        When a new Decxin camera powers on and connects to WiFi, it
+        POSTs here to register itself. The camera goes into "pending"
+        state until approved by the dashboard admin.
+
+        JSON body:
+            camera_id: Unique camera identifier (e.g., "decxin-A3F2B1")
+            name: Human-readable name (e.g., "Front Door Camera")
+            capabilities: Optional dict (resolution, fps, night_vision, etc.)
+            firmware_version: Optional firmware string
+        """
+        import secrets as _secrets
+
+        try:
+            body = await request.json()
+        except Exception:
+            return _json_error(400, "invalid_json", "Request body must be JSON")
+
+        camera_id = body.get("camera_id", "").strip()
+        if not camera_id:
+            return _json_error(400, "missing_camera_id", "camera_id is required")
+
+        # Check if already registered
+        cameras = state.get("cameras", {})
+        if camera_id in cameras:
+            return _json_error(
+                409, "already_registered", f"Camera '{camera_id}' is already registered"
+            )
+
+        # Check if already pending
+        pending = state.setdefault("pending_cameras", {})
+        if camera_id in pending:
+            return _json_error(
+                409,
+                "already_pending",
+                f"Camera '{camera_id}' is already pending approval",
+            )
+
+        auth_token = _secrets.token_urlsafe(32)
+        name = body.get("name", camera_id)
+
+        pending[camera_id] = {
+            "camera_id": camera_id,
+            "name": name,
+            "auth_token": auth_token,
+            "capabilities": body.get("capabilities", {}),
+            "firmware_version": body.get("firmware_version", ""),
+            "registered_at": datetime.now(timezone.utc).isoformat(),
+            "status": "pending",
+        }
+
+        logger.info("Camera '%s' (%s) registered — pending approval", name, camera_id)
+        _save_pending(pending)
+
+        return web.json_response(
+            {
+                "status": "pending",
+                "camera_id": camera_id,
+                "message": "Registration pending approval. Camera will receive token once accepted.",
+            },
+            status=202,
+        )
+
+    @routes.get("/cameras/pending")
+    async def get_pending_cameras(request: web.Request) -> web.Response:
+        """List cameras awaiting approval."""
+        pending = state.get("pending_cameras", {})
+        # Don't expose auth_token in the listing (dashboard shouldn't see it)
+        result = []
+        for cam_id, info in pending.items():
+            result.append(
+                {
+                    "camera_id": info["camera_id"],
+                    "name": info["name"],
+                    "capabilities": info.get("capabilities", {}),
+                    "firmware_version": info.get("firmware_version", ""),
+                    "registered_at": info.get("registered_at", ""),
+                    "status": info.get("status", "pending"),
+                }
+            )
+        return web.json_response(result)
+
+    @routes.post("/cameras/{camera_id}/accept")
+    async def accept_camera(request: web.Request) -> web.Response:
+        """Accept a pending camera registration.
+
+        Creates a CloudCamera instance and starts accepting frames.
+        Persists the camera config so it survives restarts.
+        """
+        from .camera.cloud import CloudCamera
+        from .camera.buffer import FrameBuffer
+        from .perception.scene_state import SceneState
+
+        camera_id = request.match_info["camera_id"]
+        pending = state.get("pending_cameras", {})
+
+        if camera_id not in pending:
+            return _json_error(404, "not_found", f"No pending camera '{camera_id}'")
+
+        reg = pending.pop(camera_id)
+        _save_pending(pending)
+        auth_token = reg["auth_token"]
+        name = reg.get("name", camera_id)
+
+        # Create and open CloudCamera
+        camera = CloudCamera(
+            camera_id=camera_id,
+            auth_token=auth_token,
+            name=name,
+        )
+        await camera.open()
+
+        # Register in state
+        cameras_dict = state.setdefault("cameras", {})
+        cameras_dict[camera_id] = camera
+
+        config = state.get("config")
+        buf_size = config.perception.buffer_size if config else 300
+
+        state.setdefault("frame_buffers", {})[camera_id] = FrameBuffer(
+            max_frames=buf_size
+        )
+        state.setdefault("scene_states", {})[camera_id] = SceneState()
+        state.setdefault("camera_health", {})[camera_id] = {
+            "camera_id": camera_id,
+            "camera_name": name,
+            "consecutive_errors": 0,
+            "backoff_until": None,
+            "last_success_at": None,
+            "last_error": "",
+            "last_frame_at": None,
+            "status": "running",
+        }
+
+        # Persist to config so camera survives restart
+        if config:
+            from ..config import CameraConfig as CamCfg, save_config
+
+            cam_cfg = CamCfg(
+                id=camera_id,
+                name=name,
+                type="cloud",
+                auth_token=auth_token,
+                enabled=True,
+            )
+            state.setdefault("camera_configs", {})[camera_id] = cam_cfg
+            config.cameras.append(cam_cfg)
+            try:
+                save_config(config)
+                logger.info("Camera '%s' config saved to disk", camera_id)
+            except Exception as e:
+                logger.warning("Could not save camera config: %s", e)
+
+        logger.info("Camera '%s' (%s) accepted — ready for frames", name, camera_id)
+
+        return web.json_response(
+            {
+                "status": "accepted",
+                "camera_id": camera_id,
+                "auth_token": auth_token,
+                "ingest_url": f"/ingest/{camera_id}",
+            },
+            status=201,
+        )
+
+    @routes.post("/cameras/{camera_id}/reject")
+    async def reject_camera(request: web.Request) -> web.Response:
+        """Reject a pending camera registration."""
+        camera_id = request.match_info["camera_id"]
+        pending = state.get("pending_cameras", {})
+
+        if camera_id not in pending:
+            return _json_error(404, "not_found", f"No pending camera '{camera_id}'")
+
+        pending.pop(camera_id)
+        _save_pending(pending)
+        logger.info("Camera '%s' registration rejected", camera_id)
+        return web.json_response({"status": "rejected", "camera_id": camera_id})
+
     # ── Auth middleware ─────────────────────────────────
     config = state.get("config")
     auth_token = (config.vision_api.auth_token if config else "") or ""
@@ -905,8 +1256,18 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         """Optional bearer token authentication."""
         if not auth_token:
             return await handler(request)
-        # Skip auth for CORS preflight and PWA manifest
-        if request.method == "OPTIONS" or request.path == "/manifest.json":
+        # Skip auth for CORS preflight, PWA manifest, and cloud camera endpoints
+        # (cloud camera endpoints use per-camera tokens, not the global API token)
+        if (
+            request.method == "OPTIONS"
+            or request.path == "/manifest.json"
+            or request.path.startswith("/ingest/")
+            or request.path == "/cameras/register"
+            or (
+                request.path.startswith("/cameras/")
+                and request.path.endswith("/status")
+            )
+        ):
             return await handler(request)
         # Check Authorization header
         auth_header = request.headers.get("Authorization", "")
@@ -933,6 +1294,88 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         resp.headers["Access-Control-Allow-Headers"] = "*, Authorization"
         return resp
 
+    # ── Camera offline detection ───────────────────────
+    _offline_task_key = web.AppKey("_offline_task", asyncio.Task)
+    # Tracks which cameras we've already alerted about (avoids spam)
+    _offline_alerted: set[str] = set()
+
+    async def _offline_checker(app: web.Application) -> None:
+        """Background task: check cloud cameras for staleness every 60s.
+
+        If a cloud camera hasn't pushed a frame in 5+ minutes, log a
+        warning and update camera_health status to 'offline'.  When the
+        camera comes back, clear the alert.
+        """
+        from .camera.cloud import CloudCamera
+
+        OFFLINE_THRESHOLD_SECONDS = 300  # 5 minutes
+
+        while True:
+            await asyncio.sleep(60)
+            try:
+                cameras = state.get("cameras", {})
+                health_dict = state.get("camera_health", {})
+                for cam_id, camera in cameras.items():
+                    if not isinstance(camera, CloudCamera):
+                        continue
+                    health = health_dict.get(cam_id, {})
+                    last_frame = health.get("last_frame_at")
+                    if not last_frame:
+                        # Never received a frame — camera may not have started yet
+                        continue
+                    try:
+                        last_dt = datetime.fromisoformat(
+                            last_frame.replace("Z", "+00:00")
+                        )
+                        if last_dt.tzinfo is None:
+                            last_dt = last_dt.replace(tzinfo=timezone.utc)
+                    except (ValueError, AttributeError):
+                        continue
+
+                    elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
+                    if elapsed > OFFLINE_THRESHOLD_SECONDS:
+                        if cam_id not in _offline_alerted:
+                            _offline_alerted.add(cam_id)
+                            cam_name = health.get("camera_name", cam_id)
+                            health["status"] = "offline"
+                            health["last_error"] = (
+                                f"No frames received for {int(elapsed)}s"
+                            )
+                            logger.warning(
+                                "Camera '%s' (%s) appears offline — no frames for %ds",
+                                cam_name,
+                                cam_id,
+                                int(elapsed),
+                            )
+                    else:
+                        # Camera is back online — clear alert
+                        if cam_id in _offline_alerted:
+                            _offline_alerted.discard(cam_id)
+                            cam_name = health.get("camera_name", cam_id)
+                            health["status"] = "running"
+                            health["last_error"] = ""
+                            logger.info(
+                                "Camera '%s' (%s) is back online",
+                                cam_name,
+                                cam_id,
+                            )
+            except Exception as e:
+                logger.debug("Offline checker error: %s", e)
+
+    async def _start_offline_checker(app: web.Application) -> None:
+        app[_offline_task_key] = asyncio.create_task(_offline_checker(app))
+
+    async def _stop_offline_checker(app: web.Application) -> None:
+        task = app.get(_offline_task_key)
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
     app = web.Application(middlewares=[auth_middleware, cors_middleware])
     app.add_routes(routes)
+    app.on_startup.append(_start_offline_checker)
+    app.on_cleanup.append(_stop_offline_checker)
     return app

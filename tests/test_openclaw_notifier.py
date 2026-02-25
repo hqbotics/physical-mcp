@@ -285,6 +285,59 @@ class TestOpenClawNotifier:
         assert "92%" in msg
 
     @pytest.mark.asyncio
+    async def test_rule_with_owner_fields_sends_correctly(self):
+        """Rules with owner_id/owner_name still send correctly via per-rule override."""
+        notifier = OpenClawNotifier(
+            default_channel="slack",
+            default_target="C123",
+        )
+        rule = WatchRule(
+            id="r_owned",
+            name="Alice's door watch",
+            condition="person at door",
+            priority=RulePriority.HIGH,
+            notification=NotificationTarget(
+                type="openclaw", channel="slack", target="U12345"
+            ),
+            owner_id="slack:U12345",
+            owner_name="Alice",
+        )
+        evaluation = RuleEvaluation(
+            rule_id="r_owned",
+            triggered=True,
+            confidence=0.88,
+            reasoning="Person visible at the front door",
+        )
+        alert = AlertEvent(
+            rule=rule,
+            evaluation=evaluation,
+            scene_summary="Front door area",
+        )
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"ok", b""))
+        mock_proc.returncode = 0
+
+        with (
+            patch(
+                "asyncio.create_subprocess_exec", return_value=mock_proc
+            ) as mock_exec,
+            patch("os.path.exists", return_value=False),
+        ):
+            # Dispatcher passes per-rule channel/target as overrides
+            result = await notifier.notify(
+                alert,
+                channel=rule.notification.channel,
+                target=rule.notification.target,
+            )
+
+        assert result is True
+        # Should route to the per-user target (U12345), not default (C123)
+        call_args = mock_exec.call_args[0]
+        idx = call_args.index("--target")
+        assert call_args[idx + 1] == "U12345"
+
+    @pytest.mark.asyncio
     async def test_per_rule_channel_override(self):
         """Per-rule channel/target overrides default config."""
         notifier = OpenClawNotifier(

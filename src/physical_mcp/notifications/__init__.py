@@ -70,9 +70,13 @@ class NotificationDispatcher:
                 body = alert.rule.custom_message or alert.evaluation.reasoning
                 self._desktop.notify(alert.rule.name, body)
         elif target.type == "openclaw":
-            channel = target.channel or self._config.openclaw_channel
-            dest = target.target or self._config.openclaw_target
-            await self._openclaw.notify(alert, channel=channel, target=dest)
+            # Fan out to multiple channels (comma-separated)
+            channels = (target.channel or self._config.openclaw_channel).split(",")
+            targets = (target.target or self._config.openclaw_target).split(",")
+            for ch, dest in zip(channels, targets):
+                await self._openclaw.notify(
+                    alert, channel=ch.strip(), target=dest.strip()
+                )
             # Desktop bonus alongside openclaw (local machine gets popup too)
             if self._desktop:
                 body = alert.rule.custom_message or alert.evaluation.reasoning

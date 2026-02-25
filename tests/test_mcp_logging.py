@@ -1362,7 +1362,10 @@ class TestGetCameraHealthContract:
                 mcp_result["cameras"][cid]["message"]
                 == "No health data yet. Start monitoring first."
             )
-            assert api_result["cameras"][cid]["message"] == "No health data yet."
+            assert (
+                api_result["cameras"][cid]["message"]
+                == "No health data yet. Start monitoring first."
+            )
 
 
 class TestConfigureProviderContract:

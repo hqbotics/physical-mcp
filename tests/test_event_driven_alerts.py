@@ -136,8 +136,8 @@ class TestBudgetAndRateLimiting:
         """When daily budget is exceeded, budget_exceeded() returns True."""
         stats = StatsTracker(daily_budget=0.01, max_per_hour=120)
 
-        # Simulate 5 analyses at $0.003 each = $0.015 > $0.01 budget
-        for _ in range(5):
+        # Simulate 50 analyses at $0.0003 each = $0.015 > $0.01 budget
+        for _ in range(50):
             stats.record_analysis()
 
         assert stats.budget_exceeded() is True

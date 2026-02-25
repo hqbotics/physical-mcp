@@ -152,6 +152,39 @@ body{
   background:var(--accent);color:#000;font-weight:600;font-size:15px;cursor:pointer;
 }
 .empty{color:var(--text2);font-size:13px;font-style:italic}
+
+/* Pending cameras */
+.pending-banner{
+  background:linear-gradient(135deg,#1a2a3a,#1a1a2e);
+  border:1px solid var(--accent);border-radius:var(--radius);
+  padding:12px;margin-bottom:8px;animation:pendingPulse 2s ease-in-out infinite;
+}
+@keyframes pendingPulse{0%,100%{border-color:var(--accent)}50%{border-color:var(--accent2)}}
+.pending-header{font-size:13px;color:var(--accent);font-weight:600;margin-bottom:8px}
+.pending-item{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 0;border-bottom:1px solid var(--surface2);
+}
+.pending-item:last-child{border-bottom:none}
+.pending-info{flex:1}
+.pending-name{font-size:14px;font-weight:500}
+.pending-details{font-size:11px;color:var(--text2);margin-top:2px}
+.pending-actions{display:flex;gap:6px}
+.pending-btn{
+  border:none;border-radius:8px;padding:6px 14px;
+  font-size:13px;font-weight:600;cursor:pointer;
+  transition:opacity .2s;
+}
+.pending-btn:hover{opacity:.8}
+.pending-btn.accept{background:var(--accent);color:#000}
+.pending-btn.reject{background:var(--danger);color:#fff}
+.pending-toast{
+  position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+  background:var(--accent);color:#000;padding:10px 20px;border-radius:20px;
+  font-size:14px;font-weight:600;z-index:50;opacity:0;
+  transition:opacity .3s;pointer-events:none;
+}
+.pending-toast.show{opacity:1}
 </style>
 </head>
 <body>
@@ -176,6 +209,13 @@ body{
 
   <!-- Camera Tabs (multi-camera) -->
   <div class="cam-tabs" id="camTabs" style="display:none"></div>
+
+  <!-- Pending Cameras -->
+  <div class="pending-banner" id="pendingBanner" style="display:none">
+    <div class="pending-header">📹 New cameras detected</div>
+    <div id="pendingList"></div>
+  </div>
+  <div class="pending-toast" id="pendingToast"></div>
 
   <!-- Camera Feed -->
   <div class="feed-container" onclick="enterFullscreen()">
@@ -377,7 +417,7 @@ document.addEventListener('visibilitychange', () => {
 
 // ── Data Refresh ────────────────────────────────────
 async function refreshAll() {
-  await Promise.all([refreshScene(), refreshHealth(), refreshRules(), refreshAlerts()]);
+  await Promise.all([refreshScene(), refreshHealth(), refreshRules(), refreshAlerts(), refreshPending()]);
 }
 
 async function refreshScene() {
@@ -523,6 +563,76 @@ function timeAgo(iso) {
     return `${Math.floor(s/3600)}h ago`;
   } catch { return 'unknown'; }
 }
+
+// ── Pending Cameras ─────────────────────────────────
+async function refreshPending() {
+  try {
+    const r = await apiFetch('/cameras/pending');
+    if (!r.ok) return;
+    const list = await r.json();
+    const banner = document.getElementById('pendingBanner');
+    const container = document.getElementById('pendingList');
+    if (!list || list.length === 0) {
+      banner.style.display = 'none';
+      return;
+    }
+    banner.style.display = 'block';
+    container.innerHTML = list.map(c => `
+      <div class="pending-item" id="pending-${esc(c.camera_id)}">
+        <div class="pending-info">
+          <div class="pending-name">${esc(c.name || c.camera_id)}</div>
+          <div class="pending-details">
+            ${c.firmware_version ? 'Firmware ' + esc(c.firmware_version) + ' · ' : ''}
+            Registered ${timeAgo(c.registered_at)}
+          </div>
+        </div>
+        <div class="pending-actions">
+          <button class="pending-btn accept" onclick="acceptCamera('${esc(c.camera_id)}')">Accept</button>
+          <button class="pending-btn reject" onclick="rejectCamera('${esc(c.camera_id)}')">Reject</button>
+        </div>
+      </div>
+    `).join('');
+  } catch {}
+}
+
+async function acceptCamera(id) {
+  try {
+    const sep = token ? `?token=${token}` : '';
+    const r = await fetch(`${BASE}/cameras/${id}/accept${sep}`, {method:'POST'});
+    if (r.ok) {
+      showToast('Camera added!');
+      refreshPending();
+      // Refresh camera list after a moment
+      setTimeout(() => { refreshAll(); setupCameraTabs(); }, 1000);
+    } else {
+      const d = await r.json().catch(() => ({}));
+      showToast(d.message || 'Failed to accept');
+    }
+  } catch { showToast('Connection error'); }
+}
+
+async function rejectCamera(id) {
+  try {
+    const sep = token ? `?token=${token}` : '';
+    const r = await fetch(`${BASE}/cameras/${id}/reject${sep}`, {method:'POST'});
+    if (r.ok) {
+      showToast('Camera rejected');
+      refreshPending();
+    } else {
+      showToast('Failed to reject');
+    }
+  } catch { showToast('Connection error'); }
+}
+
+function showToast(msg) {
+  const el = document.getElementById('pendingToast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// Poll pending cameras every 5 seconds
+setInterval(refreshPending, 5000);
 
 // ── Start ───────────────────────────────────────────
 init();

@@ -200,9 +200,9 @@ def main(
 
             # Set up server-side vision analysis (if provider configured)
             from .reasoning.analyzer import FrameAnalyzer
-            from .server import _create_provider
+            from .reasoning.factory import create_provider
 
-            provider = _create_provider(config)
+            provider = create_provider(config)
             analyzer = FrameAnalyzer(provider)
             vision_state["analyzer"] = analyzer
 

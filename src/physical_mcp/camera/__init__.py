@@ -1,6 +1,7 @@
-"""Camera backends — USB, RTSP, HTTP MJPEG, and LAN auto-discovery."""
+"""Camera backends — USB, RTSP, HTTP MJPEG, Cloud push, and LAN auto-discovery."""
 
 from .base import CameraSource, Frame
+from .cloud import CloudCamera
 from .discovery import DiscoveredCamera, discover_cameras
 from .factory import create_camera
 from .http_mjpeg import HTTPCamera
@@ -13,6 +14,7 @@ __all__ = [
     "USBCamera",
     "RTSPCamera",
     "HTTPCamera",
+    "CloudCamera",
     "create_camera",
     "discover_cameras",
     "DiscoveredCamera",

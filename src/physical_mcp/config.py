@@ -14,11 +14,12 @@ from pydantic import BaseModel, Field
 class CameraConfig(BaseModel):
     id: str = "usb:0"
     name: str = ""  # Optional label for this camera
-    type: str = "usb"
+    type: str = "usb"  # "usb" | "rtsp" | "http" | "cloud"
     device_index: int = 0
     width: int = 1280
     height: int = 720
     url: Optional[str] = None
+    auth_token: str = ""  # Per-camera auth token (used by cloud cameras)
     enabled: bool = True
 
 

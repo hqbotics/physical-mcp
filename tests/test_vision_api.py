@@ -19,6 +19,7 @@ def _make_state(with_frame: bool = True, with_scene: bool = True) -> dict:
         "scene_states": {},
         "frame_buffers": {},
         "camera_configs": {},
+        "pending_cameras": {},  # Prevent loading stale data from disk
     }
 
     if with_scene:
@@ -550,7 +551,7 @@ class TestHealthAndAlerts:
             assert health["consecutive_errors"] == 0
             assert health["backoff_until"] is None
             assert health["last_success_at"] is None
-            assert health["message"] == "No health data yet."
+            assert health["message"] == "No health data yet. Start monitoring first."
 
     @pytest.mark.asyncio
     async def test_health_single_malformed_row_contains_required_camera_health_keys(
@@ -716,7 +717,7 @@ class TestHealthAndAlerts:
             assert unknown["camera_id"] == "usb:9"
             assert unknown["camera_name"] == "usb:9"
             assert unknown["status"] == "unknown"
-            assert unknown["message"] == "No health data yet."
+            assert unknown["message"] == "No health data yet. Start monitoring first."
 
     @pytest.mark.asyncio
     async def test_health_all_rows_always_include_required_camera_health_keys(
@@ -2069,3 +2070,786 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_eqs_3"
+
+
+# ── Rules owner_id support ───────────────────────────────────
+
+
+def _make_rules_state() -> dict:
+    """State dict with a rules engine for testing CRUD with owner_id."""
+    from physical_mcp.rules.engine import RulesEngine
+
+    state = _make_state(with_frame=False, with_scene=False)
+    state["rules_engine"] = RulesEngine()
+    return state
+
+
+class TestRulesOwnerIdAPI:
+    """Vision API rules endpoints with owner_id support."""
+
+    @pytest.mark.asyncio
+    async def test_create_rule_with_owner_id(self):
+        """POST /rules with owner_id persists it."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/rules",
+                json={
+                    "name": "Grandma's door watch",
+                    "condition": "person at door",
+                    "owner_id": "whatsapp:+8613800138000",
+                    "owner_name": "Grandma",
+                    "custom_message": "Someone's at the door!",
+                },
+            )
+            assert resp.status == 201
+            data = await resp.json()
+            assert data["owner_id"] == "whatsapp:+8613800138000"
+            assert data["owner_name"] == "Grandma"
+            assert data["custom_message"] == "Someone's at the door!"
+
+    @pytest.mark.asyncio
+    async def test_create_rule_without_owner_id_defaults_empty(self):
+        """POST /rules without owner_id defaults to empty string."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/rules",
+                json={
+                    "name": "Test rule",
+                    "condition": "test condition",
+                },
+            )
+            assert resp.status == 201
+            data = await resp.json()
+            assert data["owner_id"] == ""
+            assert data["owner_name"] == ""
+
+    @pytest.mark.asyncio
+    async def test_list_rules_filters_by_owner_id(self):
+        """GET /rules?owner_id=X returns only that user's rules + global rules."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            # Create rules for different owners
+            await client.post(
+                "/rules",
+                json={
+                    "name": "Alice's rule",
+                    "condition": "cat on couch",
+                    "owner_id": "discord:111",
+                },
+            )
+            await client.post(
+                "/rules",
+                json={
+                    "name": "Bob's rule",
+                    "condition": "dog in yard",
+                    "owner_id": "discord:222",
+                },
+            )
+            await client.post(
+                "/rules",
+                json={
+                    "name": "Global rule",
+                    "condition": "fire detected",
+                    # No owner_id — global rule
+                },
+            )
+
+            # Alice sees her rule + global
+            resp = await client.get("/rules?owner_id=discord:111")
+            data = await resp.json()
+            names = {r["name"] for r in data}
+            assert "Alice's rule" in names
+            assert "Global rule" in names
+            assert "Bob's rule" not in names
+
+            # Bob sees his rule + global
+            resp = await client.get("/rules?owner_id=discord:222")
+            data = await resp.json()
+            names = {r["name"] for r in data}
+            assert "Bob's rule" in names
+            assert "Global rule" in names
+            assert "Alice's rule" not in names
+
+            # No filter → all rules
+            resp = await client.get("/rules")
+            data = await resp.json()
+            assert len(data) == 3
+
+    @pytest.mark.asyncio
+    async def test_delete_rule_ownership_check(self):
+        """DELETE /rules/{id}?owner_id=X rejects if rule belongs to another user."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            # Create Alice's rule
+            resp = await client.post(
+                "/rules",
+                json={
+                    "name": "Alice's rule",
+                    "condition": "cat on couch",
+                    "owner_id": "discord:111",
+                },
+            )
+            rule_id = (await resp.json())["id"]
+
+            # Bob tries to delete → 403
+            resp = await client.delete(f"/rules/{rule_id}?owner_id=discord:222")
+            assert resp.status == 403
+            data = await resp.json()
+            assert data["code"] == "forbidden"
+
+            # Alice deletes her own rule → 200
+            resp = await client.delete(f"/rules/{rule_id}?owner_id=discord:111")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["deleted"] == rule_id
+
+    @pytest.mark.asyncio
+    async def test_delete_rule_no_owner_id_always_works(self):
+        """DELETE /rules/{id} without owner_id works (backward compatible)."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/rules",
+                json={
+                    "name": "Test rule",
+                    "condition": "test",
+                    "owner_id": "discord:111",
+                },
+            )
+            rule_id = (await resp.json())["id"]
+
+            # Delete without owner_id → works
+            resp = await client.delete(f"/rules/{rule_id}")
+            assert resp.status == 200
+
+    @pytest.mark.asyncio
+    async def test_rule_to_dict_includes_owner_fields(self):
+        """GET /rules response includes owner_id, owner_name, custom_message."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            await client.post(
+                "/rules",
+                json={
+                    "name": "Test rule",
+                    "condition": "test",
+                    "owner_id": "telegram:999",
+                    "owner_name": "Grandpa",
+                    "custom_message": "Alert!",
+                },
+            )
+            resp = await client.get("/rules")
+            data = await resp.json()
+            assert len(data) == 1
+            rule = data[0]
+            assert rule["owner_id"] == "telegram:999"
+            assert rule["owner_name"] == "Grandpa"
+            assert rule["custom_message"] == "Alert!"
+
+
+# ── Cloud camera ingestion endpoint ──────────────────────────
+
+
+class TestIngestEndpoint:
+    """POST /ingest/{camera_id} — cloud cameras push frames here."""
+
+    @pytest.mark.asyncio
+    async def test_ingest_to_nonexistent_camera(self):
+        """POST /ingest for unknown camera → 404."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/ingest/cloud:unknown",
+                data=b"\xff\xd8\xff\xe0fake",
+            )
+            assert resp.status == 404
+            data = await resp.json()
+            assert data["code"] == "camera_not_found"
+
+    @pytest.mark.asyncio
+    async def test_ingest_to_non_cloud_camera(self):
+        """POST /ingest for a USB camera → 400."""
+        state = _make_state(with_frame=True, with_scene=False)
+        # Inject a non-cloud camera
+        state["cameras"] = {"usb:0": MagicMock()}
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/ingest/usb:0",
+                data=b"\xff\xd8\xff\xe0fake",
+            )
+            assert resp.status == 400
+            data = await resp.json()
+            assert data["code"] == "not_cloud_camera"
+
+    @pytest.mark.asyncio
+    async def test_ingest_with_invalid_token(self):
+        """POST /ingest with wrong token → 401."""
+        from physical_mcp.camera.cloud import CloudCamera
+        from physical_mcp.camera.buffer import FrameBuffer
+
+        cam = CloudCamera(camera_id="cloud:test", auth_token="secret123")
+        await cam.open()
+
+        state = _make_state(with_frame=False, with_scene=False)
+        state["cameras"] = {"cloud:test": cam}
+        state["frame_buffers"] = {"cloud:test": FrameBuffer()}
+
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/ingest/cloud:test",
+                data=b"\xff\xd8\xff\xe0fake",
+                headers={"Authorization": "Bearer wrong-token"},
+            )
+            assert resp.status == 401
+            data = await resp.json()
+            assert data["code"] == "invalid_camera_token"
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_ingest_with_valid_token_and_jpeg(self):
+        """POST /ingest with correct token + valid JPEG → 200."""
+        import cv2
+        import numpy as np
+        from physical_mcp.camera.cloud import CloudCamera
+        from physical_mcp.camera.buffer import FrameBuffer
+
+        cam = CloudCamera(camera_id="cloud:door", auth_token="sk_door123")
+        await cam.open()
+        buf = FrameBuffer()
+
+        state = _make_state(with_frame=False, with_scene=False)
+        state["cameras"] = {"cloud:door": cam}
+        state["frame_buffers"] = {"cloud:door": buf}
+
+        # Create a valid JPEG
+        image = np.random.randint(0, 255, (100, 160, 3), dtype=np.uint8)
+        _, jpeg_buf = cv2.imencode(".jpg", image)
+        jpeg_bytes = jpeg_buf.tobytes()
+
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/ingest/cloud:door",
+                data=jpeg_bytes,
+                headers={"Authorization": "Bearer sk_door123"},
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["status"] == "ok"
+            assert data["camera_id"] == "cloud:door"
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_ingest_empty_body(self):
+        """POST /ingest with empty body → 400."""
+        from physical_mcp.camera.cloud import CloudCamera
+
+        cam = CloudCamera(camera_id="cloud:test", auth_token="")
+        await cam.open()
+
+        state = _make_state(with_frame=False, with_scene=False)
+        state["cameras"] = {"cloud:test": cam}
+
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post("/ingest/cloud:test", data=b"")
+            assert resp.status == 400
+            data = await resp.json()
+            assert data["code"] == "empty_body"
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_ingest_invalid_jpeg(self):
+        """POST /ingest with invalid JPEG data → 400."""
+        from physical_mcp.camera.cloud import CloudCamera
+
+        cam = CloudCamera(camera_id="cloud:test", auth_token="")
+        await cam.open()
+
+        state = _make_state(with_frame=False, with_scene=False)
+        state["cameras"] = {"cloud:test": cam}
+
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/ingest/cloud:test",
+                data=b"this is not a jpeg image at all",
+            )
+            assert resp.status == 400
+            data = await resp.json()
+            assert data["code"] == "invalid_jpeg"
+
+        await cam.close()
+
+
+# ── Camera registration endpoints ────────────────────────────
+
+
+class TestCameraRegistration:
+    """POST /cameras/register, GET /cameras/pending, POST /cameras/{id}/accept."""
+
+    @pytest.mark.asyncio
+    async def test_register_new_camera(self):
+        """POST /cameras/register creates a pending camera."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "decxin-A3F2B1",
+                    "name": "Front Door Camera",
+                    "capabilities": {"resolution": "1080p", "night_vision": True},
+                    "firmware_version": "1.2.3",
+                },
+            )
+            assert resp.status == 202
+            data = await resp.json()
+            assert data["status"] == "pending"
+            assert data["camera_id"] == "decxin-A3F2B1"
+
+    @pytest.mark.asyncio
+    async def test_register_duplicate_camera(self):
+        """POST /cameras/register for already-pending camera → 409."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "decxin-A3F2B1",
+                    "name": "Front Door",
+                },
+            )
+            resp = await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "decxin-A3F2B1",
+                    "name": "Front Door Again",
+                },
+            )
+            assert resp.status == 409
+            data = await resp.json()
+            assert data["code"] == "already_pending"
+
+    @pytest.mark.asyncio
+    async def test_list_pending_cameras(self):
+        """GET /cameras/pending returns pending cameras without auth tokens."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "decxin-001",
+                    "name": "Kitchen Cam",
+                },
+            )
+            await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "decxin-002",
+                    "name": "Living Room Cam",
+                },
+            )
+
+            resp = await client.get("/cameras/pending")
+            assert resp.status == 200
+            data = await resp.json()
+            assert len(data) == 2
+            ids = {c["camera_id"] for c in data}
+            assert "decxin-001" in ids
+            assert "decxin-002" in ids
+            # Auth token should NOT be exposed
+            for cam in data:
+                assert "auth_token" not in cam
+
+    @pytest.mark.asyncio
+    async def test_accept_pending_camera(self):
+        """POST /cameras/{id}/accept creates a CloudCamera and returns token."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            # Register
+            await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "decxin-ABC",
+                    "name": "Garage Cam",
+                },
+            )
+
+            # Accept
+            resp = await client.post("/cameras/decxin-ABC/accept")
+            assert resp.status == 201
+            data = await resp.json()
+            assert data["status"] == "accepted"
+            assert data["camera_id"] == "decxin-ABC"
+            assert "auth_token" in data
+            assert data["ingest_url"] == "/ingest/decxin-ABC"
+
+            # Pending list should be empty now
+            resp = await client.get("/cameras/pending")
+            data = await resp.json()
+            assert len(data) == 0
+
+    @pytest.mark.asyncio
+    async def test_accept_nonexistent_camera(self):
+        """POST /cameras/{id}/accept for unknown camera → 404."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post("/cameras/ghost-cam/accept")
+            assert resp.status == 404
+
+    @pytest.mark.asyncio
+    async def test_reject_pending_camera(self):
+        """POST /cameras/{id}/reject removes from pending."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "decxin-REJECT",
+                    "name": "Unwanted Cam",
+                },
+            )
+
+            resp = await client.post("/cameras/decxin-REJECT/reject")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["status"] == "rejected"
+
+            # Pending list should be empty
+            resp = await client.get("/cameras/pending")
+            data = await resp.json()
+            assert len(data) == 0
+
+    @pytest.mark.asyncio
+    async def test_register_missing_camera_id(self):
+        """POST /cameras/register without camera_id → 400."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/cameras/register",
+                json={
+                    "name": "No ID Camera",
+                },
+            )
+            assert resp.status == 400
+            data = await resp.json()
+            assert data["code"] == "missing_camera_id"
+
+    @pytest.mark.asyncio
+    async def test_ingest_to_pending_camera(self):
+        """POST /ingest for a pending (not yet accepted) camera → 403."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            # Register but don't accept
+            await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "decxin-PENDING",
+                    "name": "Pending Cam",
+                },
+            )
+
+            # Try to ingest → 403
+            resp = await client.post(
+                "/ingest/decxin-PENDING",
+                data=b"\xff\xd8\xff\xe0fake",
+            )
+            assert resp.status == 403
+            data = await resp.json()
+            assert data["code"] == "camera_pending"
+
+
+class TestCameraStatusPolling:
+    """GET /cameras/{camera_id}/status — camera firmware polls for acceptance."""
+
+    @pytest.mark.asyncio
+    async def test_status_pending_camera(self):
+        """Pending camera returns status=pending."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "decxin-POLL1",
+                    "name": "Polling Cam",
+                },
+            )
+            resp = await client.get("/cameras/decxin-POLL1/status")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["status"] == "pending"
+            assert data["camera_id"] == "decxin-POLL1"
+            assert "auth_token" not in data
+
+    @pytest.mark.asyncio
+    async def test_status_accepted_camera(self):
+        """Accepted camera returns status=accepted + auth_token + ingest_url."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "decxin-POLL2",
+                    "name": "Accepted Cam",
+                },
+            )
+            # Accept
+            accept_resp = await client.post("/cameras/decxin-POLL2/accept")
+            accept_data = await accept_resp.json()
+            expected_token = accept_data["auth_token"]
+
+            # Now poll status
+            resp = await client.get("/cameras/decxin-POLL2/status")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["status"] == "accepted"
+            assert data["auth_token"] == expected_token
+            assert data["ingest_url"] == "/ingest/decxin-POLL2"
+
+    @pytest.mark.asyncio
+    async def test_status_unknown_camera(self):
+        """Unknown camera_id → 404."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/cameras/nonexistent-cam/status")
+            assert resp.status == 404
+
+    @pytest.mark.asyncio
+    async def test_status_no_auth_required(self):
+        """Status endpoint works without auth token (camera doesn't have one yet)."""
+        from physical_mcp.config import PhysicalMCPConfig, VisionAPIConfig
+
+        state = _make_state(with_frame=False, with_scene=False)
+        state["config"] = PhysicalMCPConfig(
+            vision_api=VisionAPIConfig(auth_token="secret-global-token")
+        )
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            # Register a camera (no auth needed for that)
+            await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "decxin-NOAUTH",
+                    "name": "No Auth Cam",
+                },
+            )
+
+            # Status should work WITHOUT auth header
+            resp = await client.get("/cameras/decxin-NOAUTH/status")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["status"] == "pending"
+
+    @pytest.mark.asyncio
+    async def test_full_registration_loop(self):
+        """Full camera lifecycle: register → poll(pending) → accept → poll(accepted) → ingest."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            # 1. Register
+            resp = await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "decxin-LOOP",
+                    "name": "Loop Cam",
+                },
+            )
+            assert resp.status == 202
+
+            # 2. Poll → pending
+            resp = await client.get("/cameras/decxin-LOOP/status")
+            data = await resp.json()
+            assert data["status"] == "pending"
+
+            # 3. Accept
+            resp = await client.post("/cameras/decxin-LOOP/accept")
+            assert resp.status == 201
+            token = (await resp.json())["auth_token"]
+
+            # 4. Poll → accepted + token
+            resp = await client.get("/cameras/decxin-LOOP/status")
+            data = await resp.json()
+            assert data["status"] == "accepted"
+            assert data["auth_token"] == token
+            assert data["ingest_url"] == "/ingest/decxin-LOOP"
+
+
+class TestPendingCameraPersistence:
+    """Pending cameras are saved to and loaded from disk."""
+
+    @pytest.mark.asyncio
+    async def test_register_saves_to_disk(self, tmp_path, monkeypatch):
+        """Registering a camera writes pending.yaml."""
+        pending_path = tmp_path / "pending.yaml"
+        monkeypatch.setattr("physical_mcp.vision_api._PENDING_PATH", pending_path)
+
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "persist-001",
+                    "name": "Persist Cam",
+                },
+            )
+            assert resp.status == 202
+
+        # File should exist and contain the camera
+        assert pending_path.exists()
+        import yaml
+
+        data = yaml.safe_load(pending_path.read_text())
+        assert "persist-001" in data
+        assert data["persist-001"]["name"] == "Persist Cam"
+
+    @pytest.mark.asyncio
+    async def test_accept_removes_from_disk(self, tmp_path, monkeypatch):
+        """Accepting a camera removes it from pending.yaml."""
+        pending_path = tmp_path / "pending.yaml"
+        monkeypatch.setattr("physical_mcp.vision_api._PENDING_PATH", pending_path)
+
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "persist-002",
+                    "name": "Accept Me",
+                },
+            )
+            await client.post("/cameras/persist-002/accept")
+
+        import yaml
+
+        data = yaml.safe_load(pending_path.read_text())
+        # Should be empty dict or None (no pending cameras)
+        assert not data or "persist-002" not in data
+
+    @pytest.mark.asyncio
+    async def test_reject_removes_from_disk(self, tmp_path, monkeypatch):
+        """Rejecting a camera removes it from pending.yaml."""
+        pending_path = tmp_path / "pending.yaml"
+        monkeypatch.setattr("physical_mcp.vision_api._PENDING_PATH", pending_path)
+
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "persist-003",
+                    "name": "Reject Me",
+                },
+            )
+            await client.post("/cameras/persist-003/reject")
+
+        import yaml
+
+        data = yaml.safe_load(pending_path.read_text())
+        assert not data or "persist-003" not in data
+
+    @pytest.mark.asyncio
+    async def test_load_on_startup(self, tmp_path, monkeypatch):
+        """Pending cameras are loaded from disk on app creation."""
+        import yaml
+
+        pending_path = tmp_path / "pending.yaml"
+        pending_path.write_text(
+            yaml.dump(
+                {
+                    "preexist-cam": {
+                        "camera_id": "preexist-cam",
+                        "name": "Pre-existing Camera",
+                        "auth_token": "pretoken123",
+                        "capabilities": {},
+                        "firmware_version": "2.0",
+                        "registered_at": "2026-02-24T00:00:00+00:00",
+                        "status": "pending",
+                    }
+                }
+            )
+        )
+        monkeypatch.setattr("physical_mcp.vision_api._PENDING_PATH", pending_path)
+
+        state = _make_state(with_frame=False, with_scene=False)
+        # Remove pending_cameras so create_vision_routes loads from disk
+        del state["pending_cameras"]
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/cameras/pending")
+            data = await resp.json()
+            assert len(data) == 1
+            assert data[0]["camera_id"] == "preexist-cam"
+            assert data[0]["name"] == "Pre-existing Camera"
+
+
+class TestIngestHealthTracking:
+    """POST /ingest updates camera_health last_frame_at."""
+
+    @pytest.mark.asyncio
+    async def test_ingest_updates_last_frame_at(self):
+        """Successful ingest updates camera health timestamps."""
+        import cv2
+        import numpy as np
+
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            # Register and accept a camera
+            await client.post(
+                "/cameras/register",
+                json={
+                    "camera_id": "health-cam",
+                    "name": "Health Tracking Cam",
+                },
+            )
+            accept_resp = await client.post("/cameras/health-cam/accept")
+            accept_data = await accept_resp.json()
+            token = accept_data["auth_token"]
+
+            # Health should initially have no last_frame_at
+            health = state.get("camera_health", {}).get("health-cam", {})
+            assert health.get("last_frame_at") is None
+
+            # Push a valid JPEG frame
+            img = np.zeros((100, 100, 3), dtype=np.uint8)
+            _, jpeg_bytes = cv2.imencode(".jpg", img)
+
+            resp = await client.post(
+                "/ingest/health-cam",
+                data=jpeg_bytes.tobytes(),
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert resp.status == 200
+
+            # Health should now have last_frame_at set
+            health = state.get("camera_health", {}).get("health-cam", {})
+            assert health.get("last_frame_at") is not None
+            assert health.get("status") == "running"
+            assert health.get("consecutive_errors") == 0

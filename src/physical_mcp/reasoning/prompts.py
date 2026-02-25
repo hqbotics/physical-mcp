@@ -63,7 +63,7 @@ Respond in JSON only:
   ]
 }}
 
-Be conservative. Only set triggered=true with confidence >= 0.7. False positives waste user attention."""
+For gesture rules (waving, pointing, X-shape), look for raised hands/arms even if partially visible or at odd angles. Trigger when the condition is reasonably met (confidence >= 0.6). Prefer triggering over missing a real event."""
 
 
 def build_combined_prompt(previous_state: SceneState, rules: list[WatchRule]) -> str:
@@ -87,6 +87,8 @@ def build_combined_prompt(previous_state: SceneState, rules: list[WatchRule]) ->
 Active watch rules:
 [{rules_text}]
 
+IMPORTANT: The camera may be tilted or at an unusual angle. Interpret the scene from the camera's perspective. For gesture rules (waving, pointing, X-shape), look for raised hands/arms even if partially visible or at odd angles. A hand raised toward the camera = waving.
+
 Respond in JSON only:
 {{
   "scene": {{
@@ -106,4 +108,4 @@ Respond in JSON only:
   ]
 }}
 
-Be conservative with rules. Only triggered=true with confidence >= 0.7."""
+Trigger rules when the condition is reasonably met (confidence >= 0.6). Prefer triggering over missing a real event."""
