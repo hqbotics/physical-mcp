@@ -7,57 +7,29 @@ Endpoints:
     GET /             → API overview
     GET /frame        → Latest camera frame (JPEG)
     GET /frame/{id}   → Frame from specific camera
-    GET /stream       → MJPEG video stream (works in <img> tags)
-    GET /stream/{id}  → MJPEG stream from specific camera
-    GET /events       → SSE stream of scene changes
     GET /scene        → All camera scene summaries (JSON)
     GET /scene/{id}   → Scene for specific camera
     GET /changes      → Recent scene changes (supports long-poll)
+    GET /health       → Per-camera health
+    GET /alerts       → Recent alert events
+    GET /cameras      → List all cameras
+    GET /rules        → List watch rules
+    POST /rules       → Create a watch rule
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
-import yaml
 from aiohttp import web
 
 from .health import normalize_camera_health as _normalize_camera_health
 
 logger = logging.getLogger("physical-mcp")
-
-
-# ── Pending cameras persistence ────────────────────
-_PENDING_PATH = Path("~/.physical-mcp/pending.yaml").expanduser()
-
-
-def _save_pending(pending: dict[str, Any]) -> None:
-    """Persist pending camera registrations to disk."""
-    try:
-        _PENDING_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _PENDING_PATH.write_text(
-            yaml.dump(pending, default_flow_style=False, sort_keys=False)
-        )
-    except Exception as e:
-        logger.warning("Could not save pending cameras: %s", e)
-
-
-def _load_pending() -> dict[str, Any]:
-    """Load pending camera registrations from disk."""
-    if not _PENDING_PATH.exists():
-        return {}
-    try:
-        data = yaml.safe_load(_PENDING_PATH.read_text())
-        return data if isinstance(data, dict) else {}
-    except Exception as e:
-        logger.warning("Could not load pending cameras: %s", e)
-        return {}
 
 
 def _json_error(
@@ -154,10 +126,6 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             scene_states, frame_buffers, camera_configs, etc.
     """
 
-    # Load any persisted pending cameras from disk
-    if "pending_cameras" not in state:
-        state["pending_cameras"] = _load_pending()
-
     routes = web.RouteTableDef()
 
     @routes.get("/")
@@ -172,18 +140,15 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
                 "endpoints": {
                     "GET /frame": "Latest camera frame (JPEG)",
                     "GET /frame/{camera_id}": "Frame from specific camera",
-                    "GET /stream": "MJPEG video stream (use in <img> tags)",
-                    "GET /stream/{camera_id}": "MJPEG stream from specific camera",
-                    "GET /events": "SSE stream of scene changes (real-time)",
                     "GET /scene": "Current scene summaries (JSON)",
                     "GET /scene/{camera_id}": "Scene for specific camera",
                     "GET /changes": "Recent changes (?wait=true for long-poll)",
-                    "GET /health": "Per-camera health (errors/backoff/last success)",
-                    "GET /alerts": "Replay recent alert events",
-                    "GET /cameras": "List all cameras with scene state",
-                    "POST /cameras/open": "Open all configured cameras on demand",
+                    "GET /health": "Per-camera health",
+                    "GET /alerts": "Recent alert events",
+                    "GET /cameras": "List all cameras",
+                    "POST /cameras/open": "Open configured cameras",
                     "GET /rules": "List watch rules",
-                    "POST /rules": "Create a new watch rule",
+                    "POST /rules": "Create a watch rule",
                     "DELETE /rules/{rule_id}": "Delete a watch rule",
                     "PUT /rules/{rule_id}/toggle": "Toggle rule on/off",
                 },
@@ -240,241 +205,6 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             content_type="image/jpeg",
             headers={"Cache-Control": "no-cache"},
         )
-
-    # ── Snapshot (JSON with base64 image — for GPT Actions) ─
-
-    @routes.get("/snapshot")
-    @routes.get("/snapshot/{camera_id}")
-    async def get_snapshot(request: web.Request) -> web.Response:
-        """Return latest frame as JSON with base64-encoded JPEG.
-
-        ChatGPT GPT Actions can't handle binary image responses,
-        so this endpoint wraps the frame in JSON with a data URL.
-        """
-        camera_id = request.match_info.get("camera_id", "")
-        quality = _parse_int(
-            request.query.get("quality", "60"), default=60, minimum=1, maximum=100
-        )
-        buffers = state.get("frame_buffers", {})
-
-        if not buffers:
-            return _json_error(503, "no_cameras_active", "No cameras active")
-
-        if camera_id and camera_id in buffers:
-            buf = buffers[camera_id]
-            resolved_id = camera_id
-        elif not camera_id:
-            resolved_id = next(iter(buffers.keys()))
-            buf = buffers[resolved_id]
-        else:
-            return _json_error(
-                404,
-                "camera_not_found",
-                f"Camera '{camera_id}' not found",
-                camera_id=camera_id,
-            )
-
-        frame = await buf.latest()
-
-        # Fallback: grab directly from camera if buffer empty
-        if frame is None:
-            cameras = state.get("cameras", {})
-            cam = cameras.get(resolved_id)
-            if cam and cam.is_open():
-                try:
-                    frame = await cam.grab_frame()
-                except Exception:
-                    pass
-
-        if frame is None:
-            return _json_error(503, "no_frame_available", "No frame available yet")
-
-        # Build the public frame URL so ChatGPT can render it inline.
-        host = (
-            request.headers.get("X-Forwarded-Host")
-            or request.headers.get("Host")
-            or request.host
-        )
-        scheme = request.headers.get("X-Forwarded-Proto") or request.scheme
-        frame_url = f"{scheme}://{host}/frame/{resolved_id}?quality={quality}"
-
-        return web.json_response(
-            {
-                "camera_id": resolved_id,
-                "image_url": frame_url,
-                "width": frame.resolution[0],
-                "height": frame.resolution[1],
-                "timestamp": frame.timestamp.isoformat(),
-                "display": f"![Camera {resolved_id}]({frame_url})",
-            }
-        )
-
-    # ── MJPEG Stream ────────────────────────────────────────
-
-    @routes.get("/stream")
-    @routes.get("/stream/{camera_id}")
-    async def mjpeg_stream(request: web.Request) -> web.StreamResponse:
-        """Continuous MJPEG video stream — works in any <img> tag or browser.
-
-        Usage:
-            <img src="http://localhost:8090/stream" />
-            curl http://localhost:8090/stream --output -
-
-        Query params:
-            fps:     Target frame rate (default: 5, max: 30)
-            quality: JPEG quality 1-100 (default: 60)
-        """
-        camera_id = request.match_info.get("camera_id", "")
-        fps = _parse_int(
-            request.query.get("fps", "5"), default=5, minimum=1, maximum=30
-        )
-        quality = _parse_int(
-            request.query.get("quality", "60"), default=60, minimum=1, maximum=100
-        )
-        buffers = state.get("frame_buffers", {})
-
-        if not buffers:
-            return _json_error(503, "no_cameras_active", "No cameras active")
-
-        if camera_id and camera_id in buffers:
-            buf = buffers[camera_id]
-        elif not camera_id:
-            buf = next(iter(buffers.values()))
-        else:
-            return _json_error(
-                404,
-                "camera_not_found",
-                f"Camera '{camera_id}' not found",
-                camera_id=camera_id,
-            )
-
-        boundary = "frame"
-        resp = web.StreamResponse(
-            status=200,
-            headers={
-                "Content-Type": f"multipart/x-mixed-replace; boundary={boundary}",
-                "Cache-Control": "no-cache, no-store",
-                "Pragma": "no-cache",
-                "Connection": "keep-alive",
-                "Access-Control-Allow-Origin": "*",
-                # Disable proxy buffering for low-latency multi-client streaming
-                # (notably nginx-compatible reverse proxies).
-                "X-Accel-Buffering": "no",
-            },
-        )
-        await resp.prepare(request)
-
-        # Resolve camera for direct grab fallback
-        cameras = state.get("cameras", {})
-        resolved_id = camera_id or next(iter(buffers.keys()), "")
-        cam = cameras.get(resolved_id)
-
-        interval = 1.0 / fps
-        try:
-            while True:
-                frame = await buf.wait_for_frame(timeout=interval)
-
-                # Fallback: grab directly from camera if buffer empty
-                if frame is None and cam and cam.is_open():
-                    try:
-                        frame = await cam.grab_frame()
-                    except Exception:
-                        pass
-
-                if frame is None:
-                    await asyncio.sleep(interval)
-                    continue
-
-                jpeg_bytes = frame.to_jpeg_bytes(quality=quality)
-                await resp.write(
-                    f"--{boundary}\r\n"
-                    f"Content-Type: image/jpeg\r\n"
-                    f"Content-Length: {len(jpeg_bytes)}\r\n\r\n".encode()
-                    + jpeg_bytes
-                    + b"\r\n"
-                )
-                await asyncio.sleep(interval)
-        except (asyncio.CancelledError, ConnectionResetError):
-            pass  # Client disconnected
-        return resp
-
-    # ── Server-Sent Events ────────────────────────────────
-
-    @routes.get("/events")
-    async def sse_events(request: web.Request) -> web.StreamResponse:
-        """Real-time Server-Sent Events stream of scene changes.
-
-        Usage:
-            const es = new EventSource('http://localhost:8090/events');
-            es.addEventListener('scene', (e) => console.log(JSON.parse(e.data)));
-            es.addEventListener('change', (e) => console.log(JSON.parse(e.data)));
-
-        Events emitted:
-            scene  — full scene update (summary, objects, people)
-            change — scene change detected (timestamp, description)
-            ping   — keepalive every 15s
-
-        Query params:
-            camera_id: Filter to specific camera (default: all)
-        """
-        camera_id = request.query.get("camera_id", "")
-
-        resp = web.StreamResponse(
-            status=200,
-            headers={
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "Access-Control-Allow-Origin": "*",
-            },
-        )
-        await resp.prepare(request)
-
-        # Track what we've already sent to avoid duplicates
-        last_update_counts: dict[str, int] = {}
-        last_change_times: dict[str, str] = {}
-
-        try:
-            while True:
-                scenes = state.get("scene_states", {})
-                for cid, scene in scenes.items():
-                    if camera_id and cid != camera_id:
-                        continue
-
-                    # Emit scene event when update_count changes
-                    if scene.update_count != last_update_counts.get(cid, -1):
-                        last_update_counts[cid] = scene.update_count
-                        scene_data = scene.to_dict()
-                        cam_cfg = state.get("camera_configs", {}).get(cid)
-                        if cam_cfg and cam_cfg.name:
-                            scene_data["name"] = cam_cfg.name
-                        scene_data["camera_id"] = cid
-                        await resp.write(
-                            f"event: scene\ndata: {json.dumps(scene_data)}\n\n".encode()
-                        )
-
-                    # Emit change events from the change log
-                    recent = scene.get_change_log(minutes=1)
-                    if recent:
-                        latest_ts = recent[-1]["timestamp"]
-                        if latest_ts != last_change_times.get(cid, ""):
-                            last_change_times[cid] = latest_ts
-                            for entry in recent:
-                                if entry["timestamp"] > last_change_times.get(
-                                    cid + "_sent", ""
-                                ):
-                                    await resp.write(
-                                        f"event: change\n"
-                                        f"data: {json.dumps({'camera_id': cid, **entry})}\n\n".encode()
-                                    )
-                            last_change_times[cid + "_sent"] = latest_ts
-
-                # Keepalive ping
-                await resp.write(b": ping\n\n")
-                await asyncio.sleep(1.0)
-        except (asyncio.CancelledError, ConnectionResetError):
-            pass  # Client disconnected
-        return resp
 
     # ── Scene endpoints ───────────────────────────────────
 
@@ -642,21 +372,6 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
                 "count": len(events),
                 "timestamp": time.time(),
             }
-        )
-
-    # ── Dashboard + PWA routes ─────────────────────────
-    from .dashboard import DASHBOARD_HTML, MANIFEST_JSON
-
-    @routes.get("/dashboard")
-    async def get_dashboard(request: web.Request) -> web.Response:
-        """Serve the web dashboard (mobile-friendly, works on iOS)."""
-        return web.Response(text=DASHBOARD_HTML, content_type="text/html")
-
-    @routes.get("/manifest.json")
-    async def get_manifest(request: web.Request) -> web.Response:
-        """PWA manifest for Add to Home Screen."""
-        return web.Response(
-            text=MANIFEST_JSON, content_type="application/manifest+json"
         )
 
     def _rule_to_dict(r: Any) -> dict[str, Any]:
@@ -941,309 +656,6 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             {"opened": opened, "failed": failed, "count": len(opened)}
         )
 
-    # ── Cloud camera frame ingestion ─────────────────────
-    @routes.post("/ingest/{camera_id}")
-    async def ingest_frame(request: web.Request) -> web.Response:
-        """Receive a JPEG frame pushed from a cloud camera.
-
-        Cloud cameras POST raw JPEG bytes with per-camera auth token.
-        This endpoint bypasses the global Vision API auth (handled in
-        auth_middleware skip list) and uses per-camera token validation.
-
-        Headers:
-            Authorization: Bearer <per-camera-token>
-        Body:
-            Raw JPEG bytes (max 5MB)
-        """
-        from .camera.cloud import CloudCamera
-
-        camera_id = request.match_info["camera_id"]
-
-        # Find the camera in state
-        cameras = state.get("cameras", {})
-        camera = cameras.get(camera_id)
-
-        if camera is None:
-            # Check pending registrations
-            pending = state.get("pending_cameras", {})
-            if camera_id in pending:
-                return _json_error(
-                    403, "camera_pending", f"Camera '{camera_id}' is pending approval"
-                )
-            return _json_error(
-                404, "camera_not_found", f"Camera '{camera_id}' not registered"
-            )
-
-        # Must be a CloudCamera
-        if not isinstance(camera, CloudCamera):
-            return _json_error(
-                400, "not_cloud_camera", "Only cloud cameras accept pushed frames"
-            )
-
-        # Validate per-camera auth token
-        auth_header = request.headers.get("Authorization", "")
-        token = (
-            auth_header.removeprefix("Bearer ").strip()
-            if auth_header.startswith("Bearer ")
-            else ""
-        )
-        if not camera.validate_token(token):
-            return _json_error(401, "invalid_camera_token", "Invalid camera auth token")
-
-        # Read JPEG body
-        body = await request.read()
-        if len(body) == 0:
-            return _json_error(400, "empty_body", "No JPEG data in request body")
-        if len(body) > 5 * 1024 * 1024:  # 5MB limit
-            return _json_error(413, "frame_too_large", "Frame exceeds 5MB limit")
-
-        try:
-            frame = await camera.receive_frame(body)
-        except ValueError as e:
-            return _json_error(400, "invalid_jpeg", str(e))
-
-        # Push to FrameBuffer so streaming endpoints (/frame, /stream) work
-        buf = state.get("frame_buffers", {}).get(camera_id)
-        if buf and frame:
-            await buf.push(frame)
-
-        # Update camera health — track last frame time
-        health = state.get("camera_health", {}).get(camera_id)
-        if health:
-            health["last_frame_at"] = datetime.now(timezone.utc).isoformat()
-            health["last_success_at"] = health["last_frame_at"]
-            health["consecutive_errors"] = 0
-            health["status"] = "running"
-
-        return web.json_response({"status": "ok", "camera_id": camera_id})
-
-    # ── Camera status polling (for camera firmware) ────
-    @routes.get("/cameras/{camera_id}/status")
-    async def camera_registration_status(request: web.Request) -> web.Response:
-        """Camera polls this after registering to learn if it's been accepted.
-
-        Returns:
-            - ``{"status": "pending"}`` while waiting for admin approval.
-            - ``{"status": "accepted", "auth_token": "...", "ingest_url": "..."}``
-              once accepted.
-            - 404 if the camera_id is unknown.
-
-        This endpoint is **unauthenticated** — the camera doesn't have a token
-        until it's accepted.
-        """
-        camera_id = request.match_info["camera_id"]
-
-        # Check pending first
-        pending = state.get("pending_cameras", {})
-        if camera_id in pending:
-            return web.json_response(
-                {
-                    "status": "pending",
-                    "camera_id": camera_id,
-                    "message": "Waiting for admin approval.",
-                }
-            )
-
-        # Check active cameras
-        cameras = state.get("cameras", {})
-        if camera_id in cameras:
-            # Find auth_token from the camera object
-            camera = cameras[camera_id]
-            auth_token_val = getattr(camera, "_auth_token", "")
-            return web.json_response(
-                {
-                    "status": "accepted",
-                    "camera_id": camera_id,
-                    "auth_token": auth_token_val,
-                    "ingest_url": f"/ingest/{camera_id}",
-                }
-            )
-
-        return _json_error(404, "not_found", f"Camera '{camera_id}' is not registered")
-
-    # ── Camera self-registration ──────────────────────
-    @routes.post("/cameras/register")
-    async def register_camera(request: web.Request) -> web.Response:
-        """Camera self-registration endpoint.
-
-        When a new Decxin camera powers on and connects to WiFi, it
-        POSTs here to register itself. The camera goes into "pending"
-        state until approved by the dashboard admin.
-
-        JSON body:
-            camera_id: Unique camera identifier (e.g., "decxin-A3F2B1")
-            name: Human-readable name (e.g., "Front Door Camera")
-            capabilities: Optional dict (resolution, fps, night_vision, etc.)
-            firmware_version: Optional firmware string
-        """
-        import secrets as _secrets
-
-        try:
-            body = await request.json()
-        except Exception:
-            return _json_error(400, "invalid_json", "Request body must be JSON")
-
-        camera_id = body.get("camera_id", "").strip()
-        if not camera_id:
-            return _json_error(400, "missing_camera_id", "camera_id is required")
-
-        # Check if already registered
-        cameras = state.get("cameras", {})
-        if camera_id in cameras:
-            return _json_error(
-                409, "already_registered", f"Camera '{camera_id}' is already registered"
-            )
-
-        # Check if already pending
-        pending = state.setdefault("pending_cameras", {})
-        if camera_id in pending:
-            return _json_error(
-                409,
-                "already_pending",
-                f"Camera '{camera_id}' is already pending approval",
-            )
-
-        auth_token = _secrets.token_urlsafe(32)
-        name = body.get("name", camera_id)
-
-        pending[camera_id] = {
-            "camera_id": camera_id,
-            "name": name,
-            "auth_token": auth_token,
-            "capabilities": body.get("capabilities", {}),
-            "firmware_version": body.get("firmware_version", ""),
-            "registered_at": datetime.now(timezone.utc).isoformat(),
-            "status": "pending",
-        }
-
-        logger.info("Camera '%s' (%s) registered — pending approval", name, camera_id)
-        _save_pending(pending)
-
-        return web.json_response(
-            {
-                "status": "pending",
-                "camera_id": camera_id,
-                "message": "Registration pending approval. Camera will receive token once accepted.",
-            },
-            status=202,
-        )
-
-    @routes.get("/cameras/pending")
-    async def get_pending_cameras(request: web.Request) -> web.Response:
-        """List cameras awaiting approval."""
-        pending = state.get("pending_cameras", {})
-        # Don't expose auth_token in the listing (dashboard shouldn't see it)
-        result = []
-        for cam_id, info in pending.items():
-            result.append(
-                {
-                    "camera_id": info["camera_id"],
-                    "name": info["name"],
-                    "capabilities": info.get("capabilities", {}),
-                    "firmware_version": info.get("firmware_version", ""),
-                    "registered_at": info.get("registered_at", ""),
-                    "status": info.get("status", "pending"),
-                }
-            )
-        return web.json_response(result)
-
-    @routes.post("/cameras/{camera_id}/accept")
-    async def accept_camera(request: web.Request) -> web.Response:
-        """Accept a pending camera registration.
-
-        Creates a CloudCamera instance and starts accepting frames.
-        Persists the camera config so it survives restarts.
-        """
-        from .camera.cloud import CloudCamera
-        from .camera.buffer import FrameBuffer
-        from .perception.scene_state import SceneState
-
-        camera_id = request.match_info["camera_id"]
-        pending = state.get("pending_cameras", {})
-
-        if camera_id not in pending:
-            return _json_error(404, "not_found", f"No pending camera '{camera_id}'")
-
-        reg = pending.pop(camera_id)
-        _save_pending(pending)
-        auth_token = reg["auth_token"]
-        name = reg.get("name", camera_id)
-
-        # Create and open CloudCamera
-        camera = CloudCamera(
-            camera_id=camera_id,
-            auth_token=auth_token,
-            name=name,
-        )
-        await camera.open()
-
-        # Register in state
-        cameras_dict = state.setdefault("cameras", {})
-        cameras_dict[camera_id] = camera
-
-        config = state.get("config")
-        buf_size = config.perception.buffer_size if config else 300
-
-        state.setdefault("frame_buffers", {})[camera_id] = FrameBuffer(
-            max_frames=buf_size
-        )
-        state.setdefault("scene_states", {})[camera_id] = SceneState()
-        state.setdefault("camera_health", {})[camera_id] = {
-            "camera_id": camera_id,
-            "camera_name": name,
-            "consecutive_errors": 0,
-            "backoff_until": None,
-            "last_success_at": None,
-            "last_error": "",
-            "last_frame_at": None,
-            "status": "running",
-        }
-
-        # Persist to config so camera survives restart
-        if config:
-            from ..config import CameraConfig as CamCfg, save_config
-
-            cam_cfg = CamCfg(
-                id=camera_id,
-                name=name,
-                type="cloud",
-                auth_token=auth_token,
-                enabled=True,
-            )
-            state.setdefault("camera_configs", {})[camera_id] = cam_cfg
-            config.cameras.append(cam_cfg)
-            try:
-                save_config(config)
-                logger.info("Camera '%s' config saved to disk", camera_id)
-            except Exception as e:
-                logger.warning("Could not save camera config: %s", e)
-
-        logger.info("Camera '%s' (%s) accepted — ready for frames", name, camera_id)
-
-        return web.json_response(
-            {
-                "status": "accepted",
-                "camera_id": camera_id,
-                "auth_token": auth_token,
-                "ingest_url": f"/ingest/{camera_id}",
-            },
-            status=201,
-        )
-
-    @routes.post("/cameras/{camera_id}/reject")
-    async def reject_camera(request: web.Request) -> web.Response:
-        """Reject a pending camera registration."""
-        camera_id = request.match_info["camera_id"]
-        pending = state.get("pending_cameras", {})
-
-        if camera_id not in pending:
-            return _json_error(404, "not_found", f"No pending camera '{camera_id}'")
-
-        pending.pop(camera_id)
-        _save_pending(pending)
-        logger.info("Camera '%s' registration rejected", camera_id)
-        return web.json_response({"status": "rejected", "camera_id": camera_id})
-
     # ── Auth middleware ─────────────────────────────────
     config = state.get("config")
     auth_token = (config.vision_api.auth_token if config else "") or ""
@@ -1256,18 +668,8 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         """Optional bearer token authentication."""
         if not auth_token:
             return await handler(request)
-        # Skip auth for CORS preflight, PWA manifest, and cloud camera endpoints
-        # (cloud camera endpoints use per-camera tokens, not the global API token)
-        if (
-            request.method == "OPTIONS"
-            or request.path == "/manifest.json"
-            or request.path.startswith("/ingest/")
-            or request.path == "/cameras/register"
-            or (
-                request.path.startswith("/cameras/")
-                and request.path.endswith("/status")
-            )
-        ):
+        # Skip auth for CORS preflight
+        if request.method == "OPTIONS":
             return await handler(request)
         # Check Authorization header
         auth_header = request.headers.get("Authorization", "")
@@ -1294,88 +696,6 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         resp.headers["Access-Control-Allow-Headers"] = "*, Authorization"
         return resp
 
-    # ── Camera offline detection ───────────────────────
-    _offline_task_key = web.AppKey("_offline_task", asyncio.Task)
-    # Tracks which cameras we've already alerted about (avoids spam)
-    _offline_alerted: set[str] = set()
-
-    async def _offline_checker(app: web.Application) -> None:
-        """Background task: check cloud cameras for staleness every 60s.
-
-        If a cloud camera hasn't pushed a frame in 5+ minutes, log a
-        warning and update camera_health status to 'offline'.  When the
-        camera comes back, clear the alert.
-        """
-        from .camera.cloud import CloudCamera
-
-        OFFLINE_THRESHOLD_SECONDS = 300  # 5 minutes
-
-        while True:
-            await asyncio.sleep(60)
-            try:
-                cameras = state.get("cameras", {})
-                health_dict = state.get("camera_health", {})
-                for cam_id, camera in cameras.items():
-                    if not isinstance(camera, CloudCamera):
-                        continue
-                    health = health_dict.get(cam_id, {})
-                    last_frame = health.get("last_frame_at")
-                    if not last_frame:
-                        # Never received a frame — camera may not have started yet
-                        continue
-                    try:
-                        last_dt = datetime.fromisoformat(
-                            last_frame.replace("Z", "+00:00")
-                        )
-                        if last_dt.tzinfo is None:
-                            last_dt = last_dt.replace(tzinfo=timezone.utc)
-                    except (ValueError, AttributeError):
-                        continue
-
-                    elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
-                    if elapsed > OFFLINE_THRESHOLD_SECONDS:
-                        if cam_id not in _offline_alerted:
-                            _offline_alerted.add(cam_id)
-                            cam_name = health.get("camera_name", cam_id)
-                            health["status"] = "offline"
-                            health["last_error"] = (
-                                f"No frames received for {int(elapsed)}s"
-                            )
-                            logger.warning(
-                                "Camera '%s' (%s) appears offline — no frames for %ds",
-                                cam_name,
-                                cam_id,
-                                int(elapsed),
-                            )
-                    else:
-                        # Camera is back online — clear alert
-                        if cam_id in _offline_alerted:
-                            _offline_alerted.discard(cam_id)
-                            cam_name = health.get("camera_name", cam_id)
-                            health["status"] = "running"
-                            health["last_error"] = ""
-                            logger.info(
-                                "Camera '%s' (%s) is back online",
-                                cam_name,
-                                cam_id,
-                            )
-            except Exception as e:
-                logger.debug("Offline checker error: %s", e)
-
-    async def _start_offline_checker(app: web.Application) -> None:
-        app[_offline_task_key] = asyncio.create_task(_offline_checker(app))
-
-    async def _stop_offline_checker(app: web.Application) -> None:
-        task = app.get(_offline_task_key)
-        if task:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
     app = web.Application(middlewares=[auth_middleware, cors_middleware])
     app.add_routes(routes)
-    app.on_startup.append(_start_offline_checker)
-    app.on_cleanup.append(_stop_offline_checker)
     return app

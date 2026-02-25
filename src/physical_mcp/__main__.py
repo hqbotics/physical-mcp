@@ -416,8 +416,6 @@ def setup(config_path: str | None, advanced: bool) -> None:
         VisionAPIConfig,
         save_config,
     )
-    from .ai_apps import configure_all
-    from .platform import get_lan_ip, print_qr_code
 
     config_file = Path(config_path or "~/.physical-mcp/config.yaml").expanduser()
     click.echo("Physical MCP Setup")
@@ -443,70 +441,6 @@ def setup(config_path: str | None, advanced: bool) -> None:
             )
     else:
         click.echo("No USB cameras detected.")
-
-    # ── 1b. Scan LAN for IP cameras ──────────────────────
-    scan_lan = click.confirm(
-        "\nScan LAN for IP cameras? (takes ~3 seconds)",
-        default=True,
-    )
-    if scan_lan:
-        import asyncio
-
-        from .camera.discovery import discover_cameras
-
-        click.echo("Scanning network...")
-        try:
-            ip_cameras = asyncio.run(discover_cameras(timeout=2.0))
-        except Exception:
-            ip_cameras = []
-
-        if ip_cameras:
-            click.echo(f"Found {len(ip_cameras)} IP camera(s):")
-            for i, cam in enumerate(ip_cameras):
-                click.echo(f"  {i + 1}. {cam.host}:{cam.port} ({cam.type})")
-            add_found = click.confirm("Add these cameras?", default=True)
-            if add_found:
-                for cam in ip_cameras:
-                    camera_configs.append(
-                        CameraConfig(
-                            id=cam.suggested_id,
-                            name=cam.name,
-                            type=cam.type,
-                            url=cam.url,
-                        )
-                    )
-                    click.echo(f"  ✓ Added: {cam.suggested_id}")
-        else:
-            click.echo("No IP cameras found on the local network.")
-
-    # ── 1c. Manual RTSP / IP camera entry ──────────────────
-    add_rtsp = click.confirm(
-        "\nAdd an RTSP/IP camera manually?",
-        default=False,
-    )
-    while add_rtsp:
-        click.echo("\n  Common RTSP URL formats:")
-        click.echo("    Reolink:   rtsp://admin:password@IP:554/h264Preview_01_main")
-        click.echo("    Tapo:      rtsp://user:pass@IP:554/stream1")
-        click.echo("    Hikvision: rtsp://admin:pass@IP:554/Streaming/Channels/101")
-        click.echo("    Generic:   rtsp://IP:554/stream")
-        rtsp_url = click.prompt("  RTSP URL")
-        cam_name = click.prompt("  Camera name (e.g. front-door)", default="")
-        cam_id = (
-            cam_name.replace(" ", "-").lower()
-            if cam_name
-            else f"rtsp:{len(camera_configs)}"
-        )
-        camera_configs.append(
-            CameraConfig(
-                id=cam_id,
-                name=cam_name,
-                type="rtsp",
-                url=rtsp_url,
-            )
-        )
-        click.echo(f"  ✓ Added RTSP camera: {cam_id}")
-        add_rtsp = click.confirm("  Add another RTSP camera?", default=False)
 
     if not camera_configs:
         click.echo("No cameras configured. You can add them manually later.")
@@ -607,32 +541,9 @@ def setup(config_path: str | None, advanced: bool) -> None:
                 f"\n  Subscribe to '{ntfy_topic}' in the ntfy app to receive alerts."
             )
 
-    # ── 3. Auto-detect and configure all AI apps ─────────
-    click.echo("\nDetecting AI apps...")
-    statuses = configure_all()
+    transport_mode = "stdio"
 
-    configured_apps: list[str] = []
-    needs_http = False
-
-    for s in statuses:
-        if not s.installed:
-            continue  # Silently skip apps not installed
-        if s.already_configured:
-            click.echo(f"  \u2713 {s.app.name} \u2014 already configured")
-            configured_apps.append(s.app.name)
-        elif s.newly_configured:
-            click.echo(f"  \u2713 {s.app.name} \u2014 auto-configured")
-            configured_apps.append(s.app.name)
-        elif s.needs_url:
-            needs_http = True
-        elif s.error:
-            click.echo(f"  \u2717 {s.app.name} \u2014 error: {s.error}")
-
-    # Determine transport: stdio if any desktop app configured, http if needed
-    any_stdio = len(configured_apps) > 0
-    transport_mode = "stdio" if any_stdio else "streamable-http"
-
-    # ── 4. Save config ───────────────────────────────────
+    # ── 3. Save config ───────────────────────────────────
     config = PhysicalMCPConfig(
         server=ServerConfig(transport=transport_mode),
         cameras=camera_configs,
@@ -666,44 +577,11 @@ def setup(config_path: str | None, advanced: bool) -> None:
             "Run 'physical-mcp setup --advanced' for provider & notification options."
         )
 
-    # ── 5. Show results ──────────────────────────────────
+    # ── 4. Show results ──────────────────────────────────
     click.echo("\n" + "=" * 40)
-    if configured_apps:
-        apps_str = (
-            " and ".join(configured_apps)
-            if len(configured_apps) <= 2
-            else ", ".join(configured_apps)
-        )
-        click.echo(f"Restart {apps_str} to start using camera features!")
-
-    if needs_http:
-        lan_ip = get_lan_ip()
-        port = config.server.port
-        local_url = f"http://{lan_ip or '127.0.0.1'}:{port}/mcp"
-
-        click.echo("\nFor phone / LAN apps:")
-        click.echo(f"  {local_url}")
-        click.echo("  Include auth token when calling Vision API endpoints:")
-        click.echo("    Authorization: Bearer <vision_api.auth_token>")
-        if lan_ip:
-            click.echo("")
-            print_qr_code(f"http://{lan_ip}:{port}/mcp")
-            click.echo("Scan with your phone to connect.")
-
-        click.echo("\nFor ChatGPT (requires HTTPS):")
-        click.echo("  Run: physical-mcp tunnel")
-        click.echo(
-            "  Then paste the HTTPS URL into ChatGPT \u2192 Settings \u2192 Connectors"
-        )
-
-        click.echo("\nTip: Run 'physical-mcp install' to start the server on login.")
-
-    if not configured_apps and not needs_http:
-        click.echo(
-            "No AI apps detected. Install Claude Desktop, Cursor, or another MCP client."
-        )
-        click.echo("Then run 'physical-mcp setup' again.")
-
+    click.echo("Setup complete! Add this to your MCP client config:")
+    click.echo('  "physical-mcp": {"command": "uv", "args": ["run", "physical-mcp"]}')
+    click.echo("\nTip: Run 'physical-mcp install' to start the server on login.")
     click.echo("")
 
 
@@ -958,158 +836,6 @@ def cameras(config_path: str | None) -> None:
         name = name_map.get(cam["index"], "")
         label = f" — {name}" if name else ""
         click.echo(f"  Index {cam['index']}: {cam['width']}x{cam['height']}{label}")
-
-
-@main.command()
-@click.option("--camera", "camera_index", default=0, type=int, help="Camera index")
-@click.option(
-    "--paste", "-p", is_flag=True, help="Auto-paste into focused app after capture"
-)
-@click.option("--save", "save_path", default=None, help="Also save frame to file")
-def snap(camera_index: int, paste: bool, save_path: str | None) -> None:
-    """Snap camera to clipboard. Paste into any AI chat app.
-
-    Works with ChatGPT, Claude, Gemini, Copilot, Perplexity, Qwen, Grok —
-    any app that accepts image paste.
-    """
-    from .snap import snap as do_snap
-
-    try:
-        result = do_snap(device_index=camera_index, paste=paste, save_path=save_path)
-        click.echo(f"\U0001f4f8 {result}")
-        if not paste:
-            import sys as _sys
-
-            key = "Cmd+V" if _sys.platform == "darwin" else "Ctrl+V"
-            click.echo(f"Paste into any chat app with {key}")
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        raise SystemExit(1)
-
-
-@main.command()
-@click.option("--camera", "camera_index", default=0, type=int, help="Camera index")
-@click.option("--paste", "-p", is_flag=True, help="Auto-paste after each capture")
-@click.option("--interval", default=None, type=float, help="Auto-snap every N seconds")
-@click.option(
-    "--on-change", "on_change", is_flag=True, help="Auto-snap when scene changes"
-)
-def watch(
-    camera_index: int, paste: bool, interval: float | None, on_change: bool
-) -> None:
-    """Continuous camera monitoring with auto-snap.
-
-    Three modes:
-
-      Default:     Global hotkey trigger (Cmd+Shift+C / Ctrl+Shift+C)
-
-      --interval:  Auto-snap every N seconds (polling)
-
-      --on-change: Auto-snap when the camera detects scene changes
-
-    Combine with --paste to auto-paste into the focused chat app.
-
-    Works with every AI chat app — ChatGPT, Claude, Gemini, Copilot,
-    Perplexity, Qwen, Grok — on any platform.
-    """
-    import sys as _sys
-    import time
-
-    from .snap import snap as do_snap
-
-    snap_count = 0
-
-    def do_capture() -> None:
-        nonlocal snap_count
-        try:
-            result = do_snap(device_index=camera_index, paste=paste)
-            snap_count += 1
-            click.echo(f"\U0001f4f8 [{snap_count}] {result}")
-        except Exception as e:
-            click.echo(f"Error: {e}")
-
-    # ── Interval mode ─────────────────────────────────────────
-    if interval is not None:
-        click.echo(
-            f"\u23f1\ufe0f  Auto-snapping every {interval}s | "
-            f"Camera: {camera_index} | Paste: {'ON' if paste else 'OFF'}"
-        )
-        click.echo("   Press Ctrl+C to stop\n")
-        try:
-            while True:
-                do_capture()
-                time.sleep(interval)
-        except KeyboardInterrupt:
-            click.echo(f"\nStopped after {snap_count} snaps.")
-        return
-
-    # ── On-change mode ────────────────────────────────────────
-    if on_change:
-        click.echo(
-            f"\U0001f504 Auto-snapping on scene changes | "
-            f"Camera: {camera_index} | Paste: {'ON' if paste else 'OFF'}"
-        )
-        click.echo("   Press Ctrl+C to stop\n")
-
-        import cv2
-        from .perception.change_detector import ChangeDetector, ChangeLevel
-
-        detector = ChangeDetector()
-        cap = cv2.VideoCapture(camera_index)
-        if not cap.isOpened():
-            click.echo("Error: Cannot open camera", err=True)
-            raise SystemExit(1)
-        try:
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    time.sleep(0.5)
-                    continue
-                result = detector.detect(frame)
-                if result.level != ChangeLevel.NONE:
-                    click.echo(f"   Change detected: {result.level.value}")
-                    do_capture()
-                time.sleep(0.5)  # Check 2x per second
-        except KeyboardInterrupt:
-            click.echo(f"\nStopped after {snap_count} snaps.")
-        finally:
-            cap.release()
-        return
-
-    # ── Hotkey mode (default) ─────────────────────────────────
-    try:
-        from pynput import keyboard  # type: ignore[import-untyped]
-    except ImportError:
-        click.echo("Install hotkey support: pip install 'physical-mcp[hotkey]'")
-        click.echo("Or manually: pip install pynput")
-        return
-
-    if _sys.platform == "darwin":
-        mod_key = keyboard.Key.cmd
-        hotkey_display = "Cmd+Shift+C"
-    else:
-        mod_key = keyboard.Key.ctrl
-        hotkey_display = "Ctrl+Shift+C"
-
-    combo = {mod_key, keyboard.Key.shift, keyboard.KeyCode.from_char("c")}
-    pressed: set = set()
-
-    click.echo(f"\U0001f441\ufe0f  Press {hotkey_display} to snap | Ctrl+C to stop")
-    click.echo(f"   Camera: {camera_index} | Paste: {'ON' if paste else 'OFF'}\n")
-
-    def on_press(key: object) -> None:
-        pressed.add(key)
-        if combo.issubset(pressed):
-            do_capture()
-
-    def on_release(key: object) -> None:
-        pressed.discard(key)
-
-    with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
-        try:
-            listener.join()
-        except KeyboardInterrupt:
-            click.echo(f"\nStopped after {snap_count} snaps.")
 
 
 @main.command()

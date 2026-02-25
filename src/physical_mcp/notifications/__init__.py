@@ -2,7 +2,6 @@
 
 Routes alerts to the appropriate channel:
 - "local": no-op (the MCP tool response IS the notification)
-- "webhook": HTTP POST to a configured URL
 - "desktop": OS-native desktop notification (macOS / Linux / Windows)
 - "ntfy": push notification via ntfy.sh (free, zero-signup)
 - "openclaw": multi-channel delivery via OpenClaw CLI (Telegram, WhatsApp, etc.)
@@ -19,7 +18,6 @@ from ..rules.models import AlertEvent
 from .desktop import DesktopNotifier
 from .ntfy import NtfyNotifier
 from .openclaw import OpenClawNotifier
-from .webhook import WebhookNotifier
 
 logger = logging.getLogger("physical-mcp")
 
@@ -29,7 +27,6 @@ class NotificationDispatcher:
 
     def __init__(self, config: NotificationsConfig):
         self._config = config
-        self._webhook = WebhookNotifier(config.webhook_url)
         self._desktop = (
             DesktopNotifier(min_interval=10.0) if config.desktop_enabled else None
         )
@@ -49,11 +46,7 @@ class NotificationDispatcher:
             f"Dispatching notification: type={target.type}, "
             f"rule={alert.rule.name}, desktop_enabled={self._desktop is not None}"
         )
-        if target.type == "webhook":
-            url = target.url or self._config.webhook_url
-            if url:
-                await self._webhook.notify(alert, url)
-        elif target.type == "desktop":
+        if target.type == "desktop":
             if self._desktop:
                 title = f"[{alert.rule.priority.value.upper()}] {alert.rule.name}"
                 body = alert.rule.custom_message or alert.evaluation.reasoning
@@ -108,6 +101,5 @@ class NotificationDispatcher:
 
     async def close(self) -> None:
         """Clean up resources."""
-        await self._webhook.close()
         await self._ntfy.close()
         await self._openclaw.close()

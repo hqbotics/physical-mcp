@@ -2,29 +2,24 @@
 
 Supported backends:
 - usb: Local USB/webcam via OpenCV
-- rtsp: RTSP/IP camera streams (Reolink, Tapo, Hikvision, etc.)
-- http: HTTP MJPEG streams (ESP32-CAM, OctoPrint, cheap IP cams)
-- cloud: Push-based cameras that POST frames to /ingest/{camera_id}
+
+The CameraSource ABC in base.py allows adding new backends
+(wireless, RTSP, cloud) by implementing the interface and
+adding a branch here.
 """
 
 from __future__ import annotations
 
 from ..config import CameraConfig
 from .base import CameraSource
-from .cloud import CloudCamera
-from .http_mjpeg import HTTPCamera
-from .rtsp import RTSPCamera
 from .usb import USBCamera
 
 
 def create_camera(config: CameraConfig) -> CameraSource:
     """Create a camera instance from configuration.
 
-    Supported types:
-    - "usb"   -> USBCamera (OpenCV VideoCapture from device index)
-    - "rtsp"  -> RTSPCamera (RTSP/IP stream via OpenCV + FFmpeg)
-    - "http"  -> HTTPCamera (HTTP MJPEG stream)
-    - "cloud" -> CloudCamera (receives frames via HTTP POST /ingest)
+    Currently supports:
+    - "usb" -> USBCamera (OpenCV VideoCapture from device index)
     """
     if config.type == "usb":
         return USBCamera(
@@ -32,36 +27,4 @@ def create_camera(config: CameraConfig) -> CameraSource:
             width=config.width,
             height=config.height,
         )
-    if config.type == "rtsp":
-        if not config.url:
-            raise ValueError(
-                "RTSP camera requires a 'url' field "
-                "(e.g. rtsp://admin:pass@192.168.1.100:554/stream)"
-            )
-        return RTSPCamera(
-            url=config.url,
-            camera_id=config.id,
-            width=config.width,
-            height=config.height,
-        )
-    if config.type == "http":
-        if not config.url:
-            raise ValueError(
-                "HTTP camera requires a 'url' field "
-                "(e.g. http://192.168.1.50:81/stream)"
-            )
-        return HTTPCamera(
-            url=config.url,
-            camera_id=config.id,
-            width=config.width,
-            height=config.height,
-        )
-    if config.type == "cloud":
-        return CloudCamera(
-            camera_id=config.id,
-            auth_token=config.auth_token,
-            name=config.name,
-        )
-    raise ValueError(
-        f"Unknown camera type: {config.type!r}. Supported: usb, rtsp, http, cloud"
-    )
+    raise ValueError(f"Unknown camera type: {config.type!r}. Supported: usb")
