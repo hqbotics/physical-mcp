@@ -18,6 +18,14 @@ class VisionProvider(ABC):
         """Send an image + prompt and get a parsed JSON response."""
         ...
 
+    async def analyze_images(self, images_b64: list[str], prompt: str) -> str:
+        """Send multiple images + prompt. Default: use last (most recent) frame."""
+        return await self.analyze_image(images_b64[-1], prompt)
+
+    async def analyze_images_json(self, images_b64: list[str], prompt: str) -> dict:
+        """Send multiple images + prompt, return JSON. Default: use last frame."""
+        return await self.analyze_image_json(images_b64[-1], prompt)
+
     async def warmup(self) -> None:
         """Pre-establish HTTP connections. Override in subclasses for real warmup."""
 

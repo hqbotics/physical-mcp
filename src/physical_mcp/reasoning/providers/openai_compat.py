@@ -65,6 +65,34 @@ class OpenAICompatProvider(VisionProvider):
         text = await self.analyze_image(image_b64, prompt)
         return extract_json(text)
 
+    async def analyze_images(self, images_b64: list[str], prompt: str) -> str:
+        """Send multiple images in a single API call for temporal context."""
+        content: list[dict] = []
+        for img in images_b64:
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{img}",
+                        "detail": "low",
+                    },
+                }
+            )
+        content.append({"type": "text", "text": prompt})
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": content}],
+        )
+        result = response.choices[0].message.content
+        if result is None:
+            raise ValueError("Provider returned empty content (None)")
+        return result
+
+    async def analyze_images_json(self, images_b64: list[str], prompt: str) -> dict:
+        text = await self.analyze_images(images_b64, prompt)
+        return extract_json(text)
+
     @property
     def provider_name(self) -> str:
         if self._base_url:

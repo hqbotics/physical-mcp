@@ -274,10 +274,22 @@ async def perception_loop(
 
                 active_rules = rules_engine.get_active_rules()
 
+                # Grab recent frames for temporal context (~1.5s window)
+                recent = await frame_buffer.get_frames_since(
+                    frame.timestamp - timedelta(seconds=1.5)
+                )
+                if len(recent) >= 3:
+                    step = len(recent) / 3
+                    analysis_frames = [recent[int(i * step)] for i in range(3)]
+                elif recent:
+                    analysis_frames = recent
+                else:
+                    analysis_frames = [frame]
+
                 try:
                     # ONE combined call: scene analysis + rule evaluation
                     result = await analyzer.analyze_and_evaluate(
-                        frame, scene_state, active_rules, config
+                        analysis_frames, scene_state, active_rules, config
                     )
                 except Exception as e:
                     consecutive_errors += 1
