@@ -2,15 +2,13 @@
 
 This is the primary cost-control mechanism.
 
-Design philosophy (how ChatGPT/Doubao do it):
+Design philosophy:
 - Local change detection runs on EVERY frame (free, <5ms)
-- LLM is called ONLY when there's a significant reason to
-- Background auto-analysis is OFF by default
-- LLM calls happen when:
+- LLM is called when there's a meaningful reason to:
   1. User explicitly calls analyze_now (on-demand)
-  2. Watch rules exist AND a MAJOR scene change is detected (event-driven)
-  3. Heartbeat interval (default 5 min, only if watch rules exist)
-- Without watch rules: the system just captures + detects changes locally. Zero API cost.
+  2. Watch rules exist AND scene change detected (event-driven)
+  3. Heartbeat interval (safety net, only if watch rules exist)
+- Without watch rules: just captures + detects changes locally. Zero API cost.
 """
 
 from __future__ import annotations
@@ -21,50 +19,50 @@ from ..camera.base import Frame
 from .change_detector import ChangeDetector, ChangeLevel, ChangeResult
 
 
+# Longer debounce for subtle changes to avoid noise
+_MINOR_DEBOUNCE_MULTIPLIER = 1.5
+
+
 class FrameSampler:
-    """Smart event-driven sampling — minimizes LLM calls.
+    """Event-driven sampling — catches brief actions while controlling cost.
 
     NO watch rules (default):
       - Never auto-triggers LLM. Zero API cost.
       - User can still call analyze_now manually.
-      - Change detection runs locally for the change log.
 
     WITH watch rules:
-      - MAJOR change -> immediate LLM analysis + rule evaluation
-      - MODERATE change -> debounce, then analyze if scene stabilizes
-      - MINOR/NONE -> no LLM call (not worth the cost)
-      - Heartbeat -> analyze every heartbeat_interval (default 5 min)
-
-    Cost estimates:
-      Static room, no rules = 0 API calls/hour
-      Static room, with rules = ~12 calls/hour (heartbeat only)
-      Active room, with rules = ~20-40 calls/hour
+      - MAJOR change -> immediate LLM analysis
+      - MODERATE change -> debounce, then analyze (catches quick sips)
+      - MINOR change -> longer debounce, then analyze (catches subtle gestures)
+      - NONE -> heartbeat only
+      - Heartbeat -> periodic check every heartbeat_interval
     """
 
     def __init__(
         self,
         change_detector: ChangeDetector,
-        heartbeat_interval: float = 300.0,  # 5 minutes default
+        heartbeat_interval: float = 300.0,
         debounce_seconds: float = 3.0,
-        cooldown_seconds: float = 10.0,  # Min 10s between LLM calls
+        cooldown_seconds: float = 10.0,
     ):
         self._detector = change_detector
         self._heartbeat = heartbeat_interval
         self._debounce = debounce_seconds
         self._cooldown = cooldown_seconds
         self._last_analysis: datetime = datetime.min
+        # Pending change flags — fire even if scene calms down
         self._pending_moderate: bool = False
         self._moderate_timestamp: datetime = datetime.min
+        self._pending_minor: bool = False
+        self._minor_timestamp: datetime = datetime.min
 
     def should_analyze(
         self, frame: Frame, has_active_rules: bool = False
     ) -> tuple[bool, ChangeResult]:
         """Returns (should_send_to_llm, change_result).
 
-        Args:
-            frame: The current camera frame.
-            has_active_rules: Whether any watch rules are active.
-                If False, never auto-triggers LLM (zero cost mode).
+        Key fix: pending debounce fires even when current frame is calm.
+        This catches brief actions (quick sip = MODERATE spike → NONE next frame).
         """
         result = self._detector.detect(frame.image)
         now = frame.timestamp
@@ -78,27 +76,51 @@ class FrameSampler:
         if since_last < self._cooldown:
             return False, result
 
+        # ── Pending debounce checks (fire even if current frame is calm) ──
+        # This is critical for brief actions: a sip creates a MODERATE spike
+        # for 1-2 frames, then drops to NONE. Without this, the debounce
+        # check inside the MODERATE block never fires on the NONE frame.
+        if self._pending_moderate:
+            elapsed = (now - self._moderate_timestamp).total_seconds()
+            if elapsed >= self._debounce:
+                self._last_analysis = now
+                self._pending_moderate = False
+                self._pending_minor = False
+                return True, result
+
+        if self._pending_minor:
+            minor_debounce = self._debounce * _MINOR_DEBOUNCE_MULTIPLIER
+            elapsed = (now - self._minor_timestamp).total_seconds()
+            if elapsed >= minor_debounce:
+                self._last_analysis = now
+                self._pending_minor = False
+                return True, result
+
+        # ── Level-specific triggers ──
+
         # MAJOR change: analyze immediately
         if result.level == ChangeLevel.MAJOR:
             self._last_analysis = now
             self._pending_moderate = False
+            self._pending_minor = False
             return True, result
 
-        # MODERATE change: debounce (wait for scene to stabilize)
+        # MODERATE change: start debounce (or upgrade existing minor)
         if result.level == ChangeLevel.MODERATE:
             if not self._pending_moderate:
                 self._pending_moderate = True
                 self._moderate_timestamp = now
-                return False, result
-            elif (now - self._moderate_timestamp).total_seconds() >= self._debounce:
-                self._last_analysis = now
-                self._pending_moderate = False
-                return True, result
+                self._pending_minor = False  # Moderate supersedes minor
             return False, result
 
-        # MINOR/NONE: don't call LLM (not worth the cost)
-        # Someone shifts in chair, lighting flickers — skip it
+        # MINOR change: start longer debounce
+        if result.level == ChangeLevel.MINOR:
+            if not self._pending_minor and not self._pending_moderate:
+                self._pending_minor = True
+                self._minor_timestamp = now
+            return False, result
 
+        # NONE: no change detected — only heartbeat can trigger
         # Heartbeat: periodic check (only with active rules)
         if since_last >= self._heartbeat:
             self._last_analysis = now

@@ -274,9 +274,10 @@ async def perception_loop(
 
                 active_rules = rules_engine.get_active_rules()
 
-                # Grab recent frames for temporal context (~1.5s window)
+                # Grab recent frames for temporal context (~3s window)
+                # Wider window catches brief actions that triggered debounce
                 recent = await frame_buffer.get_frames_since(
-                    frame.timestamp - timedelta(seconds=1.5)
+                    frame.timestamp - timedelta(seconds=3.0)
                 )
                 if len(recent) >= 3:
                     step = len(recent) / 3
