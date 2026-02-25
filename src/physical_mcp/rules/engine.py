@@ -57,7 +57,7 @@ class RulesEngine:
                 f"📊 EVAL: {rule_name} — triggered={ev.triggered}, "
                 f"confidence={ev.confidence:.2f}, reason={ev.reasoning[:100]}"
             )
-            if not ev.triggered or ev.confidence < 0.6:
+            if not ev.triggered or ev.confidence < 0.75:
                 continue
             rule = self._rules.get(ev.rule_id)
             if rule is None or not rule.enabled:

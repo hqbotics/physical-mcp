@@ -51,7 +51,7 @@ class ReasoningConfig(BaseModel):
     base_url: str = ""  # For openai-compatible providers
     image_quality: int = 60
     max_thumbnail_dim: int = 640
-    llm_timeout_seconds: float = 30.0  # Max time for a single LLM API call
+    llm_timeout_seconds: float = 15.0  # Max time for a single LLM API call
 
 
 class CostControlConfig(BaseModel):

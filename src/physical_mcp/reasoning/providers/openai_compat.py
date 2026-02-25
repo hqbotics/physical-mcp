@@ -6,8 +6,13 @@ that implements the OpenAI chat completions API with vision support.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from .base import VisionProvider
 from .json_extract import extract_json
+
+logger = logging.getLogger("physical-mcp")
 
 
 class OpenAICompatProvider(VisionProvider):
@@ -65,6 +70,15 @@ class OpenAICompatProvider(VisionProvider):
         if self._base_url:
             return f"openai-compatible ({self._base_url})"
         return "openai"
+
+    async def warmup(self) -> None:
+        """Pre-establish HTTP connection to reduce first-call latency."""
+        try:
+            await asyncio.wait_for(self._client.models.list(), timeout=5.0)
+            logger.info("API connection warmed up (%s)", self._base_url or "openai")
+        except Exception:
+            # Best-effort — connection pool is warmed even if the call fails
+            logger.debug("Warmup call failed (connection may still be pooled)")
 
     @property
     def model_name(self) -> str:

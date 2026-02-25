@@ -309,6 +309,8 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             )
             provider = None
         analyzer = FrameAnalyzer(provider)
+        # Fire-and-forget: pre-establish HTTP connection pool for faster first call
+        asyncio.create_task(analyzer.warmup())
         stats = StatsTracker(
             daily_budget=config.cost_control.daily_budget_usd,
             max_per_hour=config.cost_control.max_analyses_per_hour,

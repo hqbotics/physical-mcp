@@ -63,7 +63,12 @@ Respond in JSON only:
   ]
 }}
 
-For gesture rules (waving, pointing, X-shape), look for raised hands/arms even if partially visible or at odd angles. Trigger when the condition is reasonably met (confidence >= 0.6). Prefer triggering over missing a real event."""
+Evaluate STRICTLY. Only trigger a rule if you see clear, unambiguous visual evidence.
+- For gesture rules (waving, pointing): raised hands/arms must be clearly visible
+- For action rules (drinking, eating, etc.): the person must be ACTIVELY performing the action, not just near an object
+- A water bottle visible near someone does NOT mean they are drinking
+- Confidence 0.9+ = certain, 0.7-0.9 = likely, below 0.7 = do not trigger
+- When in doubt, set triggered=false. Missing an event is better than a false alert."""
 
 
 def build_combined_prompt(previous_state: SceneState, rules: list[WatchRule]) -> str:
@@ -87,7 +92,7 @@ def build_combined_prompt(previous_state: SceneState, rules: list[WatchRule]) ->
 Active watch rules:
 [{rules_text}]
 
-IMPORTANT: The camera may be tilted or at an unusual angle. Interpret the scene from the camera's perspective. For gesture rules (waving, pointing, X-shape), look for raised hands/arms even if partially visible or at odd angles. A hand raised toward the camera = waving.
+IMPORTANT: The camera may be tilted or at an unusual angle. Interpret the scene from the camera's perspective.
 
 Respond in JSON only:
 {{
@@ -108,4 +113,9 @@ Respond in JSON only:
   ]
 }}
 
-Trigger rules when the condition is reasonably met (confidence >= 0.6). Prefer triggering over missing a real event."""
+Evaluate STRICTLY. Only trigger a rule if you see clear, unambiguous visual evidence.
+- For gesture rules (waving, pointing): raised hands/arms must be clearly visible
+- For action rules (drinking, eating, etc.): the person must be ACTIVELY performing the action, not just near an object
+- A water bottle visible near someone does NOT mean they are drinking
+- Confidence 0.9+ = certain, 0.7-0.9 = likely, below 0.7 = do not trigger
+- When in doubt, set triggered=false. Missing an event is better than a false alert."""

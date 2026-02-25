@@ -21,7 +21,7 @@ logger = logging.getLogger("physical-mcp")
 
 # Default maximum time to wait for an LLM API call (seconds).
 # Overridden by config.reasoning.llm_timeout_seconds at runtime.
-LLM_CALL_TIMEOUT = 30.0
+LLM_CALL_TIMEOUT = 15.0
 
 
 def _is_api_error(e: Exception) -> bool:
@@ -68,6 +68,11 @@ class FrameAnalyzer:
 
     def set_provider(self, provider: VisionProvider | None) -> None:
         self._provider = provider
+
+    async def warmup(self) -> None:
+        """Pre-establish API connection to reduce first-call latency."""
+        if self._provider:
+            await self._provider.warmup()
 
     async def analyze_scene(
         self,

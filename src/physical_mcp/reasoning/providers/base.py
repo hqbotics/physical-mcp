@@ -18,6 +18,9 @@ class VisionProvider(ABC):
         """Send an image + prompt and get a parsed JSON response."""
         ...
 
+    async def warmup(self) -> None:
+        """Pre-establish HTTP connections. Override in subclasses for real warmup."""
+
     @property
     @abstractmethod
     def provider_name(self) -> str: ...
