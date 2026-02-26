@@ -12,7 +12,9 @@ RUN pip install --no-cache-dir physical-mcp[all]
 RUN mkdir -p /root/.physical-mcp
 
 # Environment variables for cloud deployment
-ENV PHYSICAL_MCP_HOST=0.0.0.0 \
+# Config is built from env vars when no config.yaml exists (see config.py)
+ENV PHYSICAL_MCP_HEADLESS=1 \
+    PHYSICAL_MCP_HOST=0.0.0.0 \
     PHYSICAL_MCP_PORT=8400 \
     VISION_API_HOST=0.0.0.0 \
     VISION_API_PORT=8090 \
@@ -28,6 +30,6 @@ EXPOSE 8090 8400
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -sf http://localhost:8090/health || exit 1
 
-# Run in HTTP mode (cloud-ready, not stdio)
+# Run in headless HTTP mode (cloud-ready, no interactive setup)
 ENTRYPOINT ["physical-mcp"]
-CMD ["--transport", "streamable-http", "--host", "0.0.0.0", "--port", "8400"]
+CMD ["--headless", "--transport", "streamable-http", "--host", "0.0.0.0", "--port", "8400"]

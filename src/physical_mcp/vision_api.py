@@ -610,6 +610,84 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
 
         return web.json_response(cameras)
 
+    @routes.post("/cameras")
+    async def add_camera(request: web.Request) -> web.Response:
+        """Register and open a new camera at runtime.
+
+        Body: {"type": "rtsp", "url": "rtsp://...", "name": "Kitchen", "id": "kitchen"}
+        Opens the camera, adds it to state, and starts the perception loop if available.
+        """
+        from .camera.factory import create_camera
+        from .camera.buffer import FrameBuffer
+        from .perception.scene_state import SceneState
+        from .config import CameraConfig
+
+        try:
+            body = await request.json()
+        except Exception:
+            return _json_error(400, "invalid_json", "Request body must be JSON")
+
+        cam_url = body.get("url", "")
+        cam_type = body.get("type", "")
+        if not cam_url or cam_type not in ("rtsp", "http"):
+            return _json_error(
+                400,
+                "invalid_camera",
+                "Required: 'url' and 'type' (rtsp or http)",
+            )
+
+        cam_id = body.get("id", f"cam:{len(state.get('cameras', {}))}")
+        cam_name = body.get("name", cam_id)
+
+        # Check for duplicate
+        if cam_id in state.get("cameras", {}):
+            return _json_error(409, "duplicate", f"Camera '{cam_id}' already exists")
+
+        cam_config = CameraConfig(
+            id=cam_id,
+            name=cam_name,
+            type=cam_type,
+            url=cam_url,
+            width=body.get("width", 1280),
+            height=body.get("height", 720),
+        )
+
+        config = state.get("config")
+        try:
+            camera = create_camera(cam_config)
+            await camera.open()
+        except Exception as e:
+            return _json_error(502, "camera_open_failed", f"Failed to open camera: {e}")
+
+        cameras_dict = state.setdefault("cameras", {})
+        cameras_dict[cam_id] = camera
+        state.setdefault("camera_configs", {})[cam_id] = cam_config
+        state.setdefault("frame_buffers", {})[cam_id] = FrameBuffer(
+            max_frames=config.perception.buffer_size if config else 300
+        )
+        state.setdefault("scene_states", {})[cam_id] = SceneState()
+        state.setdefault("camera_health", {})[cam_id] = {
+            "camera_id": cam_id,
+            "camera_name": cam_name,
+            "consecutive_errors": 0,
+            "backoff_until": None,
+            "last_success_at": None,
+            "last_error": "",
+            "last_frame_at": None,
+            "status": "running",
+        }
+
+        return web.json_response(
+            {
+                "id": cam_id,
+                "name": cam_name,
+                "type": cam_type,
+                "status": "opened",
+                "message": f"Camera '{cam_name}' registered and streaming",
+            },
+            status=201,
+        )
+
     @routes.post("/cameras/open")
     async def open_cameras(request: web.Request) -> web.Response:
         """Open all configured cameras on demand.

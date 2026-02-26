@@ -1,0 +1,22 @@
+app = "physical-mcp"
+primary_region = "hkg"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8090
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[env]
+  PHYSICAL_MCP_HEADLESS = "1"
+  REASONING_PROVIDER = "openai-compatible"
+  REASONING_MODEL = "google/gemini-2.0-flash-001"
+  REASONING_BASE_URL = "https://openrouter.ai/api/v1"

@@ -73,9 +73,19 @@ def _pick_model(provider_name: str, options: list[tuple[str, str]]) -> str:
     "--transport", default=None, help="Override transport: stdio | streamable-http"
 )
 @click.option("--port", default=None, type=int, help="Override HTTP port")
+@click.option(
+    "--headless",
+    is_flag=True,
+    default=False,
+    help="Skip interactive setup (for Docker/cloud deployment)",
+)
 @click.pass_context
 def main(
-    ctx: click.Context, config_path: str | None, transport: str | None, port: int | None
+    ctx: click.Context,
+    config_path: str | None,
+    transport: str | None,
+    port: int | None,
+    headless: bool,
 ) -> None:
     """Physical MCP — Give your AI eyes."""
     if ctx.invoked_subcommand is not None:
@@ -83,9 +93,13 @@ def main(
 
     _configure_logging()
 
+    import os
+
+    headless = headless or os.environ.get("PHYSICAL_MCP_HEADLESS") == "1"
+
     # Auto-setup: if no config exists, run the setup wizard first
     config_file = Path(config_path or "~/.physical-mcp/config.yaml").expanduser()
-    if not config_file.exists():
+    if not config_file.exists() and not headless:
         click.echo("Welcome to Physical MCP! Let's set up your camera.\n")
         ctx.invoke(setup, config_path=config_path)
         # After setup, check if we should start the server or just exit
