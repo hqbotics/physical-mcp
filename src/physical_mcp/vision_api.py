@@ -495,6 +495,12 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         store = state.get("rules_store")
         if store:
             store.save(engine.list_rules())
+
+        # Start perception loops now that we have an active rule
+        ensure_loops = state.get("_ensure_perception_loops")
+        if ensure_loops:
+            asyncio.ensure_future(ensure_loops())
+
         return web.json_response(_rule_to_dict(rule), status=201)
 
     @routes.delete("/rules/{rule_id}")
@@ -717,6 +723,12 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             "last_frame_at": None,
             "status": "running",
         }
+
+        # Start perception loop for the new camera if rules exist
+        engine = state.get("rules_engine")
+        ensure_loops = state.get("_ensure_perception_loops")
+        if ensure_loops and engine and engine.get_active_rules():
+            asyncio.ensure_future(ensure_loops())
 
         return web.json_response(
             {

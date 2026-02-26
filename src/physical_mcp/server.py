@@ -372,6 +372,7 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
                 "camera_health": {},
                 "alert_events": [],
                 "alert_events_max": 200,
+                "_ensure_perception_loops": _ensure_perception_loops,
             }
         )
 

@@ -162,9 +162,28 @@ def main(
                     pass  # Cannot set signal handler from non-main thread
 
             # Build shared state with live cameras for the Vision API.
+            from .notifications import NotificationDispatcher
+            from .perception.change_detector import ChangeDetector
+            from .perception.frame_sampler import FrameSampler
+            from .perception.loop import perception_loop as _perception_loop
+            from .rules.store import RulesStore
+            from .stats import StatsTracker
+            from .memory import MemoryStore
+
+            rules_engine = RulesEngine()
+            rules_store = RulesStore(config.rules_file)
+            rules_engine.load_rules(rules_store.load())
+            notifier = NotificationDispatcher(config.notifications)
+            stats = StatsTracker(
+                daily_budget=config.cost_control.daily_budget_usd,
+                max_per_hour=config.cost_control.max_analyses_per_hour,
+            )
+            memory = MemoryStore(config.memory_file)
+
             vision_state = {
                 "config": config,
-                "rules_engine": RulesEngine(),
+                "rules_engine": rules_engine,
+                "rules_store": rules_store,
                 "scene_state": SceneState(),
                 "alert_queue": AlertQueue(),
                 "cameras": {},
@@ -174,6 +193,10 @@ def main(
                 "camera_health": {},
                 "alert_events": [],
                 "alert_events_max": 200,
+                "_loop_tasks": {},
+                "stats": stats,
+                "notifier": notifier,
+                "memory": memory,
             }
 
             # Open all configured cameras
@@ -225,6 +248,53 @@ def main(
                 click.echo(f"Vision provider: {info['provider']} / {info['model']}")
             else:
                 click.echo("Vision provider: none (scene analysis disabled)")
+
+            # ── Perception loop launcher (shared with REST API) ──
+            async def _ensure_perception_loops() -> None:
+                """Start a full perception loop for every open camera."""
+                for cid, camera in vision_state["cameras"].items():
+                    task = vision_state["_loop_tasks"].get(cid)
+                    if task is not None and not task.done():
+                        continue
+                    cam_cfg = vision_state["camera_configs"].get(cid)
+                    if not cam_cfg:
+                        continue
+                    change_detector = ChangeDetector(
+                        minor_threshold=config.perception.change_detection.minor_threshold,
+                        moderate_threshold=config.perception.change_detection.moderate_threshold,
+                        major_threshold=config.perception.change_detection.major_threshold,
+                    )
+                    sampler = FrameSampler(
+                        change_detector=change_detector,
+                        heartbeat_interval=config.perception.sampling.heartbeat_interval,
+                        debounce_seconds=config.perception.sampling.debounce_seconds,
+                        cooldown_seconds=config.perception.sampling.cooldown_seconds,
+                    )
+                    vision_state["_loop_tasks"][cid] = asyncio.create_task(
+                        _perception_loop(
+                            camera,
+                            vision_state["frame_buffers"][cid],
+                            sampler,
+                            analyzer,
+                            vision_state["scene_states"][cid],
+                            rules_engine,
+                            stats,
+                            config,
+                            vision_state["alert_queue"],
+                            notifier=notifier,
+                            memory=memory,
+                            shared_state=vision_state,
+                            camera_id=cid,
+                            camera_name=cam_cfg.name or cid,
+                        )
+                    )
+                    _logger.info(f"Perception loop started for {cam_cfg.name or cid}")
+
+            vision_state["_ensure_perception_loops"] = _ensure_perception_loops
+
+            # Auto-start perception loops if rules exist from previous session
+            if rules_engine.list_rules() and vision_state["cameras"]:
+                asyncio.ensure_future(_ensure_perception_loops())
 
             # Analysis interval — how often to call the LLM (seconds)
             analysis_interval = max(config.perception.sampling.cooldown_seconds, 10.0)
@@ -371,20 +441,22 @@ def main(
                 _logger.info("Shutting down Physical MCP...")
                 _shutdown_event.set()  # Signal all loops
 
-                # Cancel capture tasks
-                for t in capture_tasks:
+                # Cancel capture tasks + perception loop tasks
+                all_tasks = list(capture_tasks)
+                for t in vision_state.get("_loop_tasks", {}).values():
+                    if t and not t.done():
+                        all_tasks.append(t)
+                for t in all_tasks:
                     t.cancel()
-                # Wait briefly for tasks to finish
-                if capture_tasks:
-                    await asyncio.gather(*capture_tasks, return_exceptions=True)
+                if all_tasks:
+                    await asyncio.gather(*all_tasks, return_exceptions=True)
 
                 # Flush rules/memory state to disk
-                rules_engine = vision_state.get("rules_engine")
-                if rules_engine and hasattr(rules_engine, "save"):
-                    try:
-                        rules_engine.save()
-                    except Exception:
-                        pass
+                try:
+                    rules_store.save(rules_engine.list_rules())
+                except Exception:
+                    pass
+                await notifier.close()
 
                 # Close mDNS
                 if mdns_publisher:

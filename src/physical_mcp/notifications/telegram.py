@@ -51,8 +51,8 @@ class TelegramNotifier:
         priority_emoji = {
             "low": "\u2139\ufe0f",
             "medium": "\u26a0\ufe0f",
-            "high": "\ud83d\udea8",
-            "critical": "\ud83d\udd34",
+            "high": "\U0001f6a8",
+            "critical": "\U0001f534",
         }
         emoji = priority_emoji.get(alert.rule.priority.value, "\u26a0\ufe0f")
 

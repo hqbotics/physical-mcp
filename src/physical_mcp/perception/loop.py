@@ -146,7 +146,9 @@ async def _evaluate_via_sampling(
             frame_base64=frame_b64,
         )
         # Re-validate: drop alerts for rules deleted during LLM sampling call
-        live_ids = {r.id for r in rules_engine.get_active_rules()}
+        # Note: use list_rules() not get_active_rules() — just-triggered
+        # rules are in cooldown and would be filtered out incorrectly
+        live_ids = {r.id for r in rules_engine.list_rules() if r.enabled}
         alerts = [a for a in alerts if a.rule.id in live_ids]
         for alert in alerts:
             stats.record_alert()
@@ -377,7 +379,9 @@ async def perception_loop(
                         frame_base64=frame_b64,
                     )
                     # Re-validate: drop alerts for rules deleted during LLM call
-                    live_ids = {r.id for r in rules_engine.get_active_rules()}
+                    # Note: use list_rules() not get_active_rules() — just-triggered
+                    # rules are in cooldown and would be filtered out incorrectly
+                    live_ids = {r.id for r in rules_engine.list_rules() if r.enabled}
                     alerts = [a for a in alerts if a.rule.id in live_ids]
                     for alert in alerts:
                         stats.record_alert()
