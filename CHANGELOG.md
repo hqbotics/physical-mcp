@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-02-27
+
+### Added
+- Self-contained web dashboard at `/dashboard` — DJI-style dark theme with live camera feed, scene analysis, watch rules, alerts, and template quick-add
+- Mobile-responsive dashboard with auto-refresh (5s interval)
+- Token-based dashboard access via query parameter
+- Show HN and Reddit r/selfhosted launch post drafts
+- 19 new tests: dashboard (6), template REST endpoints (8), camera endpoints (5)
+
+### Changed
+- Updated API docstring to document all current endpoints (18 total)
+- Total test count: 455 (up from 436)
+
 ## [1.1.0] - 2026-02-26
 
 ### Added
