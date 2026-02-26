@@ -2164,3 +2164,131 @@ class TestDashboard:
         body = await resp.text()
         assert 'name="viewport"' in body
         assert "@media" in body
+
+
+# ── Template REST endpoint tests ───────────────────────────
+
+
+class TestTemplateEndpoints:
+    """Tests for /templates REST endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_list_templates(self):
+        """GET /templates returns all templates with categories."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/templates")
+            assert resp.status == 200
+            data = await resp.json()
+            assert "templates" in data
+            assert "categories" in data
+            assert len(data["templates"]) > 0
+            # Each template has required fields
+            t = data["templates"][0]
+            assert "id" in t
+            assert "name" in t
+            assert "condition" in t
+            assert "priority" in t
+            assert "category" in t
+
+    @pytest.mark.asyncio
+    async def test_list_templates_filter_by_category(self):
+        """GET /templates?category=security filters results."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/templates?category=security")
+            assert resp.status == 200
+            data = await resp.json()
+            for t in data["templates"]:
+                assert t["category"] == "security"
+
+    @pytest.mark.asyncio
+    async def test_list_templates_invalid_category(self):
+        """GET /templates?category=nonexistent returns empty list."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/templates?category=nonexistent")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["templates"] == []
+
+    @pytest.mark.asyncio
+    async def test_create_from_template(self):
+        """POST /templates/{id}/create creates a rule."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/templates/person-detection/create",
+                json={},
+            )
+            assert resp.status == 201
+            data = await resp.json()
+            assert data["name"] == "Person Detection"
+            assert "id" in data
+
+            # Verify rule exists
+            rules_resp = await client.get("/rules")
+            rules = await rules_resp.json()
+            assert len(rules) == 1
+
+    @pytest.mark.asyncio
+    async def test_create_from_template_not_found(self):
+        """POST /templates/{id}/create with bad ID returns 404."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/templates/nonexistent-template/create",
+                json={},
+            )
+            assert resp.status == 404
+            data = await resp.json()
+            assert "template_not_found" in data["code"]
+
+    @pytest.mark.asyncio
+    async def test_create_from_template_no_rules_engine(self):
+        """POST /templates/{id}/create without rules engine returns 503."""
+        state = _make_state(with_frame=False, with_scene=False)
+        # No rules_engine in state
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/templates/person-detection/create",
+                json={},
+            )
+            assert resp.status == 503
+
+    @pytest.mark.asyncio
+    async def test_create_from_template_with_overrides(self):
+        """POST /templates/{id}/create with body overrides."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/templates/person-detection/create",
+                json={
+                    "camera_id": "cam-1",
+                    "custom_message": "Someone is here!",
+                    "owner_id": "telegram:123",
+                },
+            )
+            assert resp.status == 201
+            data = await resp.json()
+            assert data["camera_id"] == "cam-1"
+            assert data["custom_message"] == "Someone is here!"
+            assert data["owner_id"] == "telegram:123"
+
+    @pytest.mark.asyncio
+    async def test_create_from_template_empty_body(self):
+        """POST /templates/{id}/create with no body still works."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/templates/person-detection/create",
+            )
+            assert resp.status == 201
