@@ -13,8 +13,15 @@ Endpoints:
     GET /health       → Per-camera health
     GET /alerts       → Recent alert events
     GET /cameras      → List all cameras
+    POST /cameras     → Add a camera dynamically
     GET /rules        → List watch rules
     POST /rules       → Create a watch rule
+    DELETE /rules/{id}       → Delete a watch rule
+    PUT /rules/{id}/toggle   → Toggle rule on/off
+    GET /templates           → List rule templates
+    POST /templates/{id}/create → Create rule from template
+    GET /discover            → Scan network for cameras
+    GET /dashboard           → Self-contained web dashboard
 """
 
 from __future__ import annotations
@@ -942,6 +949,246 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         resp.headers["Access-Control-Allow-Headers"] = "*, Authorization"
         return resp
 
+    # ── Dashboard ───────────────────────────────────────
+
+    @routes.get("/dashboard")
+    async def dashboard(request: web.Request) -> web.Response:
+        """Serve the web dashboard (single-page, self-contained HTML)."""
+        token = state.get("_config", None)
+        auth_token = ""
+        if token:
+            auth_token = token.vision_api.auth_token or ""
+        # Allow token from query param for easy sharing
+        qt = request.query.get("token", "")
+        if qt:
+            auth_token = qt
+
+        html = _build_dashboard_html(auth_token)
+        return web.Response(text=html, content_type="text/html")
+
     app = web.Application(middlewares=[auth_middleware, cors_middleware])
     app.add_routes(routes)
     return app
+
+
+def _build_dashboard_html(auth_token: str = "") -> str:
+    """Generate self-contained dashboard HTML with DJI-style dark theme."""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0A0A0F">
+<title>physical-mcp Dashboard</title>
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+:root {{
+  --bg: #0A0A0F; --surface: #141419; --border: #2A2A35;
+  --text: #E8E8ED; --dim: #8B8B96; --accent: #0971CE;
+  --green: #34C759; --red: #FF453A; --orange: #FF9F0A; --yellow: #FFD60A;
+}}
+body {{ background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', system-ui, sans-serif; min-height: 100vh; }}
+.header {{ background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; }}
+.header h1 {{ font-size: 18px; font-weight: 600; }}
+.header .status {{ display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--dim); }}
+.header .dot {{ width: 8px; height: 8px; border-radius: 50%; background: var(--green); }}
+.header .dot.off {{ background: var(--red); }}
+.grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; max-width: 1400px; margin: 0 auto; }}
+@media (max-width: 768px) {{ .grid {{ grid-template-columns: 1fr; }} }}
+.card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }}
+.card-header {{ padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }}
+.card-header h2 {{ font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--dim); }}
+.card-body {{ padding: 16px; }}
+.camera-feed {{ width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 8px; object-fit: contain; }}
+.camera-feed.no-feed {{ display: flex; align-items: center; justify-content: center; color: var(--dim); font-size: 14px; }}
+.scene-text {{ font-size: 14px; line-height: 1.6; color: var(--text); }}
+.scene-meta {{ font-size: 12px; color: var(--dim); margin-top: 8px; }}
+.rule {{ display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }}
+.rule:last-child {{ border-bottom: none; }}
+.rule .priority {{ width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }}
+.rule .priority.low {{ background: var(--accent); }}
+.rule .priority.medium {{ background: var(--yellow); }}
+.rule .priority.high {{ background: var(--orange); }}
+.rule .priority.critical {{ background: var(--red); }}
+.rule .info {{ flex: 1; }}
+.rule .name {{ font-size: 14px; font-weight: 500; }}
+.rule .condition {{ font-size: 12px; color: var(--dim); margin-top: 2px; }}
+.rule .badge {{ font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--border); color: var(--dim); }}
+.rule .badge.active {{ background: rgba(52,199,89,0.15); color: var(--green); }}
+.alert {{ padding: 10px 0; border-bottom: 1px solid var(--border); }}
+.alert:last-child {{ border-bottom: none; }}
+.alert .alert-time {{ font-size: 11px; color: var(--dim); }}
+.alert .alert-name {{ font-size: 14px; font-weight: 500; margin-top: 2px; }}
+.alert .alert-reason {{ font-size: 12px; color: var(--dim); margin-top: 2px; }}
+.templates {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }}
+.tpl-btn {{ background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; cursor: pointer; text-align: center; transition: all 0.15s; }}
+.tpl-btn:hover {{ border-color: var(--accent); background: rgba(9,113,206,0.08); }}
+.tpl-btn .icon {{ font-size: 20px; }}
+.tpl-btn .label {{ font-size: 11px; color: var(--dim); margin-top: 4px; }}
+.empty {{ color: var(--dim); font-size: 13px; text-align: center; padding: 20px; }}
+.full-width {{ grid-column: 1 / -1; }}
+#toast {{ position: fixed; bottom: 20px; right: 20px; background: var(--green); color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 14px; display: none; z-index: 100; }}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>physical-mcp</h1>
+  <div class="status"><div class="dot" id="statusDot"></div><span id="statusText">Connecting...</span></div>
+</div>
+<div class="grid">
+  <div class="card">
+    <div class="card-header"><h2>Camera Feed</h2><span id="cameraName" style="font-size:12px;color:var(--dim)"></span></div>
+    <div class="card-body">
+      <img id="cameraFeed" class="camera-feed" alt="Camera feed" style="display:none">
+      <div id="noFeed" class="camera-feed no-feed">No camera connected</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2>Scene Analysis</h2><span id="sceneTime" style="font-size:12px;color:var(--dim)"></span></div>
+    <div class="card-body">
+      <div id="sceneText" class="scene-text empty">Waiting for analysis...</div>
+      <div id="sceneMeta" class="scene-meta"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2>Watch Rules</h2><span id="ruleCount" style="font-size:12px;color:var(--dim)"></span></div>
+    <div class="card-body" id="rulesList"><div class="empty">No rules configured</div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2>Recent Alerts</h2></div>
+    <div class="card-body" id="alertsList"><div class="empty">No alerts yet</div></div>
+  </div>
+  <div class="card full-width">
+    <div class="card-header"><h2>Quick Add Rule</h2></div>
+    <div class="card-body">
+      <div class="templates" id="templateGrid"></div>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<script>
+const TOKEN = '{auth_token}';
+const BASE = window.location.origin;
+const headers = TOKEN ? {{'Authorization': 'Bearer ' + TOKEN}} : {{}};
+
+function api(path) {{ return fetch(BASE + path, {{headers}}).then(r => r.json()); }}
+function showToast(msg) {{
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}}
+
+async function refresh() {{
+  try {{
+    const [health, scene, rules, alerts, templates] = await Promise.all([
+      api('/health'), api('/scene'), api('/rules'), api('/alerts'), api('/templates')
+    ]);
+
+    // Status
+    const cams = Object.keys(health.cameras || {{}});
+    const dot = document.getElementById('statusDot');
+    const txt = document.getElementById('statusText');
+    if (cams.length > 0) {{
+      dot.className = 'dot'; txt.textContent = cams.length + ' camera' + (cams.length > 1 ? 's' : '') + ' active';
+    }} else {{
+      dot.className = 'dot off'; txt.textContent = 'No cameras';
+    }}
+
+    // Camera feed
+    const feed = document.getElementById('cameraFeed');
+    const noFeed = document.getElementById('noFeed');
+    if (cams.length > 0) {{
+      feed.src = BASE + '/frame?' + (TOKEN ? 'token=' + TOKEN : '') + '&t=' + Date.now();
+      feed.style.display = 'block'; noFeed.style.display = 'none';
+      document.getElementById('cameraName').textContent = cams[0];
+    }} else {{
+      feed.style.display = 'none'; noFeed.style.display = 'flex';
+    }}
+
+    // Scene
+    const scenes = scene.cameras || {{}};
+    const sceneKeys = Object.keys(scenes);
+    if (sceneKeys.length > 0) {{
+      const s = scenes[sceneKeys[0]];
+      document.getElementById('sceneText').textContent = s.summary || 'No analysis yet';
+      document.getElementById('sceneText').className = 'scene-text';
+      const objs = (s.objects_present || []).join(', ');
+      const ppl = s.people_count || 0;
+      document.getElementById('sceneMeta').textContent = (objs ? 'Objects: ' + objs + ' | ' : '') + 'People: ' + ppl;
+      if (s.last_updated) {{
+        const ago = Math.round((Date.now()/1000) - new Date(s.last_updated).getTime()/1000);
+        document.getElementById('sceneTime').textContent = ago < 60 ? ago + 's ago' : Math.round(ago/60) + 'm ago';
+      }}
+    }}
+
+    // Rules
+    const rl = document.getElementById('rulesList');
+    const ruleData = Array.isArray(rules) ? rules : (rules.rules || []);
+    document.getElementById('ruleCount').textContent = ruleData.length + ' rules';
+    if (ruleData.length === 0) {{
+      rl.innerHTML = '<div class="empty">No rules configured</div>';
+    }} else {{
+      rl.innerHTML = ruleData.map(r => `
+        <div class="rule">
+          <div class="priority ${{r.priority}}"></div>
+          <div class="info">
+            <div class="name">${{r.name}}</div>
+            <div class="condition">${{r.condition}}</div>
+          </div>
+          <span class="badge ${{r.enabled ? 'active' : ''}}">${{r.enabled ? 'Active' : 'Paused'}}</span>
+        </div>
+      `).join('');
+    }}
+
+    // Alerts
+    const al = document.getElementById('alertsList');
+    const alertData = Array.isArray(alerts) ? alerts : (alerts.alerts || []);
+    if (alertData.length === 0) {{
+      al.innerHTML = '<div class="empty">No alerts yet</div>';
+    }} else {{
+      al.innerHTML = alertData.slice(0, 10).map(a => `
+        <div class="alert">
+          <div class="alert-time">${{new Date(a.timestamp || a.created_at).toLocaleTimeString()}}</div>
+          <div class="alert-name">${{a.rule_name || a.name || 'Alert'}}</div>
+          <div class="alert-reason">${{a.reasoning || a.description || ''}}</div>
+        </div>
+      `).join('');
+    }}
+
+    // Templates
+    const tg = document.getElementById('templateGrid');
+    const tplData = templates.templates || [];
+    tg.innerHTML = tplData.map(t => `
+      <div class="tpl-btn" onclick="createFromTemplate('${{t.id}}', '${{t.name}}')">
+        <div class="icon">${{t.icon}}</div>
+        <div class="label">${{t.name}}</div>
+      </div>
+    `).join('');
+
+  }} catch(e) {{
+    document.getElementById('statusDot').className = 'dot off';
+    document.getElementById('statusText').textContent = 'Error: ' + e.message;
+  }}
+}}
+
+async function createFromTemplate(id, name) {{
+  try {{
+    const resp = await fetch(BASE + '/templates/' + id + '/create', {{
+      method: 'POST', headers: {{'Content-Type': 'application/json', ...headers}}, body: '{{}}'
+    }});
+    if (resp.ok) {{
+      showToast('Rule created: ' + name);
+      setTimeout(refresh, 500);
+    }} else {{
+      const err = await resp.json();
+      showToast('Error: ' + (err.message || 'Failed'));
+    }}
+  }} catch(e) {{ showToast('Error: ' + e.message); }}
+}}
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>"""
