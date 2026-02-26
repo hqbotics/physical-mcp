@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>physical-mcp Architecture Diagrams</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0a0a0f; color: #e0e0e0; padding: 40px;
+  }
+  h1 {
+    font-size: 2.5rem; text-align: center; margin-bottom: 10px;
+    background: linear-gradient(135deg, #0971CE, #00d4ff);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .subtitle { text-align: center; color: #888; margin-bottom: 50px; font-size: 1.1rem; }
+  .diagram-section {
+    background: #12121a; border: 1px solid #2a2a3a; border-radius: 16px;
+    padding: 30px; margin-bottom: 40px; position: relative;
+  }
+  .diagram-section h2 {
+    font-size: 1.4rem; color: #0971CE; margin-bottom: 8px;
+  }
+  .diagram-section .description {
+    color: #999; margin-bottom: 20px; font-size: 0.95rem; line-height: 1.5;
+  }
+  .mermaid {
+    display: flex; justify-content: center; padding: 20px;
+    background: #ffffff; border-radius: 12px; margin-top: 10px;
+  }
+  .comment-box {
+    margin-top: 15px; padding: 12px; background: #1a1a2a; border: 1px dashed #444;
+    border-radius: 8px; font-size: 0.85rem; color: #666;
+  }
+  .comment-box::before { content: "YOUR FEEDBACK: "; color: #0971CE; font-weight: bold; }
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 20px;
+    font-size: 0.75rem; font-weight: 600; margin-left: 10px;
+  }
+  .badge-live { background: #0d3320; color: #4ade80; }
+  .badge-planned { background: #3b2f0a; color: #fbbf24; }
+  .badge-done { background: #0d2733; color: #38bdf8; }
+  .toc {
+    background: #12121a; border: 1px solid #2a2a3a; border-radius: 16px;
+    padding: 25px; margin-bottom: 40px;
+  }
+  .toc h3 { color: #0971CE; margin-bottom: 12px; }
+  .toc a { color: #7bb8e8; text-decoration: none; display: block; padding: 5px 0; }
+  .toc a:hover { color: #0971CE; }
+  .num { color: #0971CE; font-weight: bold; margin-right: 8px; }
+</style>
+</head>
+<body>
+
+<h1>physical-mcp System Architecture</h1>
+<p class="subtitle">Interactive diagrams for CEO review &mdash; Feb 26, 2026</p>
+
+<div class="toc">
+  <h3>Table of Contents</h3>
+  <a href="#d1"><span class="num">1.</span> End-User Experience (What the customer sees)</a>
+  <a href="#d2"><span class="num">2.</span> Full System Architecture (Cloud relay)</a>
+  <a href="#d3"><span class="num">3.</span> Data Flow: Camera to User Message</a>
+  <a href="#d4"><span class="num">4.</span> Cloud Server Components (Fly.io)</a>
+  <a href="#d5"><span class="num">5.</span> Cost Structure per User</a>
+  <a href="#d6"><span class="num">6.</span> Setup Flow (Consumer onboarding)</a>
+  <a href="#d7"><span class="num">7.</span> Current Status &amp; What's Built vs Missing</a>
+  <a href="#d8"><span class="num">8.</span> Bidirectional Architecture (Input vs Output)</a>
+  <a href="#d9"><span class="num">9.</span> Camera Auto-Discovery Flow</a>
+</div>
+
+<!-- ============================================================ -->
+<!-- DIAGRAM 1: End-User Experience -->
+<!-- ============================================================ -->
+<div class="diagram-section" id="d1">
+  <h2>1. End-User Experience <span class="badge badge-planned">GOAL</span></h2>
+  <div class="description">
+    What the customer actually sees and interacts with. All internal plumbing is invisible.
+    The product is: wireless camera(s) + chat on their existing messaging app.
+  </div>
+  <div class="mermaid">
+graph LR
+    subgraph "CUSTOMER'S HOME"
+        CAM1["IP Camera<br/>Living Room<br/>$20-25"]
+        CAM2["IP Camera<br/>Front Door<br/>$20-25"]
+        CAM3["IP Camera<br/>Kitchen<br/>$20-25"]
+        WIFI["Home WiFi<br/>Router"]
+    end
+
+    subgraph "INVISIBLE CLOUD"
+        CLOUD["Cloud Server<br/>(they never see this)"]
+    end
+
+    subgraph "USER'S PHONE"
+        WA["WhatsApp"]
+        DC["Discord"]
+        TG["Telegram"]
+        SL["Slack"]
+    end
+
+    CAM1 -->|WiFi| WIFI
+    CAM2 -->|WiFi| WIFI
+    CAM3 -->|WiFi| WIFI
+    WIFI -->|"Stream<br/>(auto)"| CLOUD
+    CLOUD -->|"Alerts +<br/>Photos"| WA
+    CLOUD -->|"Alerts +<br/>Photos"| DC
+    CLOUD -->|"Alerts +<br/>Photos"| TG
+    CLOUD -->|"Alerts +<br/>Photos"| SL
+
+    style CAM1 fill:#1a1a2e,stroke:#0971CE,color:#fff
+    style CAM2 fill:#1a1a2e,stroke:#0971CE,color:#fff
+    style CAM3 fill:#1a1a2e,stroke:#0971CE,color:#fff
+    style WIFI fill:#2a2a3e,stroke:#666,color:#fff
+    style CLOUD fill:#0d3320,stroke:#4ade80,color:#fff
+    style WA fill:#25D366,stroke:#128C7E,color:#fff
+    style DC fill:#5865F2,stroke:#4752C4,color:#fff
+    style TG fill:#0088cc,stroke:#006699,color:#fff
+    style SL fill:#4A154B,stroke:#3a1040,color:#fff
+  </div>
+  <div class="comment-box">
+    (Type your feedback here — what should change about the user experience?)
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- DIAGRAM 2: Full System Architecture -->
+<!-- ============================================================ -->
+<div class="diagram-section" id="d2">
+  <h2>2. Full System Architecture <span class="badge badge-live">DEPLOYED</span></h2>
+  <div class="description">
+    Everything under the hood. The camera streams RTSP video to our cloud server on Fly.io.
+    The server analyzes frames with Gemini Flash, then sends alerts <strong>directly</strong> to
+    Telegram/Discord/Slack via their native APIs (like Wyze/Ring do). No middleware needed.
+  </div>
+  <div class="mermaid">
+graph TB
+    subgraph "CUSTOMER HOME (LAN)"
+        CAM["IP Camera<br/>RTSP stream<br/>¥50-150"]
+        ROUTER["WiFi Router<br/>Port forward / UPnP"]
+    end
+
+    subgraph "FLY.IO CLOUD (Singapore)"
+        subgraph "physical-mcp Server"
+            RTSP["RTSP Client<br/>(OpenCV + ffmpeg)"]
+            PERCEP["Perception Loop<br/>Frame capture @ 2fps"]
+            HASH["Change Detection<br/>(perceptual hash,<br/>FREE - no API)"]
+            ANALYZER["Scene Analyzer<br/>(LLM call only<br/>when change detected)"]
+            RULES["Rules Engine<br/>(watch rules)"]
+            ALERTS["Alert Dispatcher<br/>(4 channels)"]
+            VAPI["Vision REST API<br/>:8090"]
+            MCP["MCP Server<br/>:8400"]
+            DISC["Camera Discovery<br/>(RTSP + ONVIF scan)"]
+        end
+    end
+
+    subgraph "EXTERNAL APIs"
+        OR["OpenRouter API<br/>Gemini 2.0 Flash<br/>$0 (free tier)"]
+    end
+
+    subgraph "DIRECT NOTIFICATION APIs"
+        TG_API["Telegram Bot API<br/>sendPhoto + caption"]
+        DC_API["Discord Webhooks<br/>embed + image"]
+        SL_API["Slack Webhooks<br/>Block Kit message"]
+        WH_API["Generic Webhook<br/>JSON POST"]
+    end
+
+    CAM -->|"RTSP over WiFi"| ROUTER
+    ROUTER -->|"Port forward<br/>to internet"| RTSP
+    RTSP --> PERCEP
+    PERCEP --> HASH
+    HASH -->|"Change?"| ANALYZER
+    ANALYZER -->|"API call"| OR
+    OR -->|"Scene JSON"| ANALYZER
+    ANALYZER --> RULES
+    RULES -->|"Rule matched"| ALERTS
+    ALERTS -->|"Bot API"| TG_API
+    ALERTS -->|"Webhook"| DC_API
+    ALERTS -->|"Webhook"| SL_API
+    ALERTS -->|"POST"| WH_API
+
+    style CAM fill:#1a1a2e,stroke:#0971CE,color:#fff
+    style ROUTER fill:#2a2a3e,stroke:#666,color:#fff
+    style RTSP fill:#0d2733,stroke:#38bdf8,color:#fff
+    style PERCEP fill:#0d2733,stroke:#38bdf8,color:#fff
+    style HASH fill:#0d3320,stroke:#4ade80,color:#fff
+    style ANALYZER fill:#3b2f0a,stroke:#fbbf24,color:#fff
+    style RULES fill:#0d2733,stroke:#38bdf8,color:#fff
+    style ALERTS fill:#0d2733,stroke:#38bdf8,color:#fff
+    style DISC fill:#0d2733,stroke:#38bdf8,color:#fff
+    style OR fill:#3b2f0a,stroke:#fbbf24,color:#fff
+    style TG_API fill:#0088cc,stroke:#006699,color:#fff
+    style DC_API fill:#5865F2,stroke:#4752C4,color:#fff
+    style SL_API fill:#4A154B,stroke:#3a1040,color:#fff
+    style WH_API fill:#0d3320,stroke:#4ade80,color:#fff
+  </div>
+  <div class="comment-box">
+    (Your feedback on the architecture — what's wrong / missing / confusing?)
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- DIAGRAM 3: Data Flow -->
+<!-- ============================================================ -->
+<div class="diagram-section" id="d3">
+  <h2>3. Data Flow: Camera Frame to User Alert <span class="badge badge-done">BUILT</span></h2>
+  <div class="description">
+    Step-by-step: what happens from the moment a camera captures a frame
+    to the moment the user gets a WhatsApp message. Most frames are FREE
+    (no API call) because change detection filters out static scenes.
+  </div>
+  <div class="mermaid">
+sequenceDiagram
+    participant CAM as IP Camera
+    participant SRV as physical-mcp<br/>(Fly.io)
+    participant LLM as Gemini Flash<br/>(OpenRouter)
+    participant TG as Telegram Bot API
+    participant USER as User's Phone
+
+    Note over CAM,SRV: Every 0.5 seconds (2 fps)
+    CAM->>SRV: RTSP frame (JPEG)
+    SRV->>SRV: Perceptual hash comparison<br/>(FREE, local)
+
+    alt No significant change (99% of frames)
+        SRV->>SRV: Skip. No API call.<br/>Cost = $0
+    else Scene changed!
+        SRV->>SRV: Debounce 3 seconds
+        SRV->>LLM: "Describe this scene"<br/>+ JPEG thumbnail (640px)
+        LLM-->>SRV: {"summary": "Person at front door<br/>holding package", ...}
+        SRV->>SRV: Evaluate watch rules
+
+        alt Rule matched (e.g. "alert if person at door")
+            SRV->>TG: sendPhoto(chat_id,<br/>caption + JPEG)
+            TG->>USER: Push notification<br/>with photo
+        else No rule matched
+            SRV->>SRV: Store scene state only
+        end
+    end
+  </div>
+  <div class="comment-box">
+    (Your feedback on the data flow — anything unclear about how alerts work?)
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- DIAGRAM 4: Cloud Server Components -->
+<!-- ============================================================ -->
+<div class="diagram-section" id="d4">
+  <h2>4. Cloud Server Internals (Fly.io) <span class="badge badge-live">DEPLOYED</span></h2>
+  <div class="description">
+    What's running inside the Fly.io container right now.
+    Two ports exposed: Vision API (:8090, public-facing via Fly proxy) and MCP (:8400, for Claude Desktop).
+    The server starts in headless mode with no cameras — cameras are added at runtime via POST /cameras.
+  </div>
+  <div class="mermaid">
+graph TB
+    subgraph "Fly.io Container (Python 3.12, 1GB RAM)"
+        subgraph "Vision REST API (:8090)"
+            AUTH["Auth Middleware<br/>Bearer token"]
+            EP1["GET /health"]
+            EP2["GET /cameras"]
+            EP3["POST /cameras<br/>(register new camera)"]
+            EP4["GET /frame/{id}"]
+            EP5["GET /scene/{id}"]
+            EP6["GET /alerts"]
+            EP7["POST /rules"]
+            EP8["GET /changes<br/>(long-poll SSE)"]
+        end
+
+        subgraph "Per-Camera Pipeline"
+            direction TB
+            RTSP1["RTSP Client<br/>(background thread)"]
+            BUF1["Frame Buffer<br/>(300 frames)"]
+            HASH1["Change Detector<br/>(phash diff)"]
+            ANAL1["Analyzer<br/>(Gemini Flash)"]
+        end
+
+        subgraph "Shared Services"
+            RE["Rules Engine<br/>(YAML store)"]
+            AQ["Alert Queue"]
+            MEM["Memory Store<br/>(persistent .md)"]
+            NOTIF["Notification<br/>Dispatcher"]
+        end
+
+        subgraph "MCP Server (:8400)"
+            MCP16["16 MCP Tools<br/>capture_frame, analyze_now,<br/>add_watch_rule, etc."]
+        end
+    end
+
+    subgraph "Environment Variables"
+        ENV1["REASONING_PROVIDER=openai-compatible"]
+        ENV2["REASONING_MODEL=gemini-2.0-flash"]
+        ENV3["REASONING_API_KEY=sk-or-... (secret)"]
+        ENV4["VISION_API_AUTH_TOKEN=pmcp-... (secret)"]
+    end
+
+    AUTH --> EP1
+    AUTH --> EP2
+    AUTH --> EP3
+    EP3 -->|"Creates"| RTSP1
+    RTSP1 --> BUF1
+    BUF1 --> HASH1
+    HASH1 --> ANAL1
+    ANAL1 --> RE
+    RE --> AQ
+    AQ --> NOTIF
+
+    style AUTH fill:#3b2f0a,stroke:#fbbf24,color:#fff
+    style RTSP1 fill:#0d2733,stroke:#38bdf8,color:#fff
+    style HASH1 fill:#0d3320,stroke:#4ade80,color:#fff
+    style ANAL1 fill:#3b2f0a,stroke:#fbbf24,color:#fff
+    style RE fill:#0d2733,stroke:#38bdf8,color:#fff
+  </div>
+  <div class="comment-box">
+    (Your feedback on server internals — anything to add/remove/change?)
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- DIAGRAM 5: Cost Structure -->
+<!-- ============================================================ -->
+<div class="diagram-section" id="d5">
+  <h2>5. Cost Structure Per User <span class="badge badge-planned">PLANNING</span></h2>
+  <div class="description">
+    What it costs US to serve one user per month, vs what we charge them.
+    Key insight: 99% of frames are filtered by FREE change detection, so API costs are minimal.
+  </div>
+  <div class="mermaid">
+graph LR
+    subgraph "OUR COSTS (per user/month)"
+        C1["Fly.io VM<br/>shared-cpu-1x, 1GB<br/>~$5-7/mo"]
+        C2["Gemini Flash API<br/>(via OpenRouter)<br/>Free tier: $0<br/>Paid: ~$1-3/mo"]
+        C3["OpenClaw Server<br/>(shared infra)<br/>~$1/mo amortized"]
+    end
+
+    subgraph "TOTAL COST"
+        TOTAL["$6-11/mo per user"]
+    end
+
+    subgraph "WE CHARGE"
+        P1["Starter: $5/mo<br/>1 camera"]
+        P2["Pro: $9/mo<br/>3 cameras"]
+        P3["Team: $12/mo<br/>10 cameras"]
+    end
+
+    subgraph "HARDWARE (one-time)"
+        HW["IP Camera: $3-5 each<br/>(bulk from Huaqiangbei)<br/>Sell at: $20-25 each"]
+    end
+
+    C1 --> TOTAL
+    C2 --> TOTAL
+    C3 --> TOTAL
+
+    style C1 fill:#3b0a0a,stroke:#f87171,color:#fff
+    style C2 fill:#3b0a0a,stroke:#f87171,color:#fff
+    style C3 fill:#3b0a0a,stroke:#f87171,color:#fff
+    style TOTAL fill:#3b2f0a,stroke:#fbbf24,color:#fff
+    style P1 fill:#0d3320,stroke:#4ade80,color:#fff
+    style P2 fill:#0d3320,stroke:#4ade80,color:#fff
+    style P3 fill:#0d3320,stroke:#4ade80,color:#fff
+    style HW fill:#0d2733,stroke:#38bdf8,color:#fff
+  </div>
+  <div class="comment-box">
+    (Your feedback on pricing — margins too thin? Need to adjust tiers?)
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- DIAGRAM 6: Setup Flow -->
+<!-- ============================================================ -->
+<div class="diagram-section" id="d6">
+  <h2>6. Consumer Setup Flow <span class="badge badge-planned">TODO</span></h2>
+  <div class="description">
+    How a new user goes from unboxing to getting alerts. Should be as simple as setting up a smart bulb.
+    The entire physical-mcp / OpenClaw / OpenRouter stack is invisible.
+  </div>
+  <div class="mermaid">
+graph TD
+    A["Unbox Camera<br/>Plug into USB power"] --> B["Open our app / website<br/>'Add Camera'"]
+    B --> C["Camera creates WiFi hotspot<br/>App connects to it"]
+    C --> D["Enter home WiFi password<br/>Camera joins home network"]
+    D --> E["Camera appears in app<br/>'Front Door Camera - Online'"]
+    E --> F["Choose messaging app<br/>WhatsApp / Discord / Telegram"]
+    F --> G["Scan QR code or<br/>click invite link"]
+    G --> H["Bot joins your chat<br/>'Hi! I can see your front door.'"]
+    H --> I["Set rules via chat:<br/>'Alert me if someone<br/>comes to the door'"]
+    I --> J["DONE!<br/>Getting alerts with photos<br/>on your phone"]
+
+    style A fill:#0d2733,stroke:#38bdf8,color:#fff
+    style B fill:#0d2733,stroke:#38bdf8,color:#fff
+    style C fill:#3b2f0a,stroke:#fbbf24,color:#fff
+    style D fill:#3b2f0a,stroke:#fbbf24,color:#fff
+    style E fill:#0d2733,stroke:#38bdf8,color:#fff
+    style F fill:#0d2733,stroke:#38bdf8,color:#fff
+    style G fill:#0d2733,stroke:#38bdf8,color:#fff
+    style H fill:#0d3320,stroke:#4ade80,color:#fff
+    style I fill:#0d3320,stroke:#4ade80,color:#fff
+    style J fill:#0d3320,stroke:#4ade80,color:#fff
+  </div>
+  <div class="comment-box">
+    (Your feedback on onboarding — too many steps? Missing steps? How should WiFi config work?)
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- DIAGRAM 7: Current Status -->
+<!-- ============================================================ -->
+<div class="diagram-section" id="d7">
+  <h2>7. What's Built vs What's Missing <span class="badge badge-live">STATUS</span></h2>
+  <div class="description">
+    Green = built &amp; tested. Yellow = partially built. Red = not started.
+    Updated Feb 26, 2026 &mdash; 407 tests passing, direct notifiers complete.
+  </div>
+  <div class="mermaid">
+graph LR
+    subgraph "DONE (407 tests passing)"
+        D1["physical-mcp server<br/>407 tests, ~8K lines"]
+        D2["RTSP camera backend<br/>auto-reconnect"]
+        D3["Change detection<br/>(perceptual hash)"]
+        D4["Scene analyzer<br/>(Gemini Flash)"]
+        D5["Rules engine<br/>+ alert queue"]
+        D6["Vision REST API<br/>+ bearer auth"]
+        D7["Dynamic camera<br/>POST /cameras"]
+        D8["Fly.io deployment<br/>physical-mcp.fly.dev"]
+        D9["Telegram notifier<br/>(sendPhoto + caption)"]
+        D10["Discord notifier<br/>(webhook + embed)"]
+        D11["Slack notifier<br/>(Block Kit)"]
+        D12["Generic webhook<br/>(JSON POST)"]
+        D13["Camera discovery<br/>(RTSP + ONVIF)"]
+        D14["discover CLI<br/>+ REST endpoint"]
+    end
+
+    subgraph "PARTIAL (Needs config)"
+        P1["OpenClaw Discord<br/>(bot exists, needs<br/>camera skill wiring)"]
+        P2["Telegram bot token<br/>(create via @BotFather<br/>then set env var)"]
+        P3["MCP server<br/>(16 tools work,<br/>need cloud MCP URL)"]
+    end
+
+    subgraph "NOT STARTED"
+        N1["WhatsApp direct<br/>(needs Business API)"]
+        N2["Consumer onboarding<br/>(WiFi setup, QR code)"]
+        N3["Camera hardware<br/>(¥40 WOSEE ordered)"]
+        N4["User accounts<br/>+ billing system"]
+        N5["Multi-user isolation<br/>(per-user rules/cameras)"]
+    end
+
+    style D1 fill:#0d3320,stroke:#4ade80,color:#fff
+    style D2 fill:#0d3320,stroke:#4ade80,color:#fff
+    style D3 fill:#0d3320,stroke:#4ade80,color:#fff
+    style D4 fill:#0d3320,stroke:#4ade80,color:#fff
+    style D5 fill:#0d3320,stroke:#4ade80,color:#fff
+    style D6 fill:#0d3320,stroke:#4ade80,color:#fff
+    style D7 fill:#0d3320,stroke:#4ade80,color:#fff
+    style D8 fill:#0d3320,stroke:#4ade80,color:#fff
+    style D9 fill:#0d3320,stroke:#4ade80,color:#fff
+    style D10 fill:#0d3320,stroke:#4ade80,color:#fff
+    style D11 fill:#0d3320,stroke:#4ade80,color:#fff
+    style D12 fill:#0d3320,stroke:#4ade80,color:#fff
+    style D13 fill:#0d3320,stroke:#4ade80,color:#fff
+    style D14 fill:#0d3320,stroke:#4ade80,color:#fff
+    style P1 fill:#3b2f0a,stroke:#fbbf24,color:#fff
+    style P2 fill:#3b2f0a,stroke:#fbbf24,color:#fff
+    style P3 fill:#3b2f0a,stroke:#fbbf24,color:#fff
+    style N1 fill:#3b0a0a,stroke:#f87171,color:#fff
+    style N2 fill:#3b0a0a,stroke:#f87171,color:#fff
+    style N3 fill:#3b0a0a,stroke:#f87171,color:#fff
+    style N4 fill:#3b0a0a,stroke:#f87171,color:#fff
+    style N5 fill:#3b0a0a,stroke:#f87171,color:#fff
+  </div>
+  <div class="comment-box">
+    (Your feedback on priorities — what should we build next? What can we cut?)
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- DIAGRAM 8: Bidirectional Architecture -->
+<!-- ============================================================ -->
+<div class="diagram-section" id="d8">
+  <h2>8. Bidirectional Architecture: Input vs Output <span class="badge badge-done">BUILT</span></h2>
+  <div class="description">
+    <strong>Key insight:</strong> Arrows go in TWO directions. <strong>OpenClaw = INPUT</strong> (user sends
+    chat commands to control cameras). <strong>Direct API = OUTPUT</strong> (camera sends alerts
+    with photos directly to user's phone). Each channel is independent &mdash; if Slack goes down,
+    Telegram still works.
+  </div>
+  <div class="mermaid">
+graph TB
+    subgraph "USER'S PHONE"
+        TG["Telegram"]
+        DC["Discord"]
+        SL["Slack"]
+        WA["WhatsApp"]
+    end
+
+    subgraph "INPUT PATH (User Commands)"
+        direction TB
+        OC["OpenClaw Bot<br/>(NLP + session mgmt)"]
+        API_IN["physical-mcp REST API<br/>POST /rules<br/>DELETE /rules/id<br/>GET /cameras"]
+    end
+
+    subgraph "physical-mcp Server (Fly.io)"
+        CAM_PIPE["Camera Pipeline<br/>RTSP → Change Detect → LLM"]
+        RULES_E["Rules Engine"]
+        DISP["Alert Dispatcher"]
+    end
+
+    subgraph "OUTPUT PATH (System Alerts)"
+        direction TB
+        TG_API["Telegram Bot API<br/>sendPhoto"]
+        DC_API["Discord Webhook<br/>embed + image"]
+        SL_API["Slack Webhook<br/>Block Kit"]
+        WH_API["Generic Webhook<br/>JSON POST"]
+    end
+
+    TG -->|"Watch my door"| OC
+    DC -->|"Stop kitchen cam"| OC
+    SL -->|"Show front door"| OC
+    WA -->|"Add rule"| OC
+    OC -->|"HTTP"| API_IN
+    API_IN --> RULES_E
+
+    CAM_PIPE --> RULES_E
+    RULES_E -->|"Rule matched!"| DISP
+    DISP --> TG_API
+    DISP --> DC_API
+    DISP --> SL_API
+    DISP --> WH_API
+
+    TG_API -->|"Alert + photo"| TG
+    DC_API -->|"Alert + photo"| DC
+    SL_API -->|"Alert text"| SL
+    WH_API -->|"JSON payload"| WA
+
+    style TG fill:#0088cc,stroke:#006699,color:#fff
+    style DC fill:#5865F2,stroke:#4752C4,color:#fff
+    style SL fill:#4A154B,stroke:#3a1040,color:#fff
+    style WA fill:#25D366,stroke:#128C7E,color:#fff
+    style OC fill:#3b2f0a,stroke:#fbbf24,color:#fff
+    style API_IN fill:#0d2733,stroke:#38bdf8,color:#fff
+    style CAM_PIPE fill:#0d2733,stroke:#38bdf8,color:#fff
+    style RULES_E fill:#0d2733,stroke:#38bdf8,color:#fff
+    style DISP fill:#0d3320,stroke:#4ade80,color:#fff
+    style TG_API fill:#0088cc,stroke:#006699,color:#fff
+    style DC_API fill:#5865F2,stroke:#4752C4,color:#fff
+    style SL_API fill:#4A154B,stroke:#3a1040,color:#fff
+    style WH_API fill:#0d3320,stroke:#4ade80,color:#fff
+  </div>
+  <div class="comment-box">
+    (Your feedback on the bidirectional design — does the input/output split make sense?)
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- DIAGRAM 9: Camera Auto-Discovery -->
+<!-- ============================================================ -->
+<div class="diagram-section" id="d9">
+  <h2>9. Camera Auto-Discovery <span class="badge badge-done">BUILT</span></h2>
+  <div class="description">
+    When the ¥40 WOSEE camera arrives from Taobao, this tool scans the local network
+    to find it automatically. Probes RTSP ports (554, 8554), tries 17 common URL patterns
+    (Hikvision, Dahua, WOSEE/Cloudcam, TP-Link, Reolink), and optionally uses ONVIF discovery.
+    Available via CLI (<code>physical-mcp discover</code>), REST API (<code>GET /discover</code>),
+    and MCP tool (<code>discover_cameras</code>).
+  </div>
+  <div class="mermaid">
+sequenceDiagram
+    participant USER as User / CLI
+    participant DISC as Discovery Module
+    participant NET as Local Network<br/>(192.168.x.0/24)
+    participant CAM as IP Camera<br/>(port 554)
+
+    USER->>DISC: physical-mcp discover<br/>(or GET /discover)
+    DISC->>DISC: Auto-detect subnet<br/>(192.168.1.0/24)
+
+    Note over DISC,NET: Parallel scan: 254 hosts x 2 ports<br/>asyncio.Semaphore(50)
+
+    loop For each host (1-254)
+        DISC->>NET: TCP connect :554
+        NET-->>DISC: Open / Closed
+        DISC->>NET: TCP connect :8554
+        NET-->>DISC: Open / Closed
+    end
+
+    Note over DISC,CAM: Found open port on 192.168.1.100:554
+
+    loop 17 RTSP URL patterns
+        DISC->>CAM: RTSP OPTIONS<br/>rtsp://IP:554/stream1
+        CAM-->>DISC: 404
+        DISC->>CAM: RTSP OPTIONS<br/>rtsp://IP:554/ch0_0.h264
+        CAM-->>DISC: 200 OK!
+    end
+
+    DISC->>USER: Found: WOSEE camera<br/>rtsp://192.168.1.100:554/ch0_0.h264
+
+    Note over USER,CAM: Optional: ONVIF WS-Discovery<br/>UDP multicast port 3702
+  </div>
+  <div class="comment-box">
+    (Your feedback on discovery — what else should it detect? Should it auto-add cameras?)
+  </div>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    securityLevel: 'loose',
+    flowchart: {
+      htmlLabels: true,
+      curve: 'basis',
+      useMaxWidth: true
+    },
+    sequence: {
+      useMaxWidth: true
+    }
+  });
+</script>
+
+<div style="text-align:center; margin-top:40px; padding: 20px; color:#666; font-size:0.85rem;">
+  <p>To give feedback: screenshot any diagram, annotate it, or just type comments in the boxes above.</p>
+  <p>Tell Claude what to change and I'll regenerate the diagrams instantly.</p>
+  <p style="margin-top:10px; color:#444;">Generated by Claude &mdash; physical-mcp project &mdash; Feb 26, 2026</p>
+</div>
+
+</body>
+</html>

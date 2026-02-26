@@ -151,6 +151,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
                     "POST /rules": "Create a watch rule",
                     "DELETE /rules/{rule_id}": "Delete a watch rule",
                     "PUT /rules/{rule_id}/toggle": "Toggle rule on/off",
+                    "GET /discover": "Scan local network for RTSP cameras",
                 },
             }
         )
@@ -559,6 +560,46 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         if store:
             store.save(engine.list_rules())
         return web.json_response(_rule_to_dict(target))
+
+    # ── Discovery endpoint ─────────────────────────────
+
+    @routes.get("/discover")
+    async def discover_cameras_endpoint(request: web.Request) -> web.Response:
+        """Scan local network for RTSP/ONVIF cameras."""
+        from .camera.discover import discover_cameras
+
+        subnet = request.query.get("subnet", "")
+        timeout_str = request.query.get("timeout", "2.0")
+        try:
+            timeout_val = max(0.5, min(10.0, float(timeout_str)))
+        except ValueError:
+            timeout_val = 2.0
+
+        result = await discover_cameras(subnet=subnet, timeout=timeout_val)
+
+        return web.json_response(
+            {
+                "cameras": [
+                    {
+                        "ip": c.ip,
+                        "port": c.port,
+                        "rtsp_url": c.url,
+                        "brand": c.brand,
+                        "method": c.method,
+                        "name": c.name,
+                    }
+                    for c in result.cameras
+                ],
+                "scanned_hosts": result.scanned_hosts,
+                "scan_time_seconds": round(result.scan_time_seconds, 1),
+                "errors": result.errors,
+                "hint": (
+                    "Use POST /cameras with the rtsp_url to add a discovered camera."
+                    if result.cameras
+                    else "No cameras found. Ensure cameras are on the same network."
+                ),
+            }
+        )
 
     # ── Cameras endpoint ───────────────────────────────
 

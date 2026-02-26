@@ -4,6 +4,10 @@ Routes alerts to the appropriate channel:
 - "local": no-op (the MCP tool response IS the notification)
 - "desktop": OS-native desktop notification (macOS / Linux / Windows)
 - "ntfy": push notification via ntfy.sh (free, zero-signup)
+- "telegram": direct Telegram Bot API (sendPhoto with camera frame)
+- "discord": Discord incoming webhook (embed with image)
+- "slack": Slack incoming webhook (Block Kit, text only)
+- "webhook": generic HTTP POST (JSON payload)
 - "openclaw": multi-channel delivery via OpenClaw CLI (Telegram, WhatsApp, etc.)
 """
 
@@ -16,8 +20,12 @@ import logging
 from ..config import NotificationsConfig
 from ..rules.models import AlertEvent
 from .desktop import DesktopNotifier
+from .discord import DiscordWebhookNotifier
 from .ntfy import NtfyNotifier
 from .openclaw import OpenClawNotifier
+from .slack import SlackWebhookNotifier
+from .telegram import TelegramNotifier
+from .webhook import WebhookNotifier
 
 logger = logging.getLogger("physical-mcp")
 
@@ -37,6 +45,19 @@ class NotificationDispatcher:
         self._openclaw = OpenClawNotifier(
             default_channel=config.openclaw_channel,
             default_target=config.openclaw_target,
+        )
+        self._telegram = TelegramNotifier(
+            bot_token=config.telegram_bot_token,
+            default_chat_id=config.telegram_chat_id,
+        )
+        self._discord = DiscordWebhookNotifier(
+            default_webhook_url=config.discord_webhook_url,
+        )
+        self._slack = SlackWebhookNotifier(
+            default_webhook_url=config.slack_webhook_url,
+        )
+        self._webhook = WebhookNotifier(
+            default_url=config.webhook_url,
         )
 
     async def dispatch(self, alert: AlertEvent) -> None:
@@ -62,6 +83,27 @@ class NotificationDispatcher:
             if self._desktop:
                 body = alert.rule.custom_message or alert.evaluation.reasoning
                 self._desktop.notify(alert.rule.name, body)
+        elif target.type == "telegram":
+            chat_id = target.target or self._config.telegram_chat_id
+            await self._telegram.notify(alert, chat_id=chat_id)
+            if self._desktop:
+                body = alert.rule.custom_message or alert.evaluation.reasoning
+                self._desktop.notify(alert.rule.name, body)
+        elif target.type == "discord":
+            url = target.url or self._config.discord_webhook_url
+            await self._discord.notify(alert, webhook_url=url)
+            if self._desktop:
+                body = alert.rule.custom_message or alert.evaluation.reasoning
+                self._desktop.notify(alert.rule.name, body)
+        elif target.type == "slack":
+            url = target.url or self._config.slack_webhook_url
+            await self._slack.notify(alert, webhook_url=url)
+            if self._desktop:
+                body = alert.rule.custom_message or alert.evaluation.reasoning
+                self._desktop.notify(alert.rule.name, body)
+        elif target.type == "webhook":
+            url = target.url or self._config.webhook_url
+            await self._webhook.notify(alert, url=url)
         elif target.type == "openclaw":
             # Fan out to multiple channels (comma-separated)
             channels = (target.channel or self._config.openclaw_channel).split(",")
@@ -103,3 +145,7 @@ class NotificationDispatcher:
         """Clean up resources."""
         await self._ntfy.close()
         await self._openclaw.close()
+        await self._telegram.close()
+        await self._discord.close()
+        await self._slack.close()
+        await self._webhook.close()

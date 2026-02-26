@@ -76,6 +76,11 @@ class NotificationsConfig(BaseModel):
     # OpenClaw multi-channel delivery (Telegram, WhatsApp, Discord, Slack, etc.)
     openclaw_channel: str = ""  # "telegram"|"whatsapp"|"discord"|"slack"|"signal"
     openclaw_target: str = ""  # chat_id, phone number, channel_id
+    # Direct API notifiers (work on Fly.io without OpenClaw CLI)
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    discord_webhook_url: str = ""
+    slack_webhook_url: str = ""
 
 
 class VisionAPIConfig(BaseModel):
@@ -150,6 +155,10 @@ def _config_from_env() -> PhysicalMCPConfig:
             ntfy_topic=os.environ.get("NTFY_TOPIC", ""),
             openclaw_channel=os.environ.get("OPENCLAW_CHANNEL", ""),
             openclaw_target=os.environ.get("OPENCLAW_TARGET", ""),
+            telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
+            telegram_chat_id=os.environ.get("TELEGRAM_CHAT_ID", ""),
+            discord_webhook_url=os.environ.get("DISCORD_WEBHOOK_URL", ""),
+            slack_webhook_url=os.environ.get("SLACK_WEBHOOK_URL", ""),
         ),
     )
 

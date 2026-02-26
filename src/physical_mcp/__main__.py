@@ -853,6 +853,54 @@ def cameras(config_path: str | None) -> None:
 
 
 @main.command()
+@click.option("--subnet", default="", help="CIDR subnet to scan (auto-detect if empty)")
+@click.option("--timeout", default=2.0, type=float, help="Per-host timeout in seconds")
+def discover(subnet: str, timeout: float) -> None:
+    """Scan local network for IP cameras (RTSP/ONVIF)."""
+    import asyncio
+
+    async def _run() -> None:
+        from .camera.discover import discover_cameras, _get_local_subnet
+
+        click.echo("Scanning for cameras...")
+        if not subnet:
+            detected = _get_local_subnet()
+            click.echo(f"Auto-detected subnet: {detected}" if detected else "")
+
+        result = await discover_cameras(subnet=subnet, timeout=timeout)
+
+        if result.errors:
+            for err in result.errors:
+                click.echo(f"  Warning: {err}", err=True)
+
+        if not result.cameras:
+            click.echo("\nNo cameras found.")
+            click.echo("Tips:")
+            click.echo("  - Make sure cameras are on the same network")
+            click.echo("  - Try increasing timeout: --timeout 5")
+            click.echo("  - Check if cameras use non-standard RTSP ports")
+            return
+
+        click.echo(f"\nFound {len(result.cameras)} camera(s):\n")
+        click.echo(f"{'IP':<18} {'Port':<8} {'Brand':<12} {'Method':<10} URL")
+        click.echo("-" * 80)
+        for cam in result.cameras:
+            click.echo(
+                f"{cam.ip:<18} {cam.port:<8} {cam.brand:<12} {cam.method:<10} {cam.url}"
+            )
+
+        click.echo(
+            f"\nScan time: {result.scan_time_seconds:.1f}s "
+            f"({result.scanned_hosts} hosts)"
+        )
+        click.echo(
+            "\nTo add a camera: physical-mcp add-camera <rtsp_url> --name 'My Camera'"
+        )
+
+    asyncio.run(_run())
+
+
+@main.command()
 @click.option("--config", "config_path", default=None, help="Config file path")
 def doctor(config_path: str | None) -> None:
     """Run diagnostics and check system health."""

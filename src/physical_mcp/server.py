@@ -928,8 +928,9 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             priority: "low", "medium", "high", or "critical"
             notification_type: "local" (in-chat only, default), "desktop"
                 (OS notification), "ntfy" (push to phone via ntfy.sh),
-                "webhook" (HTTP POST), "openclaw" (deliver to Telegram,
-                WhatsApp, Discord, Slack, Signal via OpenClaw)
+                "telegram" (direct Telegram Bot API), "discord" (Discord webhook),
+                "slack" (Slack webhook), "webhook" (generic HTTP POST),
+                "openclaw" (deliver via OpenClaw CLI)
             notification_url: URL for webhook notifications (leave empty otherwise)
             notification_channel: ntfy topic override for this rule (uses
                 server default if empty)
@@ -950,17 +951,25 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
 
         from .rules.models import WatchRule, NotificationTarget, RulePriority
 
-        # Auto-use openclaw when channel is configured and user didn't override
-        if notification_type == "local" and config.notifications.openclaw_channel:
-            notification_type = "openclaw"
-        # Auto-use ntfy when topic is configured and user didn't override
-        elif notification_type == "local" and config.notifications.ntfy_topic:
-            notification_type = "ntfy"
+        # Auto-select best notification channel when user didn't override
+        if notification_type == "local":
+            if config.notifications.telegram_bot_token:
+                notification_type = "telegram"
+            elif config.notifications.discord_webhook_url:
+                notification_type = "discord"
+            elif config.notifications.slack_webhook_url:
+                notification_type = "slack"
+            elif config.notifications.openclaw_channel:
+                notification_type = "openclaw"
+            elif config.notifications.ntfy_topic:
+                notification_type = "ntfy"
 
         # Resolve notification target fields
         notif_channel = notification_channel if notification_channel else None
         notif_target = None
-        if notification_type == "openclaw":
+        if notification_type == "telegram":
+            notif_target = config.notifications.telegram_chat_id or None
+        elif notification_type == "openclaw":
             notif_channel = notif_channel or config.notifications.openclaw_channel
             notif_target = config.notifications.openclaw_target or None
 

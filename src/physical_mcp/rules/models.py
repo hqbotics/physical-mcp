@@ -17,7 +17,7 @@ class RulePriority(str, Enum):
 
 
 class NotificationTarget(BaseModel):
-    type: str = "local"  # "local"|"desktop"|"ntfy"|"webhook"|"openclaw"
+    type: str = "local"  # "local"|"desktop"|"ntfy"|"telegram"|"discord"|"slack"|"webhook"|"openclaw"
     url: Optional[str] = None  # webhook URL
     channel: Optional[str] = None  # ntfy topic OR openclaw channel type
     target: Optional[str] = None  # openclaw destination (chat_id, phone, channel_id)
