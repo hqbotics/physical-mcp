@@ -151,6 +151,8 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
                     "POST /rules": "Create a watch rule",
                     "DELETE /rules/{rule_id}": "Delete a watch rule",
                     "PUT /rules/{rule_id}/toggle": "Toggle rule on/off",
+                    "GET /templates": "List rule templates (?category=security)",
+                    "POST /templates/{id}/create": "Create rule from template",
                     "GET /discover": "Scan local network for RTSP cameras",
                 },
             }
@@ -566,6 +568,108 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         if store:
             store.save(engine.list_rules())
         return web.json_response(_rule_to_dict(target))
+
+    # ── Rule Templates ─────────────────────────────────
+
+    @routes.get("/templates")
+    async def list_templates_endpoint(request: web.Request) -> web.Response:
+        """List pre-built rule templates for common monitoring scenarios."""
+        from .rules.templates import get_categories, list_templates
+
+        category = request.query.get("category", "")
+        templates = list_templates(category if category else None)
+        return web.json_response(
+            {
+                "templates": [
+                    {
+                        "id": t.id,
+                        "name": t.name,
+                        "icon": t.icon,
+                        "description": t.description,
+                        "category": t.category,
+                        "condition": t.condition,
+                        "priority": t.priority,
+                        "cooldown_seconds": t.cooldown_seconds,
+                    }
+                    for t in templates
+                ],
+                "categories": get_categories(),
+            }
+        )
+
+    @routes.post("/templates/{template_id}/create")
+    async def create_from_template(request: web.Request) -> web.Response:
+        """Create a watch rule from a pre-built template."""
+        from .rules.templates import get_template
+
+        template_id = request.match_info["template_id"]
+        template = get_template(template_id)
+        if template is None:
+            return _json_error(
+                404, "template_not_found", f"No template with id '{template_id}'"
+            )
+
+        engine = state.get("rules_engine")
+        if engine is None:
+            return _json_error(503, "rules_unavailable", "Rules engine not initialized")
+
+        # Parse optional overrides from body
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+
+        import uuid as _uuid
+
+        from .rules.models import NotificationTarget, RulePriority, WatchRule
+
+        notification_type = body.get("notification_type", "local")
+        # Auto-select best notification from config
+        cfg = state.get("_config")
+        if notification_type == "local" and cfg:
+            ncfg = cfg.notifications
+            if ncfg.telegram_bot_token:
+                notification_type = "telegram"
+            elif ncfg.discord_webhook_url:
+                notification_type = "discord"
+            elif ncfg.slack_webhook_url:
+                notification_type = "slack"
+            elif ncfg.ntfy_topic:
+                notification_type = "ntfy"
+
+        notif_target = None
+        notif_channel = body.get("notification_channel") or None
+        if notification_type == "telegram" and cfg:
+            notif_target = cfg.notifications.telegram_chat_id or None
+
+        rule = WatchRule(
+            id=f"r_{_uuid.uuid4().hex[:8]}",
+            name=template.name,
+            condition=template.condition,
+            camera_id=body.get("camera_id", ""),
+            priority=RulePriority(template.priority),
+            notification=NotificationTarget(
+                type=notification_type,
+                url=body.get("notification_url") or None,
+                channel=notif_channel,
+                target=notif_target,
+            ),
+            cooldown_seconds=template.cooldown_seconds,
+            custom_message=body.get("custom_message") or None,
+            owner_id=body.get("owner_id", ""),
+            owner_name=body.get("owner_name", ""),
+        )
+        engine.add_rule(rule)
+        store = state.get("rules_store")
+        if store:
+            store.save(engine.list_rules())
+
+        # Start perception loops
+        ensure_loops = state.get("_ensure_perception_loops")
+        if ensure_loops:
+            asyncio.ensure_future(ensure_loops())
+
+        return web.json_response(_rule_to_dict(rule), status=201)
 
     # ── Discovery endpoint ─────────────────────────────
 

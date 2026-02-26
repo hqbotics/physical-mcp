@@ -1042,6 +1042,91 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
             memory.remove_rule_context(rule_id)
         return {"removed": removed, "rule_id": rule_id}
 
+    # ── Rule Templates ───────────────────────────────────────────
+
+    @mcp.tool()
+    async def list_rule_templates(category: str = "") -> dict:
+        """List pre-built rule templates for common monitoring scenarios.
+
+        Returns ready-to-use rule presets that users can pick from instead
+        of writing conditions from scratch.
+
+        Categories: security, pets, family, automation, business
+
+        Args:
+            category: Filter by category (empty = all templates).
+        """
+        from .rules.templates import get_categories, list_templates
+
+        templates = list_templates(category if category else None)
+        return {
+            "templates": [
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "icon": t.icon,
+                    "description": t.description,
+                    "category": t.category,
+                    "condition": t.condition,
+                    "priority": t.priority,
+                    "cooldown_seconds": t.cooldown_seconds,
+                }
+                for t in templates
+            ],
+            "categories": get_categories(),
+            "count": len(templates),
+        }
+
+    @mcp.tool()
+    async def create_rule_from_template(
+        template_id: str,
+        camera_id: str = "",
+        notification_type: str = "local",
+        notification_url: str = "",
+        notification_channel: str = "",
+        custom_message: str = "",
+        owner_id: str = "",
+        owner_name: str = "",
+        ctx: Context = None,
+    ) -> dict:
+        """Create a watch rule from a pre-built template.
+
+        Use list_rule_templates() to see available templates, then pass
+        the template_id here. The template's condition, priority, and
+        cooldown are used automatically.
+
+        Args:
+            template_id: Template ID (e.g. "person-detection", "baby-monitor").
+            camera_id: Camera to monitor (empty = all cameras).
+            notification_type: Notification channel (same as add_watch_rule).
+            notification_url: Webhook URL if applicable.
+            notification_channel: ntfy topic or channel override.
+            custom_message: Custom notification text override.
+            owner_id: Rule creator identity for multi-user isolation.
+            owner_name: Human-readable owner name.
+        """
+        from .rules.templates import get_template
+
+        template = get_template(template_id)
+        if template is None:
+            return {"error": f"Unknown template: {template_id}"}
+
+        # Delegate to add_watch_rule with template values
+        return await add_watch_rule(
+            name=template.name,
+            condition=template.condition,
+            camera_id=camera_id,
+            priority=template.priority,
+            notification_type=notification_type,
+            notification_url=notification_url,
+            notification_channel=notification_channel,
+            cooldown_seconds=template.cooldown_seconds,
+            custom_message=custom_message,
+            owner_id=owner_id,
+            owner_name=owner_name,
+            ctx=ctx,
+        )
+
     # ── System Tools ────────────────────────────────────────────
 
     @mcp.tool()
