@@ -1,0 +1,193 @@
+"""RTSP/HTTP camera implementation using OpenCV with auto-reconnect.
+
+Supports IP cameras that expose RTSP or HTTP MJPEG streams.
+Uses the same background-thread pattern as USBCamera to avoid
+blocking the asyncio event loop.
+
+Examples:
+    - RTSP: rtsp://admin:password@192.168.1.100:554/h264Preview_01_main
+    - HTTP MJPEG: http://192.168.1.100:8080/video
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import threading
+import time
+from datetime import datetime
+from typing import Optional
+
+import cv2
+
+from ..exceptions import CameraConnectionError, CameraTimeoutError
+from .base import CameraSource, Frame
+
+logger = logging.getLogger("physical-mcp")
+
+# Reconnection constants
+_INITIAL_RETRY_DELAY = 2.0
+_MAX_RETRY_DELAY = 30.0
+_CONSECUTIVE_FAILURES_BEFORE_LOG = 3
+
+
+class RTSPCamera(CameraSource):
+    """RTSP/HTTP stream camera with background capture and auto-reconnect.
+
+    OpenCV's VideoCapture handles RTSP decoding via ffmpeg/gstreamer.
+    A background thread continuously grabs frames, and auto-reconnects
+    on stream drops with exponential backoff.
+    """
+
+    def __init__(
+        self,
+        url: str,
+        camera_id: str = "rtsp:0",
+        width: int = 1280,
+        height: int = 720,
+    ):
+        if not url:
+            raise CameraConnectionError("RTSP/HTTP camera URL is required")
+        self._url = url
+        self._camera_id = camera_id
+        self._width = width
+        self._height = height
+        self._cap: Optional[cv2.VideoCapture] = None
+        self._latest_frame: Optional[Frame] = None
+        self._lock = threading.Lock()
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self._sequence = 0
+        self._consecutive_failures = 0
+
+    async def open(self) -> None:
+        self._cap = self._create_capture()
+        if not self._cap.isOpened():
+            raise CameraConnectionError(f"Cannot open stream: {self._safe_url}")
+        self._running = True
+        self._thread = threading.Thread(target=self._capture_loop, daemon=True)
+        self._thread.start()
+        # Wait for first frame (20s — network cameras can be slow to start)
+        for _ in range(200):
+            await asyncio.sleep(0.1)
+            with self._lock:
+                if self._latest_frame is not None:
+                    return
+        raise CameraTimeoutError(
+            f"Stream opened but no frames received within 20 seconds: {self._safe_url}"
+        )
+
+    def _create_capture(self) -> cv2.VideoCapture:
+        """Create a new VideoCapture with optimized settings for network streams."""
+        cap = cv2.VideoCapture(self._url, cv2.CAP_FFMPEG)
+        # Reduce buffering for lower latency
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # Request resolution (camera may ignore if stream is fixed)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
+        return cap
+
+    def _capture_loop(self) -> None:
+        """Background thread: grab frames, auto-reconnect on failure."""
+        retry_delay = _INITIAL_RETRY_DELAY
+
+        while self._running:
+            if self._cap is None or not self._cap.isOpened():
+                self._reconnect(retry_delay)
+                retry_delay = min(retry_delay * 2, _MAX_RETRY_DELAY)
+                continue
+
+            ret, img = self._cap.read()
+            if not ret:
+                self._consecutive_failures += 1
+                if self._consecutive_failures >= _CONSECUTIVE_FAILURES_BEFORE_LOG:
+                    logger.warning(
+                        f"[{self._camera_id}] Stream read failed "
+                        f"({self._consecutive_failures} consecutive). Reconnecting..."
+                    )
+                self._release_capture()
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, _MAX_RETRY_DELAY)
+                continue
+
+            # Success — reset backoff
+            self._consecutive_failures = 0
+            retry_delay = _INITIAL_RETRY_DELAY
+            self._sequence += 1
+            frame = Frame(
+                image=img,
+                timestamp=datetime.now(),
+                source_id=self.source_id,
+                sequence_number=self._sequence,
+                resolution=(img.shape[1], img.shape[0]),
+            )
+            with self._lock:
+                self._latest_frame = frame
+
+    def _reconnect(self, delay: float) -> None:
+        """Attempt to reconnect to the stream."""
+        self._release_capture()
+        if not self._running:
+            return
+        logger.info(
+            f"[{self._camera_id}] Reconnecting to {self._safe_url} "
+            f"(backoff {delay:.1f}s)..."
+        )
+        time.sleep(delay)
+        if not self._running:
+            return
+        try:
+            self._cap = self._create_capture()
+            if self._cap.isOpened():
+                logger.info(f"[{self._camera_id}] Reconnected successfully")
+            else:
+                self._release_capture()
+        except Exception as e:
+            logger.debug(f"[{self._camera_id}] Reconnect failed: {e}")
+            self._release_capture()
+
+    def _release_capture(self) -> None:
+        if self._cap is not None:
+            try:
+                self._cap.release()
+            except Exception:
+                pass
+            self._cap = None
+
+    async def grab_frame(self) -> Frame:
+        loop = asyncio.get_event_loop()
+        frame = await loop.run_in_executor(None, self._get_latest)
+        if frame is None:
+            raise CameraTimeoutError(f"No frame available from {self._safe_url}")
+        return frame
+
+    def _get_latest(self) -> Optional[Frame]:
+        with self._lock:
+            return self._latest_frame
+
+    async def close(self) -> None:
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=5.0)
+        self._release_capture()
+
+    def is_open(self) -> bool:
+        return self._running and self._cap is not None and self._cap.isOpened()
+
+    @property
+    def source_id(self) -> str:
+        return self._camera_id
+
+    @property
+    def _safe_url(self) -> str:
+        """URL with password masked for logging."""
+        if "@" in self._url:
+            # rtsp://user:pass@host → rtsp://user:***@host
+            proto_rest = self._url.split("://", 1)
+            if len(proto_rest) == 2:
+                proto, rest = proto_rest
+                if "@" in rest:
+                    creds, host = rest.rsplit("@", 1)
+                    user = creds.split(":", 1)[0]
+                    return f"{proto}://{user}:***@{host}"
+        return self._url
