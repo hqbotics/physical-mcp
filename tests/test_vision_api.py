@@ -2099,3 +2099,68 @@ class TestRulesOwnerIdAPI:
             assert rule["owner_id"] == "telegram:999"
             assert rule["owner_name"] == "Grandpa"
             assert rule["custom_message"] == "Alert!"
+
+
+# ── Dashboard tests ────────────────────────────────────────
+
+
+class TestDashboard:
+    """Tests for /dashboard endpoint."""
+
+    @pytest_asyncio.fixture
+    async def client(self):
+        state = _make_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as c:
+            yield c
+
+    @pytest.mark.asyncio
+    async def test_dashboard_returns_html(self, client):
+        """GET /dashboard returns HTML page."""
+        resp = await client.get("/dashboard")
+        assert resp.status == 200
+        assert "text/html" in resp.headers["content-type"]
+        body = await resp.text()
+        assert "<!DOCTYPE html>" in body
+        assert "physical-mcp" in body
+
+    @pytest.mark.asyncio
+    async def test_dashboard_has_key_sections(self, client):
+        """Dashboard HTML contains all major UI sections."""
+        resp = await client.get("/dashboard")
+        body = await resp.text()
+        assert "Camera Feed" in body
+        assert "Scene Analysis" in body
+        assert "Watch Rules" in body
+        assert "Recent Alerts" in body
+        assert "Quick Add Rule" in body
+
+    @pytest.mark.asyncio
+    async def test_dashboard_has_auto_refresh(self, client):
+        """Dashboard JS includes auto-refresh interval."""
+        resp = await client.get("/dashboard")
+        body = await resp.text()
+        assert "setInterval(refresh" in body
+
+    @pytest.mark.asyncio
+    async def test_dashboard_token_from_query(self, client):
+        """Dashboard injects auth token from query param."""
+        resp = await client.get("/dashboard?token=test-tok-123")
+        body = await resp.text()
+        assert "test-tok-123" in body
+
+    @pytest.mark.asyncio
+    async def test_dashboard_dji_theme(self, client):
+        """Dashboard uses DJI dark theme colors."""
+        resp = await client.get("/dashboard")
+        body = await resp.text()
+        assert "#0A0A0F" in body  # background
+        assert "#0971CE" in body  # accent
+
+    @pytest.mark.asyncio
+    async def test_dashboard_mobile_responsive(self, client):
+        """Dashboard includes mobile-responsive viewport and media query."""
+        resp = await client.get("/dashboard")
+        body = await resp.text()
+        assert 'name="viewport"' in body
+        assert "@media" in body
