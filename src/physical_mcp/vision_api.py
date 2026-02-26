@@ -7,24 +7,27 @@ Endpoints:
     GET /             → API overview
     GET /frame        → Latest camera frame (JPEG)
     GET /frame/{id}   → Frame from specific camera
-    GET /stream       → MJPEG video stream (works in <img> tags)
-    GET /stream/{id}  → MJPEG stream from specific camera
-    GET /events       → SSE stream of scene changes
     GET /scene        → All camera scene summaries (JSON)
     GET /scene/{id}   → Scene for specific camera
     GET /changes      → Recent scene changes (supports long-poll)
+    GET /health       → Per-camera health
+    GET /alerts       → Recent alert events
+    GET /cameras      → List all cameras
+    GET /rules        → List watch rules
+    POST /rules       → Create a watch rule
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from datetime import datetime, timezone
 from typing import Any
 
 from aiohttp import web
+
+from .health import normalize_camera_health as _normalize_camera_health
 
 logger = logging.getLogger("physical-mcp")
 
@@ -115,35 +118,6 @@ def _event_sort_key(event: dict[str, Any]) -> tuple[datetime, str]:
     return (ts, str(event.get("event_id", "")))
 
 
-def _default_camera_health(camera_id: str) -> dict[str, Any]:
-    """Consistent unknown-health shape for cameras without data yet."""
-    return {
-        "camera_id": camera_id,
-        "camera_name": camera_id,
-        "consecutive_errors": 0,
-        "backoff_until": None,
-        "last_success_at": None,
-        "last_error": "",
-        "last_frame_at": None,
-        "status": "unknown",
-        "message": "No health data yet.",
-    }
-
-
-def _normalize_camera_health(
-    camera_id: str, health: dict[str, Any] | None
-) -> dict[str, Any]:
-    """Fill missing camera-health keys with safe defaults."""
-    base = _default_camera_health(camera_id)
-    if not isinstance(health, dict):
-        return base
-    merged = {**base, **health}
-    merged["camera_id"] = str(merged.get("camera_id") or camera_id)
-    if not merged.get("camera_name"):
-        merged["camera_name"] = merged["camera_id"]
-    return merged
-
-
 def create_vision_routes(state: dict[str, Any]) -> web.Application:
     """Create aiohttp app with vision API routes.
 
@@ -166,20 +140,20 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
                 "endpoints": {
                     "GET /frame": "Latest camera frame (JPEG)",
                     "GET /frame/{camera_id}": "Frame from specific camera",
-                    "GET /stream": "MJPEG video stream (use in <img> tags)",
-                    "GET /stream/{camera_id}": "MJPEG stream from specific camera",
-                    "GET /events": "SSE stream of scene changes (real-time)",
                     "GET /scene": "Current scene summaries (JSON)",
                     "GET /scene/{camera_id}": "Scene for specific camera",
                     "GET /changes": "Recent changes (?wait=true for long-poll)",
-                    "GET /health": "Per-camera health (errors/backoff/last success)",
-                    "GET /alerts": "Replay recent alert events",
-                    "GET /cameras": "List all cameras with scene state",
-                    "POST /cameras/open": "Open all configured cameras on demand",
+                    "GET /health": "Per-camera health",
+                    "GET /alerts": "Recent alert events",
+                    "GET /cameras": "List all cameras",
+                    "POST /cameras/open": "Open configured cameras",
                     "GET /rules": "List watch rules",
-                    "POST /rules": "Create a new watch rule",
+                    "POST /rules": "Create a watch rule",
                     "DELETE /rules/{rule_id}": "Delete a watch rule",
                     "PUT /rules/{rule_id}/toggle": "Toggle rule on/off",
+                    "GET /templates": "List rule templates (?category=security)",
+                    "POST /templates/{id}/create": "Create rule from template",
+                    "GET /discover": "Scan local network for RTSP cameras",
                 },
             }
         )
@@ -234,241 +208,6 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             content_type="image/jpeg",
             headers={"Cache-Control": "no-cache"},
         )
-
-    # ── Snapshot (JSON with base64 image — for GPT Actions) ─
-
-    @routes.get("/snapshot")
-    @routes.get("/snapshot/{camera_id}")
-    async def get_snapshot(request: web.Request) -> web.Response:
-        """Return latest frame as JSON with base64-encoded JPEG.
-
-        ChatGPT GPT Actions can't handle binary image responses,
-        so this endpoint wraps the frame in JSON with a data URL.
-        """
-        camera_id = request.match_info.get("camera_id", "")
-        quality = _parse_int(
-            request.query.get("quality", "60"), default=60, minimum=1, maximum=100
-        )
-        buffers = state.get("frame_buffers", {})
-
-        if not buffers:
-            return _json_error(503, "no_cameras_active", "No cameras active")
-
-        if camera_id and camera_id in buffers:
-            buf = buffers[camera_id]
-            resolved_id = camera_id
-        elif not camera_id:
-            resolved_id = next(iter(buffers.keys()))
-            buf = buffers[resolved_id]
-        else:
-            return _json_error(
-                404,
-                "camera_not_found",
-                f"Camera '{camera_id}' not found",
-                camera_id=camera_id,
-            )
-
-        frame = await buf.latest()
-
-        # Fallback: grab directly from camera if buffer empty
-        if frame is None:
-            cameras = state.get("cameras", {})
-            cam = cameras.get(resolved_id)
-            if cam and cam.is_open():
-                try:
-                    frame = await cam.grab_frame()
-                except Exception:
-                    pass
-
-        if frame is None:
-            return _json_error(503, "no_frame_available", "No frame available yet")
-
-        # Build the public frame URL so ChatGPT can render it inline.
-        host = (
-            request.headers.get("X-Forwarded-Host")
-            or request.headers.get("Host")
-            or request.host
-        )
-        scheme = request.headers.get("X-Forwarded-Proto") or request.scheme
-        frame_url = f"{scheme}://{host}/frame/{resolved_id}?quality={quality}"
-
-        return web.json_response(
-            {
-                "camera_id": resolved_id,
-                "image_url": frame_url,
-                "width": frame.resolution[0],
-                "height": frame.resolution[1],
-                "timestamp": frame.timestamp.isoformat(),
-                "display": f"![Camera {resolved_id}]({frame_url})",
-            }
-        )
-
-    # ── MJPEG Stream ────────────────────────────────────────
-
-    @routes.get("/stream")
-    @routes.get("/stream/{camera_id}")
-    async def mjpeg_stream(request: web.Request) -> web.StreamResponse:
-        """Continuous MJPEG video stream — works in any <img> tag or browser.
-
-        Usage:
-            <img src="http://localhost:8090/stream" />
-            curl http://localhost:8090/stream --output -
-
-        Query params:
-            fps:     Target frame rate (default: 5, max: 30)
-            quality: JPEG quality 1-100 (default: 60)
-        """
-        camera_id = request.match_info.get("camera_id", "")
-        fps = _parse_int(
-            request.query.get("fps", "5"), default=5, minimum=1, maximum=30
-        )
-        quality = _parse_int(
-            request.query.get("quality", "60"), default=60, minimum=1, maximum=100
-        )
-        buffers = state.get("frame_buffers", {})
-
-        if not buffers:
-            return _json_error(503, "no_cameras_active", "No cameras active")
-
-        if camera_id and camera_id in buffers:
-            buf = buffers[camera_id]
-        elif not camera_id:
-            buf = next(iter(buffers.values()))
-        else:
-            return _json_error(
-                404,
-                "camera_not_found",
-                f"Camera '{camera_id}' not found",
-                camera_id=camera_id,
-            )
-
-        boundary = "frame"
-        resp = web.StreamResponse(
-            status=200,
-            headers={
-                "Content-Type": f"multipart/x-mixed-replace; boundary={boundary}",
-                "Cache-Control": "no-cache, no-store",
-                "Pragma": "no-cache",
-                "Connection": "keep-alive",
-                "Access-Control-Allow-Origin": "*",
-                # Disable proxy buffering for low-latency multi-client streaming
-                # (notably nginx-compatible reverse proxies).
-                "X-Accel-Buffering": "no",
-            },
-        )
-        await resp.prepare(request)
-
-        # Resolve camera for direct grab fallback
-        cameras = state.get("cameras", {})
-        resolved_id = camera_id or next(iter(buffers.keys()), "")
-        cam = cameras.get(resolved_id)
-
-        interval = 1.0 / fps
-        try:
-            while True:
-                frame = await buf.wait_for_frame(timeout=interval)
-
-                # Fallback: grab directly from camera if buffer empty
-                if frame is None and cam and cam.is_open():
-                    try:
-                        frame = await cam.grab_frame()
-                    except Exception:
-                        pass
-
-                if frame is None:
-                    await asyncio.sleep(interval)
-                    continue
-
-                jpeg_bytes = frame.to_jpeg_bytes(quality=quality)
-                await resp.write(
-                    f"--{boundary}\r\n"
-                    f"Content-Type: image/jpeg\r\n"
-                    f"Content-Length: {len(jpeg_bytes)}\r\n\r\n".encode()
-                    + jpeg_bytes
-                    + b"\r\n"
-                )
-                await asyncio.sleep(interval)
-        except (asyncio.CancelledError, ConnectionResetError):
-            pass  # Client disconnected
-        return resp
-
-    # ── Server-Sent Events ────────────────────────────────
-
-    @routes.get("/events")
-    async def sse_events(request: web.Request) -> web.StreamResponse:
-        """Real-time Server-Sent Events stream of scene changes.
-
-        Usage:
-            const es = new EventSource('http://localhost:8090/events');
-            es.addEventListener('scene', (e) => console.log(JSON.parse(e.data)));
-            es.addEventListener('change', (e) => console.log(JSON.parse(e.data)));
-
-        Events emitted:
-            scene  — full scene update (summary, objects, people)
-            change — scene change detected (timestamp, description)
-            ping   — keepalive every 15s
-
-        Query params:
-            camera_id: Filter to specific camera (default: all)
-        """
-        camera_id = request.query.get("camera_id", "")
-
-        resp = web.StreamResponse(
-            status=200,
-            headers={
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "Access-Control-Allow-Origin": "*",
-            },
-        )
-        await resp.prepare(request)
-
-        # Track what we've already sent to avoid duplicates
-        last_update_counts: dict[str, int] = {}
-        last_change_times: dict[str, str] = {}
-
-        try:
-            while True:
-                scenes = state.get("scene_states", {})
-                for cid, scene in scenes.items():
-                    if camera_id and cid != camera_id:
-                        continue
-
-                    # Emit scene event when update_count changes
-                    if scene.update_count != last_update_counts.get(cid, -1):
-                        last_update_counts[cid] = scene.update_count
-                        scene_data = scene.to_dict()
-                        cam_cfg = state.get("camera_configs", {}).get(cid)
-                        if cam_cfg and cam_cfg.name:
-                            scene_data["name"] = cam_cfg.name
-                        scene_data["camera_id"] = cid
-                        await resp.write(
-                            f"event: scene\ndata: {json.dumps(scene_data)}\n\n".encode()
-                        )
-
-                    # Emit change events from the change log
-                    recent = scene.get_change_log(minutes=1)
-                    if recent:
-                        latest_ts = recent[-1]["timestamp"]
-                        if latest_ts != last_change_times.get(cid, ""):
-                            last_change_times[cid] = latest_ts
-                            for entry in recent:
-                                if entry["timestamp"] > last_change_times.get(
-                                    cid + "_sent", ""
-                                ):
-                                    await resp.write(
-                                        f"event: change\n"
-                                        f"data: {json.dumps({'camera_id': cid, **entry})}\n\n".encode()
-                                    )
-                            last_change_times[cid + "_sent"] = latest_ts
-
-                # Keepalive ping
-                await resp.write(b": ping\n\n")
-                await asyncio.sleep(1.0)
-        except (asyncio.CancelledError, ConnectionResetError):
-            pass  # Client disconnected
-        return resp
 
     # ── Scene endpoints ───────────────────────────────────
 
@@ -638,21 +377,6 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             }
         )
 
-    # ── Dashboard + PWA routes ─────────────────────────
-    from .dashboard import DASHBOARD_HTML, MANIFEST_JSON
-
-    @routes.get("/dashboard")
-    async def get_dashboard(request: web.Request) -> web.Response:
-        """Serve the web dashboard (mobile-friendly, works on iOS)."""
-        return web.Response(text=DASHBOARD_HTML, content_type="text/html")
-
-    @routes.get("/manifest.json")
-    async def get_manifest(request: web.Request) -> web.Response:
-        """PWA manifest for Add to Home Screen."""
-        return web.Response(
-            text=MANIFEST_JSON, content_type="application/manifest+json"
-        )
-
     def _rule_to_dict(r: Any) -> dict[str, Any]:
         """Convert a WatchRule to a JSON-serializable dict."""
         return {
@@ -675,15 +399,31 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             "created_at": r.created_at.isoformat()
             if hasattr(r, "created_at") and r.created_at
             else None,
+            "owner_id": getattr(r, "owner_id", ""),
+            "owner_name": getattr(r, "owner_name", ""),
+            "custom_message": getattr(r, "custom_message", None),
         }
 
     @routes.get("/rules")
     async def get_rules(request: web.Request) -> web.Response:
-        """Return active watch rules as JSON."""
+        """Return active watch rules as JSON.
+
+        Query params:
+            owner_id: Filter to rules owned by this user (+ global rules with empty owner_id)
+        """
         engine = state.get("rules_engine")
         if engine is None:
             return web.json_response([])
         rules = engine.list_rules()
+        # Filter by owner_id if provided
+        owner_id = request.query.get("owner_id", "").strip()
+        if owner_id:
+            rules = [
+                r
+                for r in rules
+                if getattr(r, "owner_id", "") == owner_id
+                or getattr(r, "owner_id", "") == ""
+            ]
         return web.json_response([_rule_to_dict(r) for r in rules])
 
     @routes.post("/rules")
@@ -749,21 +489,59 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             priority=priority,
             notification=notification,
             cooldown_seconds=int(body.get("cooldown_seconds", 60)),
+            owner_id=body.get("owner_id", ""),
+            owner_name=body.get("owner_name", ""),
+            custom_message=body.get("custom_message") or None,
         )
         engine.add_rule(rule)
+        store = state.get("rules_store")
+        if store:
+            store.save(engine.list_rules())
+
+        # Start perception loops now that we have an active rule
+        ensure_loops = state.get("_ensure_perception_loops")
+        if ensure_loops:
+            asyncio.ensure_future(ensure_loops())
+
         return web.json_response(_rule_to_dict(rule), status=201)
 
     @routes.delete("/rules/{rule_id}")
     async def delete_rule(request: web.Request) -> web.Response:
-        """Delete a watch rule by ID."""
+        """Delete a watch rule by ID.
+
+        Query params:
+            owner_id: If provided, only delete if the rule belongs to this owner.
+                      Returns 403 if the rule belongs to a different owner.
+        """
         engine = state.get("rules_engine")
         if engine is None:
             return _json_error(503, "rules_unavailable", "Rules engine not initialized")
 
         rule_id = request.match_info["rule_id"]
+        owner_id = request.query.get("owner_id", "").strip()
+
+        # Ownership check: find the rule first
+        if owner_id:
+            rules = engine.list_rules()
+            target = None
+            for r in rules:
+                if r.id == rule_id:
+                    target = r
+                    break
+            if target is None:
+                return _json_error(404, "rule_not_found", f"Rule '{rule_id}' not found")
+            rule_owner = getattr(target, "owner_id", "")
+            if rule_owner and rule_owner != owner_id:
+                return _json_error(
+                    403, "forbidden", f"Rule '{rule_id}' belongs to another user"
+                )
+
         removed = engine.remove_rule(rule_id)
         if not removed:
             return _json_error(404, "rule_not_found", f"Rule '{rule_id}' not found")
+        store = state.get("rules_store")
+        if store:
+            store.save(engine.list_rules())
         return web.json_response({"deleted": rule_id})
 
     @routes.put("/rules/{rule_id}/toggle")
@@ -786,7 +564,152 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             return _json_error(404, "rule_not_found", f"Rule '{rule_id}' not found")
 
         target.enabled = not target.enabled
+        store = state.get("rules_store")
+        if store:
+            store.save(engine.list_rules())
         return web.json_response(_rule_to_dict(target))
+
+    # ── Rule Templates ─────────────────────────────────
+
+    @routes.get("/templates")
+    async def list_templates_endpoint(request: web.Request) -> web.Response:
+        """List pre-built rule templates for common monitoring scenarios."""
+        from .rules.templates import get_categories, list_templates
+
+        category = request.query.get("category", "")
+        templates = list_templates(category if category else None)
+        return web.json_response(
+            {
+                "templates": [
+                    {
+                        "id": t.id,
+                        "name": t.name,
+                        "icon": t.icon,
+                        "description": t.description,
+                        "category": t.category,
+                        "condition": t.condition,
+                        "priority": t.priority,
+                        "cooldown_seconds": t.cooldown_seconds,
+                    }
+                    for t in templates
+                ],
+                "categories": get_categories(),
+            }
+        )
+
+    @routes.post("/templates/{template_id}/create")
+    async def create_from_template(request: web.Request) -> web.Response:
+        """Create a watch rule from a pre-built template."""
+        from .rules.templates import get_template
+
+        template_id = request.match_info["template_id"]
+        template = get_template(template_id)
+        if template is None:
+            return _json_error(
+                404, "template_not_found", f"No template with id '{template_id}'"
+            )
+
+        engine = state.get("rules_engine")
+        if engine is None:
+            return _json_error(503, "rules_unavailable", "Rules engine not initialized")
+
+        # Parse optional overrides from body
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+
+        import uuid as _uuid
+
+        from .rules.models import NotificationTarget, RulePriority, WatchRule
+
+        notification_type = body.get("notification_type", "local")
+        # Auto-select best notification from config
+        cfg = state.get("_config")
+        if notification_type == "local" and cfg:
+            ncfg = cfg.notifications
+            if ncfg.telegram_bot_token:
+                notification_type = "telegram"
+            elif ncfg.discord_webhook_url:
+                notification_type = "discord"
+            elif ncfg.slack_webhook_url:
+                notification_type = "slack"
+            elif ncfg.ntfy_topic:
+                notification_type = "ntfy"
+
+        notif_target = None
+        notif_channel = body.get("notification_channel") or None
+        if notification_type == "telegram" and cfg:
+            notif_target = cfg.notifications.telegram_chat_id or None
+
+        rule = WatchRule(
+            id=f"r_{_uuid.uuid4().hex[:8]}",
+            name=template.name,
+            condition=template.condition,
+            camera_id=body.get("camera_id", ""),
+            priority=RulePriority(template.priority),
+            notification=NotificationTarget(
+                type=notification_type,
+                url=body.get("notification_url") or None,
+                channel=notif_channel,
+                target=notif_target,
+            ),
+            cooldown_seconds=template.cooldown_seconds,
+            custom_message=body.get("custom_message") or None,
+            owner_id=body.get("owner_id", ""),
+            owner_name=body.get("owner_name", ""),
+        )
+        engine.add_rule(rule)
+        store = state.get("rules_store")
+        if store:
+            store.save(engine.list_rules())
+
+        # Start perception loops
+        ensure_loops = state.get("_ensure_perception_loops")
+        if ensure_loops:
+            asyncio.ensure_future(ensure_loops())
+
+        return web.json_response(_rule_to_dict(rule), status=201)
+
+    # ── Discovery endpoint ─────────────────────────────
+
+    @routes.get("/discover")
+    async def discover_cameras_endpoint(request: web.Request) -> web.Response:
+        """Scan local network for RTSP/ONVIF cameras."""
+        from .camera.discover import discover_cameras
+
+        subnet = request.query.get("subnet", "")
+        timeout_str = request.query.get("timeout", "2.0")
+        try:
+            timeout_val = max(0.5, min(10.0, float(timeout_str)))
+        except ValueError:
+            timeout_val = 2.0
+
+        result = await discover_cameras(subnet=subnet, timeout=timeout_val)
+
+        return web.json_response(
+            {
+                "cameras": [
+                    {
+                        "ip": c.ip,
+                        "port": c.port,
+                        "rtsp_url": c.url,
+                        "brand": c.brand,
+                        "method": c.method,
+                        "name": c.name,
+                    }
+                    for c in result.cameras
+                ],
+                "scanned_hosts": result.scanned_hosts,
+                "scan_time_seconds": round(result.scan_time_seconds, 1),
+                "errors": result.errors,
+                "hint": (
+                    "Use POST /cameras with the rtsp_url to add a discovered camera."
+                    if result.cameras
+                    else "No cameras found. Ensure cameras are on the same network."
+                ),
+            }
+        )
 
     # ── Cameras endpoint ───────────────────────────────
 
@@ -837,6 +760,90 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             )
 
         return web.json_response(cameras)
+
+    @routes.post("/cameras")
+    async def add_camera(request: web.Request) -> web.Response:
+        """Register and open a new camera at runtime.
+
+        Body: {"type": "rtsp", "url": "rtsp://...", "name": "Kitchen", "id": "kitchen"}
+        Opens the camera, adds it to state, and starts the perception loop if available.
+        """
+        from .camera.factory import create_camera
+        from .camera.buffer import FrameBuffer
+        from .perception.scene_state import SceneState
+        from .config import CameraConfig
+
+        try:
+            body = await request.json()
+        except Exception:
+            return _json_error(400, "invalid_json", "Request body must be JSON")
+
+        cam_url = body.get("url", "")
+        cam_type = body.get("type", "")
+        if not cam_url or cam_type not in ("rtsp", "http"):
+            return _json_error(
+                400,
+                "invalid_camera",
+                "Required: 'url' and 'type' (rtsp or http)",
+            )
+
+        cam_id = body.get("id", f"cam:{len(state.get('cameras', {}))}")
+        cam_name = body.get("name", cam_id)
+
+        # Check for duplicate
+        if cam_id in state.get("cameras", {}):
+            return _json_error(409, "duplicate", f"Camera '{cam_id}' already exists")
+
+        cam_config = CameraConfig(
+            id=cam_id,
+            name=cam_name,
+            type=cam_type,
+            url=cam_url,
+            width=body.get("width", 1280),
+            height=body.get("height", 720),
+        )
+
+        config = state.get("config")
+        try:
+            camera = create_camera(cam_config)
+            await camera.open()
+        except Exception as e:
+            return _json_error(502, "camera_open_failed", f"Failed to open camera: {e}")
+
+        cameras_dict = state.setdefault("cameras", {})
+        cameras_dict[cam_id] = camera
+        state.setdefault("camera_configs", {})[cam_id] = cam_config
+        state.setdefault("frame_buffers", {})[cam_id] = FrameBuffer(
+            max_frames=config.perception.buffer_size if config else 300
+        )
+        state.setdefault("scene_states", {})[cam_id] = SceneState()
+        state.setdefault("camera_health", {})[cam_id] = {
+            "camera_id": cam_id,
+            "camera_name": cam_name,
+            "consecutive_errors": 0,
+            "backoff_until": None,
+            "last_success_at": None,
+            "last_error": "",
+            "last_frame_at": None,
+            "status": "running",
+        }
+
+        # Start perception loop for the new camera if rules exist
+        engine = state.get("rules_engine")
+        ensure_loops = state.get("_ensure_perception_loops")
+        if ensure_loops and engine and engine.get_active_rules():
+            asyncio.ensure_future(ensure_loops())
+
+        return web.json_response(
+            {
+                "id": cam_id,
+                "name": cam_name,
+                "type": cam_type,
+                "status": "opened",
+                "message": f"Camera '{cam_name}' registered and streaming",
+            },
+            status=201,
+        )
 
     @routes.post("/cameras/open")
     async def open_cameras(request: web.Request) -> web.Response:
@@ -905,8 +912,10 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         """Optional bearer token authentication."""
         if not auth_token:
             return await handler(request)
-        # Skip auth for CORS preflight and PWA manifest
-        if request.method == "OPTIONS" or request.path == "/manifest.json":
+        # Skip auth for CORS preflight and health checks
+        if request.method == "OPTIONS":
+            return await handler(request)
+        if request.path == "/health" or request.path.startswith("/health/"):
             return await handler(request)
         # Check Authorization header
         auth_header = request.headers.get("Authorization", "")

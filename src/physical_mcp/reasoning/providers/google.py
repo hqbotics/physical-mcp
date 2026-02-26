@@ -37,6 +37,29 @@ class GoogleProvider(VisionProvider):
         text = await self.analyze_image(image_b64, prompt)
         return extract_json(text)
 
+    async def analyze_images(self, images_b64: list[str], prompt: str) -> str:
+        """Send multiple images in a single API call for temporal context."""
+        from google.genai import types
+
+        parts = []
+        for img in images_b64:
+            image_bytes = base64.b64decode(img)
+            parts.append(
+                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
+            )
+        parts.append(types.Part.from_text(text=prompt))
+
+        response = await self._client.aio.models.generate_content(
+            model=self._model,
+            contents=parts,
+            config=types.GenerateContentConfig(max_output_tokens=1024),
+        )
+        return response.text
+
+    async def analyze_images_json(self, images_b64: list[str], prompt: str) -> dict:
+        text = await self.analyze_images(images_b64, prompt)
+        return extract_json(text)
+
     @property
     def provider_name(self) -> str:
         return "google"

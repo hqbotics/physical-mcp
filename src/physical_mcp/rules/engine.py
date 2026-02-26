@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from ..perception.scene_state import SceneState
 from .models import AlertEvent, RuleEvaluation, WatchRule
+
+logger = logging.getLogger("physical-mcp")
 
 
 class RulesEngine:
@@ -47,7 +50,14 @@ class RulesEngine:
         now = datetime.now()
         alerts = []
         for ev in evaluations:
-            if not ev.triggered or ev.confidence < 0.7:
+            # Log ALL evaluations for debugging
+            rule = self._rules.get(ev.rule_id)
+            rule_name = rule.name if rule else "unknown"
+            logger.info(
+                f"📊 EVAL: {rule_name} — triggered={ev.triggered}, "
+                f"confidence={ev.confidence:.2f}, reason={ev.reasoning[:100]}"
+            )
+            if not ev.triggered or ev.confidence < 0.75:
                 continue
             rule = self._rules.get(ev.rule_id)
             if rule is None or not rule.enabled:

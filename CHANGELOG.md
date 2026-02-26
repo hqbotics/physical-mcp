@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-02-26
+
+### Added
+- Cloud-ready deployment: Fly.io, Docker, headless mode with env var configuration
+- RTSP/HTTP IP camera support for cloud relay architecture
+- Dynamic camera registration via REST API (POST /cameras)
+- Direct messaging notifiers: Telegram (with photo), Discord (embeds), Slack (Block Kit)
+- LAN camera auto-discovery via async TCP port scan
+- 14 pre-built rule templates across 5 categories (security, pets, family, automation, business)
+- MCP tools: `list_rule_templates()`, `create_rule_from_template()`
+- REST API: GET /templates, POST /templates/{id}/create
+- Consumer-friendly error messages with actionable fix suggestions
+- Fly.io auto-deploy CI workflow (on push to main)
+- Full headless perception pipeline: camera → frame analysis → rule evaluation → notification dispatch
+
+### Fixed
+- Telegram notification emoji encoding (surrogate pairs → proper Unicode)
+- Perception loop not starting from REST API (POST /rules, POST /cameras)
+- Headless mode missing full pipeline (notifier, stats, memory, rules store)
+- Critical bug: alerts silently dropped after trigger (cooldown filter excluded just-triggered rules)
+- Stale alerts firing after watch rule deletion
+- Heartbeat cost optimization (from ~$155/mo to ~$5-15/mo)
+
+### Changed
+- Architecture: MCP server (port 8400) + Vision REST API (port 8090) dual-port mode
+- Auto-select best notification channel (Telegram > Discord > Slack > ntfy)
+- Rule evaluation uses `list_rules()` instead of `get_active_rules()` to prevent alert loss
+
 ## [1.0.0] - 2026-02-21
 
 ### Added

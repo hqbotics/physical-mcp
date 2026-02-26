@@ -468,8 +468,9 @@ class TestPerceptionLoopProviderErrorCorrelation:
 
         scene_state = MagicMock()
         rules_engine = MagicMock()
-        active_rule = SimpleNamespace(id="r_123", name="Front Door Watch")
+        active_rule = SimpleNamespace(id="r_123", name="Front Door Watch", enabled=True)
         rules_engine.get_active_rules.return_value = [active_rule]
+        rules_engine.list_rules.return_value = [active_rule]
         alert = SimpleNamespace(
             rule=SimpleNamespace(id="r_123", name="Front Door Watch"),
             evaluation=SimpleNamespace(
@@ -1362,7 +1363,10 @@ class TestGetCameraHealthContract:
                 mcp_result["cameras"][cid]["message"]
                 == "No health data yet. Start monitoring first."
             )
-            assert api_result["cameras"][cid]["message"] == "No health data yet."
+            assert (
+                api_result["cameras"][cid]["message"]
+                == "No health data yet. Start monitoring first."
+            )
 
 
 class TestConfigureProviderContract:

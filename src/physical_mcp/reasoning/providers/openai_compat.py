@@ -6,8 +6,13 @@ that implements the OpenAI chat completions API with vision support.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from .base import VisionProvider
 from .json_extract import extract_json
+
+logger = logging.getLogger("physical-mcp")
 
 
 class OpenAICompatProvider(VisionProvider):
@@ -60,11 +65,48 @@ class OpenAICompatProvider(VisionProvider):
         text = await self.analyze_image(image_b64, prompt)
         return extract_json(text)
 
+    async def analyze_images(self, images_b64: list[str], prompt: str) -> str:
+        """Send multiple images in a single API call for temporal context."""
+        content: list[dict] = []
+        for img in images_b64:
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{img}",
+                        "detail": "low",
+                    },
+                }
+            )
+        content.append({"type": "text", "text": prompt})
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": content}],
+        )
+        result = response.choices[0].message.content
+        if result is None:
+            raise ValueError("Provider returned empty content (None)")
+        return result
+
+    async def analyze_images_json(self, images_b64: list[str], prompt: str) -> dict:
+        text = await self.analyze_images(images_b64, prompt)
+        return extract_json(text)
+
     @property
     def provider_name(self) -> str:
         if self._base_url:
             return f"openai-compatible ({self._base_url})"
         return "openai"
+
+    async def warmup(self) -> None:
+        """Pre-establish HTTP connection to reduce first-call latency."""
+        try:
+            await asyncio.wait_for(self._client.models.list(), timeout=5.0)
+            logger.info("API connection warmed up (%s)", self._base_url or "openai")
+        except Exception:
+            # Best-effort — connection pool is warmed even if the call fails
+            logger.debug("Warmup call failed (connection may still be pooled)")
 
     @property
     def model_name(self) -> str:

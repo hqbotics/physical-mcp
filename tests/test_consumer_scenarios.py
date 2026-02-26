@@ -414,6 +414,217 @@ class TestDispatcherRouting:
 
         await dispatcher.close()
 
+    @pytest.mark.asyncio
+    async def test_dispatcher_multichannel_fanout(self):
+        """Comma-separated channels/targets fan out to multiple notifiers."""
+        config = NotificationsConfig(
+            openclaw_channel="slack",
+            openclaw_target="C123",
+            desktop_enabled=False,
+        )
+        dispatcher = NotificationDispatcher(config)
+
+        rule = _make_rule(
+            "r1",
+            notif_type="openclaw",
+            channel="slack,discord",
+            target="C123,987654321",
+        )
+        evaluation = _make_eval()
+        alert = AlertEvent(rule=rule, evaluation=evaluation, scene_summary="test")
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"ok", b""))
+        mock_proc.returncode = 0
+
+        with (
+            patch(
+                "asyncio.create_subprocess_exec", return_value=mock_proc
+            ) as mock_exec,
+            patch("os.path.exists", return_value=False),
+        ):
+            await dispatcher.dispatch(alert)
+
+        # Should have been called twice — once for slack, once for discord
+        assert mock_exec.call_count == 2
+        calls = mock_exec.call_args_list
+        # First call: slack
+        args0 = calls[0][0]
+        idx = args0.index("--channel")
+        assert args0[idx + 1] == "slack"
+        idx = args0.index("--target")
+        assert args0[idx + 1] == "C123"
+        # Second call: discord
+        args1 = calls[1][0]
+        idx = args1.index("--channel")
+        assert args1[idx + 1] == "discord"
+        idx = args1.index("--target")
+        assert args1[idx + 1] == "987654321"
+
+        await dispatcher.close()
+
+
+class TestMultiUserOwnership:
+    """Multi-user rule isolation — each person owns their rules."""
+
+    def test_owner_fields_default_empty(self):
+        """WatchRule owner_id and owner_name default to empty string."""
+        rule = _make_rule("r1")
+        assert rule.owner_id == ""
+        assert rule.owner_name == ""
+
+    def test_owner_fields_set(self):
+        """WatchRule accepts owner_id and owner_name."""
+        rule = WatchRule(
+            id="r_owned",
+            name="Alice's door watch",
+            condition="person at door",
+            priority=RulePriority.HIGH,
+            notification=NotificationTarget(
+                type="openclaw", channel="slack", target="U12345"
+            ),
+            owner_id="slack:U12345",
+            owner_name="Alice",
+        )
+        assert rule.owner_id == "slack:U12345"
+        assert rule.owner_name == "Alice"
+
+    def test_owner_fields_persist_roundtrip(self):
+        """owner_id/owner_name survive save -> load via RulesStore."""
+        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as f:
+            path = f.name
+
+        store = RulesStore(path)
+        rule = WatchRule(
+            id="r_persist",
+            name="Bob's kitchen watch",
+            condition="smoke visible",
+            priority=RulePriority.CRITICAL,
+            notification=NotificationTarget(
+                type="openclaw", channel="discord", target="987654"
+            ),
+            owner_id="discord:987654",
+            owner_name="Bob",
+        )
+        store.save([rule])
+
+        loaded = store.load()
+        assert len(loaded) == 1
+        assert loaded[0].owner_id == "discord:987654"
+        assert loaded[0].owner_name == "Bob"
+
+    def test_multiple_owners_coexist(self):
+        """Rules from different users coexist in engine."""
+        engine = RulesEngine()
+        alice_rule = WatchRule(
+            id="r_alice",
+            name="Alice's rule",
+            condition="cat on couch",
+            owner_id="slack:U111",
+            owner_name="Alice",
+        )
+        bob_rule = WatchRule(
+            id="r_bob",
+            name="Bob's rule",
+            condition="dog in yard",
+            owner_id="discord:D222",
+            owner_name="Bob",
+        )
+        engine.add_rule(alice_rule)
+        engine.add_rule(bob_rule)
+
+        all_rules = engine.list_rules()
+        assert len(all_rules) == 2
+
+        # Both rules are active
+        active = engine.get_active_rules()
+        assert len(active) == 2
+
+    def test_owner_in_model_dump(self):
+        """model_dump includes owner_id and owner_name."""
+        rule = WatchRule(
+            id="r_dump",
+            name="Test rule",
+            condition="test",
+            owner_id="slack:U999",
+            owner_name="Charlie",
+        )
+        data = rule.model_dump(mode="json")
+        assert data["owner_id"] == "slack:U999"
+        assert data["owner_name"] == "Charlie"
+
+    def test_backward_compat_no_owner(self):
+        """Rules without owner fields still work (backward compatible)."""
+        engine = RulesEngine()
+        old_rule = _make_rule("r_old")
+        assert old_rule.owner_id == ""
+        engine.add_rule(old_rule)
+        scene = SceneState()
+        alerts = engine.process_evaluations([_make_eval(rule_id="r_old")], scene)
+        assert len(alerts) == 1
+
+
+class TestCameraConfig:
+    """Camera configuration and multi-camera support."""
+
+    def test_config_loads_multiple_cameras(self):
+        """Config file with two cameras loads both."""
+        from physical_mcp.config import PhysicalMCPConfig, CameraConfig
+
+        config = PhysicalMCPConfig(
+            cameras=[
+                CameraConfig(id="usb:0", name="Camera 1", device_index=0),
+                CameraConfig(id="usb:1", name="Camera 2", device_index=1),
+            ]
+        )
+        assert len(config.cameras) == 2
+        assert config.cameras[0].id == "usb:0"
+        assert config.cameras[1].id == "usb:1"
+
+    def test_config_camera_enabled_filter(self):
+        """Only enabled cameras are active."""
+        from physical_mcp.config import PhysicalMCPConfig, CameraConfig
+
+        config = PhysicalMCPConfig(
+            cameras=[
+                CameraConfig(id="usb:0", enabled=True),
+                CameraConfig(id="usb:1", enabled=False),
+                CameraConfig(id="usb:2", enabled=True),
+            ]
+        )
+        enabled = [c for c in config.cameras if c.enabled]
+        assert len(enabled) == 2
+        assert {c.id for c in enabled} == {"usb:0", "usb:2"}
+
+    def test_save_config_roundtrip(self):
+        """save_config -> load_config preserves camera list."""
+        from physical_mcp.config import (
+            PhysicalMCPConfig,
+            CameraConfig,
+            save_config,
+            load_config,
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as f:
+            path = f.name
+
+        config = PhysicalMCPConfig(
+            cameras=[
+                CameraConfig(id="usb:0", name="Front", device_index=0),
+                CameraConfig(
+                    id="http:192.168.1.50",
+                    name="iPhone Kitchen",
+                    type="http",
+                    url="http://192.168.1.50:81/stream",
+                ),
+            ]
+        )
+        save_config(config, path)
+        loaded = load_config(path)
+        assert len(loaded.cameras) == 2
+        assert loaded.cameras[1].name == "iPhone Kitchen"
+        assert loaded.cameras[1].type == "http"
+
 
 class TestStaleCache:
     """Server was down, comes back -> fresh state."""

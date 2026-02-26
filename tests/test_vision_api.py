@@ -19,6 +19,7 @@ def _make_state(with_frame: bool = True, with_scene: bool = True) -> dict:
         "scene_states": {},
         "frame_buffers": {},
         "camera_configs": {},
+        "pending_cameras": {},  # Prevent loading stale data from disk
     }
 
     if with_scene:
@@ -238,159 +239,6 @@ class TestCORS:
         assert resp.headers.get("Access-Control-Allow-Origin") == "*"
 
 
-# ── MJPEG stream endpoint ────────────────────────────────────
-
-
-class TestMJPEGStream:
-    @pytest.mark.asyncio
-    async def test_stream_returns_multipart(self, state_with_data):
-        """Stream endpoint returns multipart content with JPEG frames."""
-        # Set wait_for_frame to return frame then raise to stop loop
-        mock_frame = MagicMock()
-        mock_frame.to_jpeg_bytes.return_value = b"\xff\xd8\xff\xe0fakejpeg"
-
-        call_count = 0
-
-        async def _wait_for_frame(timeout=5.0):
-            nonlocal call_count
-            call_count += 1
-            if call_count > 2:
-                raise asyncio.CancelledError()
-            return mock_frame
-
-        state_with_data["frame_buffers"]["usb:0"].wait_for_frame = _wait_for_frame
-
-        app = create_vision_routes(state_with_data)
-        async with TestClient(TestServer(app)) as client:
-            resp = await client.get("/stream")
-            assert resp.status == 200
-            assert "multipart/x-mixed-replace" in resp.content_type
-            body = await resp.read()
-            assert b"--frame" in body
-            assert b"\xff\xd8" in body
-
-    @pytest.mark.asyncio
-    async def test_stream_no_cameras_503(self, client_empty):
-        resp = await client_empty.get("/stream")
-        assert resp.status == 503
-
-    @pytest.mark.asyncio
-    async def test_stream_unknown_camera_404(self, state_with_data):
-        app = create_vision_routes(state_with_data)
-        async with TestClient(TestServer(app)) as client:
-            resp = await client.get("/stream/usb:99")
-            assert resp.status == 404
-
-    @pytest.mark.asyncio
-    async def test_stream_specific_camera(self, state_with_data):
-        """Stream from a specific camera ID."""
-        call_count = 0
-        mock_frame = MagicMock()
-        mock_frame.to_jpeg_bytes.return_value = b"\xff\xd8\xff\xe0jpeg"
-
-        async def _wait(timeout=5.0):
-            nonlocal call_count
-            call_count += 1
-            if call_count > 1:
-                raise asyncio.CancelledError()
-            return mock_frame
-
-        state_with_data["frame_buffers"]["usb:0"].wait_for_frame = _wait
-
-        app = create_vision_routes(state_with_data)
-        async with TestClient(TestServer(app)) as client:
-            resp = await client.get("/stream/usb:0")
-            assert resp.status == 200
-
-    @pytest.mark.asyncio
-    async def test_stream_sets_low_latency_headers(self, state_with_data):
-        """Stream response carries anti-buffering headers for proxy/LAN clients."""
-
-        call_count = 0
-        mock_frame = MagicMock()
-        mock_frame.to_jpeg_bytes.return_value = b"\xff\xd8\xff\xe0jpeg"
-
-        async def _wait(timeout=5.0):
-            nonlocal call_count
-            call_count += 1
-            if call_count > 1:
-                raise asyncio.CancelledError()
-            return mock_frame
-
-        state_with_data["frame_buffers"]["usb:0"].wait_for_frame = _wait
-
-        app = create_vision_routes(state_with_data)
-        async with TestClient(TestServer(app)) as client:
-            resp = await client.get("/stream")
-            assert resp.status == 200
-            assert resp.headers.get("Pragma") == "no-cache"
-            assert resp.headers.get("X-Accel-Buffering") == "no"
-
-    @pytest.mark.asyncio
-    async def test_stream_supports_three_concurrent_clients(self, state_with_data):
-        """At least 3 simultaneous clients can receive MJPEG chunks."""
-
-        mock_frame = MagicMock()
-        mock_frame.to_jpeg_bytes.return_value = b"\xff\xd8\xff\xe0multi"
-
-        async def _wait(timeout=5.0):
-            await asyncio.sleep(0)
-            return mock_frame
-
-        state_with_data["frame_buffers"]["usb:0"].wait_for_frame = _wait
-
-        app = create_vision_routes(state_with_data)
-        async with TestClient(TestServer(app)) as client:
-
-            async def _open_and_read() -> tuple[int, bytes]:
-                resp = await client.get("/stream/usb:0?fps=5")
-                body = await resp.content.read(256)
-                await resp.release()
-                return resp.status, body
-
-            results = await asyncio.gather(
-                _open_and_read(), _open_and_read(), _open_and_read()
-            )
-            for status, body in results:
-                assert status == 200
-                assert b"--frame" in body
-                assert b"\xff\xd8" in body
-
-
-# ── SSE events endpoint ──────────────────────────────────────
-
-
-class TestSSEEvents:
-    @pytest.mark.asyncio
-    async def test_events_returns_sse(self, state_with_data):
-        """Events endpoint returns text/event-stream with scene data."""
-
-        # We need to make the SSE loop terminate after sending initial data
-        app = create_vision_routes(state_with_data)
-        async with TestClient(TestServer(app)) as client:
-            # Read with a short timeout — SSE is infinite
-            resp = await client.get("/events")
-            assert resp.status == 200
-            assert resp.content_type == "text/event-stream"
-
-            # Read first chunk (scene event + ping)
-            chunk = await resp.content.read(4096)
-            text = chunk.decode()
-            assert "event: scene" in text
-            assert "Two people at a desk with laptops" in text
-
-    @pytest.mark.asyncio
-    async def test_events_filter_by_camera(self, state_with_data):
-        """Filter SSE events to a specific camera."""
-        app = create_vision_routes(state_with_data)
-        async with TestClient(TestServer(app)) as client:
-            resp = await client.get("/events?camera_id=usb:0")
-            assert resp.status == 200
-            chunk = await resp.content.read(4096)
-            text = chunk.decode()
-            assert "usb:0" in text
-
-
 # ── Long-poll changes endpoint ───────────────────────────────
 
 
@@ -550,7 +398,7 @@ class TestHealthAndAlerts:
             assert health["consecutive_errors"] == 0
             assert health["backoff_until"] is None
             assert health["last_success_at"] is None
-            assert health["message"] == "No health data yet."
+            assert health["message"] == "No health data yet. Start monitoring first."
 
     @pytest.mark.asyncio
     async def test_health_single_malformed_row_contains_required_camera_health_keys(
@@ -716,7 +564,7 @@ class TestHealthAndAlerts:
             assert unknown["camera_id"] == "usb:9"
             assert unknown["camera_name"] == "usb:9"
             assert unknown["status"] == "unknown"
-            assert unknown["message"] == "No health data yet."
+            assert unknown["message"] == "No health data yet. Start monitoring first."
 
     @pytest.mark.asyncio
     async def test_health_all_rows_always_include_required_camera_health_keys(
@@ -2069,3 +1917,185 @@ class TestAlertsSinceAndLimit:
             data = await resp.json()
             assert data["count"] == 1
             assert data["events"][0]["event_id"] == "evt_eqs_3"
+
+
+# ── Rules owner_id support ───────────────────────────────────
+
+
+def _make_rules_state() -> dict:
+    """State dict with a rules engine for testing CRUD with owner_id."""
+    from physical_mcp.rules.engine import RulesEngine
+
+    state = _make_state(with_frame=False, with_scene=False)
+    state["rules_engine"] = RulesEngine()
+    return state
+
+
+class TestRulesOwnerIdAPI:
+    """Vision API rules endpoints with owner_id support."""
+
+    @pytest.mark.asyncio
+    async def test_create_rule_with_owner_id(self):
+        """POST /rules with owner_id persists it."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/rules",
+                json={
+                    "name": "Grandma's door watch",
+                    "condition": "person at door",
+                    "owner_id": "whatsapp:+8613800138000",
+                    "owner_name": "Grandma",
+                    "custom_message": "Someone's at the door!",
+                },
+            )
+            assert resp.status == 201
+            data = await resp.json()
+            assert data["owner_id"] == "whatsapp:+8613800138000"
+            assert data["owner_name"] == "Grandma"
+            assert data["custom_message"] == "Someone's at the door!"
+
+    @pytest.mark.asyncio
+    async def test_create_rule_without_owner_id_defaults_empty(self):
+        """POST /rules without owner_id defaults to empty string."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/rules",
+                json={
+                    "name": "Test rule",
+                    "condition": "test condition",
+                },
+            )
+            assert resp.status == 201
+            data = await resp.json()
+            assert data["owner_id"] == ""
+            assert data["owner_name"] == ""
+
+    @pytest.mark.asyncio
+    async def test_list_rules_filters_by_owner_id(self):
+        """GET /rules?owner_id=X returns only that user's rules + global rules."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            # Create rules for different owners
+            await client.post(
+                "/rules",
+                json={
+                    "name": "Alice's rule",
+                    "condition": "cat on couch",
+                    "owner_id": "discord:111",
+                },
+            )
+            await client.post(
+                "/rules",
+                json={
+                    "name": "Bob's rule",
+                    "condition": "dog in yard",
+                    "owner_id": "discord:222",
+                },
+            )
+            await client.post(
+                "/rules",
+                json={
+                    "name": "Global rule",
+                    "condition": "fire detected",
+                    # No owner_id — global rule
+                },
+            )
+
+            # Alice sees her rule + global
+            resp = await client.get("/rules?owner_id=discord:111")
+            data = await resp.json()
+            names = {r["name"] for r in data}
+            assert "Alice's rule" in names
+            assert "Global rule" in names
+            assert "Bob's rule" not in names
+
+            # Bob sees his rule + global
+            resp = await client.get("/rules?owner_id=discord:222")
+            data = await resp.json()
+            names = {r["name"] for r in data}
+            assert "Bob's rule" in names
+            assert "Global rule" in names
+            assert "Alice's rule" not in names
+
+            # No filter → all rules
+            resp = await client.get("/rules")
+            data = await resp.json()
+            assert len(data) == 3
+
+    @pytest.mark.asyncio
+    async def test_delete_rule_ownership_check(self):
+        """DELETE /rules/{id}?owner_id=X rejects if rule belongs to another user."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            # Create Alice's rule
+            resp = await client.post(
+                "/rules",
+                json={
+                    "name": "Alice's rule",
+                    "condition": "cat on couch",
+                    "owner_id": "discord:111",
+                },
+            )
+            rule_id = (await resp.json())["id"]
+
+            # Bob tries to delete → 403
+            resp = await client.delete(f"/rules/{rule_id}?owner_id=discord:222")
+            assert resp.status == 403
+            data = await resp.json()
+            assert data["code"] == "forbidden"
+
+            # Alice deletes her own rule → 200
+            resp = await client.delete(f"/rules/{rule_id}?owner_id=discord:111")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["deleted"] == rule_id
+
+    @pytest.mark.asyncio
+    async def test_delete_rule_no_owner_id_always_works(self):
+        """DELETE /rules/{id} without owner_id works (backward compatible)."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/rules",
+                json={
+                    "name": "Test rule",
+                    "condition": "test",
+                    "owner_id": "discord:111",
+                },
+            )
+            rule_id = (await resp.json())["id"]
+
+            # Delete without owner_id → works
+            resp = await client.delete(f"/rules/{rule_id}")
+            assert resp.status == 200
+
+    @pytest.mark.asyncio
+    async def test_rule_to_dict_includes_owner_fields(self):
+        """GET /rules response includes owner_id, owner_name, custom_message."""
+        state = _make_rules_state()
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            await client.post(
+                "/rules",
+                json={
+                    "name": "Test rule",
+                    "condition": "test",
+                    "owner_id": "telegram:999",
+                    "owner_name": "Grandpa",
+                    "custom_message": "Alert!",
+                },
+            )
+            resp = await client.get("/rules")
+            data = await resp.json()
+            assert len(data) == 1
+            rule = data[0]
+            assert rule["owner_id"] == "telegram:999"
+            assert rule["owner_name"] == "Grandpa"
+            assert rule["custom_message"] == "Alert!"

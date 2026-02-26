@@ -96,6 +96,6 @@ class TestAnalyzerTimeout:
         result = await analyzer.analyze_scene(frame, scene, config)
         assert result["summary"] == "fast response"
 
-    async def test_timeout_constant_is_30_seconds(self):
-        """Verify the default timeout is 30 seconds."""
-        assert LLM_CALL_TIMEOUT == 30.0
+    async def test_timeout_constant_is_15_seconds(self):
+        """Verify the default timeout is 15 seconds."""
+        assert LLM_CALL_TIMEOUT == 15.0

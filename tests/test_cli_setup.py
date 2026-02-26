@@ -21,14 +21,8 @@ class TestSetupCommand:
             "physical_mcp.camera.usb.USBCamera.enumerate_cameras",
             lambda: [],
         )
-        monkeypatch.setattr(
-            "physical_mcp.ai_apps.configure_all",
-            lambda: [],
-        )
 
-        result = runner.invoke(
-            main, ["setup", "--config", str(config_path)], input="n\nn\n"
-        )
+        result = runner.invoke(main, ["setup", "--config", str(config_path)])
 
         assert result.exit_code == 0
         assert config_path.exists()
@@ -49,17 +43,11 @@ class TestSetupCommand:
             lambda: [],
         )
         monkeypatch.setattr(
-            "physical_mcp.ai_apps.configure_all",
-            lambda: [],
-        )
-        monkeypatch.setattr(
             "secrets.token_urlsafe",
             lambda _: "tok_abcdefghijklmnopqrstuvwxyz_0123456789",
         )
 
-        result = runner.invoke(
-            main, ["setup", "--config", str(config_path)], input="n\nn\n"
-        )
+        result = runner.invoke(main, ["setup", "--config", str(config_path)])
 
         assert result.exit_code == 0
         assert "Vision API auth token generated: tok_ab...6789" in result.output
