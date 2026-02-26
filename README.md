@@ -151,12 +151,12 @@ physical-mcp --version     # version
 
 ---
 
-## Developer docs
+## Guides
 
-- [Migration: client-side -> server-side](docs/migration-client-to-server-side.md)
+- **[Setup Guide](docs/setup-guide.md)** — Full walkthrough: install, configure, first alert (10 min)
+- [Architecture](docs/architecture.md) — How the system works under the hood
 - [Vision agent architecture](docs/openclaw-vision-agent-architecture.md)
-- [Replay/cursor migration notes](docs/replay-cursor-migration.md)
-- [v1 hardening changelog](docs/v1-hardening-changelog.md)
+- [Platform quickstarts](docs/) — Claude Desktop, ChatGPT, Cursor, VS Code, Gemini, Docker
 
 ---
 
