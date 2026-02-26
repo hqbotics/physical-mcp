@@ -755,8 +755,10 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         """Optional bearer token authentication."""
         if not auth_token:
             return await handler(request)
-        # Skip auth for CORS preflight
+        # Skip auth for CORS preflight and health checks
         if request.method == "OPTIONS":
+            return await handler(request)
+        if request.path == "/health" or request.path.startswith("/health/"):
             return await handler(request)
         # Check Authorization header
         auth_header = request.headers.get("Authorization", "")

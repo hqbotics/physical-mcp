@@ -1,22 +1,26 @@
-app = "physical-mcp"
-primary_region = "hkg"
+# fly.toml — physical-mcp cloud deployment
+# https://fly.io/docs/reference/configuration/
+
+app = 'physical-mcp'
+primary_region = 'sin'
 
 [build]
-  dockerfile = "Dockerfile"
 
 [http_service]
   internal_port = 8090
   force_https = true
-  auto_stop_machines = false
+  auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 1
-
-[[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  min_machines_running = 0
+  processes = ['app']
 
 [env]
   PHYSICAL_MCP_HEADLESS = "1"
   REASONING_PROVIDER = "openai-compatible"
   REASONING_MODEL = "google/gemini-2.0-flash-001"
   REASONING_BASE_URL = "https://openrouter.ai/api/v1"
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
