@@ -491,6 +491,9 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             custom_message=body.get("custom_message") or None,
         )
         engine.add_rule(rule)
+        store = state.get("rules_store")
+        if store:
+            store.save(engine.list_rules())
         return web.json_response(_rule_to_dict(rule), status=201)
 
     @routes.delete("/rules/{rule_id}")
@@ -527,6 +530,9 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         removed = engine.remove_rule(rule_id)
         if not removed:
             return _json_error(404, "rule_not_found", f"Rule '{rule_id}' not found")
+        store = state.get("rules_store")
+        if store:
+            store.save(engine.list_rules())
         return web.json_response({"deleted": rule_id})
 
     @routes.put("/rules/{rule_id}/toggle")
@@ -549,6 +555,9 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             return _json_error(404, "rule_not_found", f"Rule '{rule_id}' not found")
 
         target.enabled = not target.enabled
+        store = state.get("rules_store")
+        if store:
+            store.save(engine.list_rules())
         return web.json_response(_rule_to_dict(target))
 
     # ── Cameras endpoint ───────────────────────────────
