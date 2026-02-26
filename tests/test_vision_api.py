@@ -2292,3 +2292,75 @@ class TestTemplateEndpoints:
                 "/templates/person-detection/create",
             )
             assert resp.status == 201
+
+
+# ── Camera list endpoint tests ─────────────────────────────
+
+
+class TestCameraEndpoints:
+    """Tests for /cameras REST endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_get_cameras_empty(self):
+        """GET /cameras with no cameras returns empty list."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/cameras")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data == []
+
+    @pytest.mark.asyncio
+    async def test_get_cameras_with_scene(self):
+        """GET /cameras returns camera with scene data."""
+        state = _make_state(with_frame=True, with_scene=True)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/cameras")
+            assert resp.status == 200
+            data = await resp.json()
+            assert len(data) == 1
+            cam = data[0]
+            assert cam["id"] == "usb:0"
+            assert cam["name"] == "Office"
+            assert cam["type"] == "usb"
+            assert cam["scene"] is not None
+            assert cam["scene"]["summary"] == "Two people at a desk with laptops"
+            assert cam["scene"]["people_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_post_cameras_missing_url(self):
+        """POST /cameras without url returns 400."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post("/cameras", json={"type": "rtsp"})
+            assert resp.status == 400
+            data = await resp.json()
+            assert data["code"] == "invalid_camera"
+
+    @pytest.mark.asyncio
+    async def test_post_cameras_invalid_type(self):
+        """POST /cameras with invalid type returns 400."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/cameras",
+                json={"type": "usb", "url": "rtsp://example.com"},
+            )
+            assert resp.status == 400
+
+    @pytest.mark.asyncio
+    async def test_post_cameras_invalid_json(self):
+        """POST /cameras with non-JSON body returns 400."""
+        state = _make_state(with_frame=False, with_scene=False)
+        app = create_vision_routes(state)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/cameras",
+                data=b"not json",
+                headers={"Content-Type": "text/plain"},
+            )
+            assert resp.status == 400
