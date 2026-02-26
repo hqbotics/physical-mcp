@@ -23,7 +23,12 @@ class TestFriendlyCameraErrors:
             CameraConnectionError("Camera not authorized to capture video")
         )
         assert "permission" in err.title.lower()
-        assert "Settings" in err.fix or "privacy" in err.fix.lower()
+        # Fix text varies by platform (macOS: "Settings", Linux: "video group")
+        assert (
+            "Settings" in err.fix
+            or "privacy" in err.fix.lower()
+            or "video" in err.fix.lower()
+        )
 
     def test_camera_not_found(self):
         err = friendly_camera_error(
