@@ -1025,6 +1025,8 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         removed = engine.remove_rule(rule_id)
         if removed:
             store.save(engine.list_rules())
+            queue: AlertQueue = state["alert_queue"]
+            await queue.flush_rule(rule_id)
             memory: MemoryStore = state["memory"]
             memory.append_event(f"Rule '{rule_id}' removed")
             memory.remove_rule_context(rule_id)

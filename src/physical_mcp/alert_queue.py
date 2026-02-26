@@ -55,6 +55,20 @@ class AlertQueue:
             self._prune_expired()
             return len(self._queue)
 
+    async def flush_rule(self, rule_id: str) -> int:
+        """Remove pending alerts that reference a specific rule."""
+        async with self._lock:
+            before = len(self._queue)
+            self._queue = deque(
+                (
+                    a
+                    for a in self._queue
+                    if not any(r.get("id") == rule_id for r in a.active_rules)
+                ),
+                maxlen=self._queue.maxlen,
+            )
+            return before - len(self._queue)
+
     def _prune_expired(self) -> None:
         """Remove alerts that have exceeded their TTL."""
         now = datetime.now()

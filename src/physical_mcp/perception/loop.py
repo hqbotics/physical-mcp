@@ -145,6 +145,9 @@ async def _evaluate_via_sampling(
             scene_state,
             frame_base64=frame_b64,
         )
+        # Re-validate: drop alerts for rules deleted during LLM sampling call
+        live_ids = {r.id for r in rules_engine.get_active_rules()}
+        alerts = [a for a in alerts if a.rule.id in live_ids]
         for alert in alerts:
             stats.record_alert()
             logger.info(
@@ -373,6 +376,9 @@ async def perception_loop(
                         scene_state,
                         frame_base64=frame_b64,
                     )
+                    # Re-validate: drop alerts for rules deleted during LLM call
+                    live_ids = {r.id for r in rules_engine.get_active_rules()}
+                    alerts = [a for a in alerts if a.rule.id in live_ids]
                     for alert in alerts:
                         stats.record_alert()
                         logger.info(
