@@ -260,15 +260,8 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 #zoom-ctrl button:hover { background:var(--surface2); border-color:var(--accent); }
 #zoom-pct { font-size:10px; color:var(--dim); text-align:center; }
 
-/* ─── Title bar ──────────────────────────────────────── */
-#title-bar {
-  position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:40;
-  background:var(--surface); border:1px solid var(--belt); border-radius:10px;
-  padding:6px 20px; text-align:center; opacity:0.7; transition:opacity 0.2s;
-}
-#title-bar:hover { opacity:1; }
-#title-bar h1 { font-size:11px; color:var(--belt); letter-spacing:2px; }
-#title-bar .sub { font-size:9px; color:var(--dim); margin-top:2px; }
+/* ─── Title bar (hidden — info in HUD) ───────────────── */
+#title-bar { display:none; }
 
 /* ─── Mini-map ───────────────────────────────────────── */
 #minimap {
@@ -332,11 +325,8 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 }
 .cost-bar-fill .fill { height:100%; background:var(--green); border-radius:2px; transition:width 0.5s; }
 
-/* ─── Keyboard hints ─────────────────────────────────── */
-#kb-hints {
-  position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:50;
-  font-size:9px; color:var(--dim); display:flex; gap:12px;
-}
+/* ─── Keyboard hints (hidden — use ? for help) ──────── */
+#kb-hints { display:none; }
 .kb { background:var(--surface2); border:1px solid var(--border); border-radius:3px; padding:1px 5px; font-size:8px; }
 
 /* ─── Help overlay ───────────────────────────────────── */
@@ -492,9 +482,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   #search-input:focus { width:160px; }
   #scene-feed { width:140px; max-height:140px; }
   #minimap { width:120px; height:72px; }
-  #kb-hints { display:none; }
   #cost-bar { font-size:9px; gap:8px; }
-  #title-bar { display:none; }
   #perf-panel { width:140px; font-size:9px; }
   #filter-bar { display:none; }
   #toolbar { gap:4px; }
