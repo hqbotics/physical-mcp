@@ -966,9 +966,679 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         html = _build_dashboard_html(auth_token)
         return web.Response(text=html, content_type="text/html")
 
+    # ── Factory Blueprint ────────────────────────────────
+
+    @routes.get("/factory")
+    async def factory_view(request: web.Request) -> web.Response:
+        """Serve the Factorio-style factory blueprint visualization."""
+        token_cfg = state.get("_config", None)
+        auth_token = ""
+        if token_cfg:
+            auth_token = token_cfg.vision_api.auth_token or ""
+        qt = request.query.get("token", "")
+        if qt:
+            auth_token = qt
+        html = _build_factory_html(auth_token)
+        return web.Response(text=html, content_type="text/html")
+
     app = web.Application(middlewares=[auth_middleware, cors_middleware])
     app.add_routes(routes)
     return app
+
+
+def _build_factory_html(auth_token: str = "") -> str:
+    """Generate Factorio-style interactive factory blueprint HTML."""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>physical-mcp — Factory Blueprint</title>
+<style>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+:root {{
+  --bg: #1a1a2e;
+  --surface: #16213e;
+  --surface2: #0f3460;
+  --belt: #e94560;
+  --belt-glow: #e9456066;
+  --accent: #0971CE;
+  --green: #34C759;
+  --yellow: #F5A623;
+  --red: #FF453A;
+  --text: #eee;
+  --dim: #8892b0;
+  --grid: #1a1a3e;
+}}
+html, body {{ height:100%; overflow:hidden; background:var(--bg); color:var(--text); font-family:'SF Mono','Fira Code','Consolas',monospace; }}
+#canvas-wrap {{ position:relative; width:100%; height:100%; overflow:hidden; cursor:grab; }}
+#canvas-wrap.grabbing {{ cursor:grabbing; }}
+#factory {{ position:absolute; transform-origin:0 0; }}
+
+/* Grid background */
+#canvas-wrap::before {{
+  content:''; position:absolute; inset:0; z-index:0;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size:40px 40px;
+  opacity:0.4;
+}}
+
+/* Factory nodes */
+.node {{
+  position:absolute;
+  background:var(--surface);
+  border:2px solid #2a3a5e;
+  border-radius:8px;
+  padding:12px 16px;
+  min-width:160px;
+  cursor:pointer;
+  transition:border-color 0.2s, box-shadow 0.2s, transform 0.1s;
+  z-index:2;
+  user-select:none;
+}}
+.node:hover {{
+  border-color:var(--accent);
+  box-shadow:0 0 20px rgba(9,113,206,0.3);
+  transform:scale(1.03);
+  z-index:10;
+}}
+.node.active {{
+  border-color:var(--green);
+  box-shadow:0 0 15px rgba(52,199,89,0.25);
+}}
+.node.error {{
+  border-color:var(--red);
+  box-shadow:0 0 15px rgba(255,69,58,0.25);
+}}
+.node-icon {{ font-size:24px; margin-bottom:4px; }}
+.node-title {{ font-size:13px; font-weight:700; color:var(--text); white-space:nowrap; }}
+.node-sub {{ font-size:10px; color:var(--dim); margin-top:2px; white-space:nowrap; }}
+.node-file {{ font-size:9px; color:#4a5568; margin-top:4px; font-style:italic; }}
+.node-badge {{
+  position:absolute; top:-6px; right:-6px;
+  background:var(--green); color:#000; font-size:9px; font-weight:700;
+  padding:2px 6px; border-radius:10px; min-width:18px; text-align:center;
+}}
+.node-badge.warn {{ background:var(--yellow); }}
+.node-badge.err {{ background:var(--red); color:#fff; }}
+
+/* Section labels */
+.section-label {{
+  position:absolute; z-index:1;
+  font-size:11px; font-weight:700; letter-spacing:2px; text-transform:uppercase;
+  color:var(--belt); opacity:0.7;
+  border-bottom:1px solid var(--belt);
+  padding-bottom:4px;
+}}
+
+/* SVG belts */
+#belts {{ position:absolute; top:0; left:0; width:100%; height:100%; z-index:1; pointer-events:none; }}
+#belts path {{
+  fill:none;
+  stroke:var(--belt);
+  stroke-width:2.5;
+  stroke-dasharray:8 6;
+  filter:drop-shadow(0 0 4px var(--belt-glow));
+}}
+#belts path.flowing {{
+  animation:belt-flow 1s linear infinite;
+}}
+@keyframes belt-flow {{
+  to {{ stroke-dashoffset: -14; }}
+}}
+#belts circle.junction {{
+  fill:var(--belt);
+  filter:drop-shadow(0 0 6px var(--belt-glow));
+}}
+
+/* Detail panel */
+#detail {{
+  position:fixed; right:-380px; top:0; width:380px; height:100%;
+  background:var(--surface); border-left:2px solid var(--belt);
+  z-index:100; transition:right 0.3s ease; overflow-y:auto;
+  padding:24px;
+}}
+#detail.open {{ right:0; }}
+#detail-close {{
+  position:absolute; top:12px; right:12px; background:none; border:none;
+  color:var(--dim); font-size:20px; cursor:pointer;
+}}
+#detail-close:hover {{ color:var(--text); }}
+#detail h2 {{ font-size:18px; margin-bottom:4px; }}
+#detail .detail-file {{ font-size:11px; color:var(--dim); margin-bottom:16px; }}
+#detail .detail-desc {{ font-size:12px; color:var(--dim); line-height:1.6; margin-bottom:16px; }}
+#detail .detail-stats {{ list-style:none; }}
+#detail .detail-stats li {{
+  font-size:12px; padding:8px 0; border-bottom:1px solid #2a3a5e;
+  display:flex; justify-content:space-between;
+}}
+#detail .detail-stats .val {{ color:var(--green); font-weight:700; }}
+#detail .detail-stats .val.warn {{ color:var(--yellow); }}
+#detail .detail-stats .val.err {{ color:var(--red); }}
+
+/* HUD overlay */
+#hud {{
+  position:fixed; top:16px; left:16px; z-index:50;
+  display:flex; gap:12px; align-items:center;
+}}
+#hud .hud-item {{
+  background:var(--surface); border:1px solid #2a3a5e; border-radius:6px;
+  padding:6px 12px; font-size:11px;
+}}
+#hud .hud-item .val {{ color:var(--green); font-weight:700; margin-left:4px; }}
+
+/* Zoom controls */
+#zoom-ctrl {{
+  position:fixed; bottom:16px; right:16px; z-index:50;
+  display:flex; gap:4px;
+}}
+#zoom-ctrl button {{
+  background:var(--surface); border:1px solid #2a3a5e; border-radius:4px;
+  color:var(--text); width:32px; height:32px; font-size:16px; cursor:pointer;
+}}
+#zoom-ctrl button:hover {{ background:var(--surface2); }}
+
+/* Title bar */
+#title-bar {{
+  position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:50;
+  background:var(--surface); border:1px solid var(--belt); border-radius:8px;
+  padding:8px 24px; text-align:center;
+}}
+#title-bar h1 {{ font-size:14px; color:var(--belt); letter-spacing:1px; }}
+#title-bar .sub {{ font-size:10px; color:var(--dim); margin-top:2px; }}
+
+/* Pulse animation for active nodes */
+@keyframes pulse {{ 0%,100% {{ opacity:1; }} 50% {{ opacity:0.6; }} }}
+.pulse {{ animation:pulse 2s ease-in-out infinite; }}
+</style>
+</head>
+<body>
+
+<div id="title-bar">
+  <h1>PHYSICAL-MCP FACTORY BLUEPRINT</h1>
+  <div class="sub">v1.2.0 &middot; 52 modules &middot; 506 tests</div>
+</div>
+
+<div id="hud">
+  <div class="hud-item">Cameras: <span class="val" id="hud-cams">0</span></div>
+  <div class="hud-item">Rules: <span class="val" id="hud-rules">0</span></div>
+  <div class="hud-item">Alerts: <span class="val" id="hud-alerts">0</span></div>
+  <div class="hud-item">Uptime: <span class="val" id="hud-uptime">—</span></div>
+</div>
+
+<div id="zoom-ctrl">
+  <button onclick="zoomIn()">+</button>
+  <button onclick="zoomOut()">−</button>
+  <button onclick="resetView()">⌂</button>
+</div>
+
+<div id="canvas-wrap">
+  <div id="factory">
+    <svg id="belts" width="2400" height="1400"></svg>
+
+    <!-- Section Labels -->
+    <div class="section-label" style="left:40px;top:30px;width:240px;">⛏ MINING OUTPOST</div>
+    <div class="section-label" style="left:340px;top:30px;width:200px;">⚙ ORE PROCESSING</div>
+    <div class="section-label" style="left:680px;top:30px;width:200px;">🧪 CHEMICAL PLANT</div>
+    <div class="section-label" style="left:1060px;top:30px;width:200px;">🔧 ASSEMBLER</div>
+    <div class="section-label" style="left:1400px;top:30px;width:200px;">🚚 LOGISTICS</div>
+    <div class="section-label" style="left:40px;top:520px;width:380px;">⚡ POWER PLANT (Orchestration)</div>
+    <div class="section-label" style="left:520px;top:520px;width:340px;">🚂 TRAIN STATIONS (APIs)</div>
+    <div class="section-label" style="left:1000px;top:520px;width:340px;">🔋 SUPPORT BUILDINGS</div>
+
+    <!-- MINING: Camera sources -->
+    <div class="node" id="n-usb" style="left:60px;top:80px;" data-id="usb">
+      <div class="node-icon">📷</div>
+      <div class="node-title">USB Camera</div>
+      <div class="node-sub">OpenCV bg thread @ 2fps</div>
+      <div class="node-file">camera/usb.py</div>
+    </div>
+    <div class="node" id="n-rtsp" style="left:60px;top:220px;" data-id="rtsp">
+      <div class="node-icon">📡</div>
+      <div class="node-title">RTSP Camera</div>
+      <div class="node-sub">ffmpeg · auto-reconnect</div>
+      <div class="node-file">camera/rtsp.py</div>
+    </div>
+    <div class="node" id="n-factory-cam" style="left:60px;top:360px;" data-id="cam-factory">
+      <div class="node-icon">🏭</div>
+      <div class="node-title">Camera Factory</div>
+      <div class="node-sub">config → USB or RTSP</div>
+      <div class="node-file">camera/factory.py</div>
+    </div>
+
+    <!-- ORE PROCESSING: Buffer + Change Detection -->
+    <div class="node" id="n-buffer" style="left:360px;top:80px;" data-id="buffer">
+      <div class="node-icon">📦</div>
+      <div class="node-title">FrameBuffer</div>
+      <div class="node-sub">async ring: 300 frames</div>
+      <div class="node-file">camera/buffer.py</div>
+    </div>
+    <div class="node" id="n-detector" style="left:360px;top:220px;" data-id="detector">
+      <div class="node-icon">👁</div>
+      <div class="node-title">ChangeDetector</div>
+      <div class="node-sub">pHash + pixel diff &lt;5ms</div>
+      <div class="node-file">perception/change_detector.py</div>
+    </div>
+    <div class="node" id="n-sampler" style="left:360px;top:360px;" data-id="sampler">
+      <div class="node-icon">⏱</div>
+      <div class="node-title">FrameSampler</div>
+      <div class="node-sub">debounce 3s · cooldown 10s</div>
+      <div class="node-file">perception/frame_sampler.py</div>
+    </div>
+
+    <!-- CHEMICAL PLANT: LLM Analysis -->
+    <div class="node" id="n-analyzer" style="left:700px;top:80px;" data-id="analyzer">
+      <div class="node-icon">🧠</div>
+      <div class="node-title">FrameAnalyzer</div>
+      <div class="node-sub">LLM vision API call ($$$)</div>
+      <div class="node-file">reasoning/analyzer.py</div>
+    </div>
+    <div class="node" id="n-providers" style="left:700px;top:220px;" data-id="providers">
+      <div class="node-icon">🔌</div>
+      <div class="node-title">LLM Providers</div>
+      <div class="node-sub">Gemini · Claude · OpenAI</div>
+      <div class="node-file">reasoning/providers/</div>
+    </div>
+    <div class="node" id="n-scene" style="left:700px;top:360px;" data-id="scene">
+      <div class="node-icon">🎬</div>
+      <div class="node-title">SceneState</div>
+      <div class="node-sub">summary · objects · people</div>
+      <div class="node-file">perception/scene_state.py</div>
+    </div>
+
+    <!-- ASSEMBLER: Rules -->
+    <div class="node" id="n-engine" style="left:1080px;top:80px;" data-id="engine">
+      <div class="node-icon">⚖️</div>
+      <div class="node-title">RulesEngine</div>
+      <div class="node-sub">evaluate · cooldown · alert</div>
+      <div class="node-file">rules/engine.py</div>
+    </div>
+    <div class="node" id="n-store" style="left:1080px;top:220px;" data-id="store">
+      <div class="node-icon">💾</div>
+      <div class="node-title">RulesStore</div>
+      <div class="node-sub">YAML persistence</div>
+      <div class="node-file">rules/store.py</div>
+    </div>
+    <div class="node" id="n-templates" style="left:1080px;top:360px;" data-id="templates">
+      <div class="node-icon">📋</div>
+      <div class="node-title">Templates</div>
+      <div class="node-sub">9 presets</div>
+      <div class="node-file">rules/templates.py</div>
+    </div>
+
+    <!-- LOGISTICS: Notifications -->
+    <div class="node" id="n-dispatch" style="left:1420px;top:80px;" data-id="dispatch">
+      <div class="node-icon">📬</div>
+      <div class="node-title">Dispatcher</div>
+      <div class="node-sub">routes to 7 channels</div>
+      <div class="node-file">notifications/__init__.py</div>
+    </div>
+    <div class="node" id="n-telegram" style="left:1380px;top:220px;" data-id="telegram">
+      <div class="node-icon">📱</div>
+      <div class="node-title">Telegram</div>
+      <div class="node-sub">sendPhoto + caption</div>
+      <div class="node-file">notifications/telegram.py</div>
+    </div>
+    <div class="node" id="n-discord" style="left:1540px;top:220px;" data-id="discord">
+      <div class="node-icon">💬</div>
+      <div class="node-title">Discord</div>
+      <div class="node-sub">embed + image</div>
+      <div class="node-file">notifications/discord.py</div>
+    </div>
+    <div class="node" id="n-slack" style="left:1380px;top:340px;" data-id="slack">
+      <div class="node-icon">💼</div>
+      <div class="node-title">Slack</div>
+      <div class="node-sub">Block Kit</div>
+      <div class="node-file">notifications/slack.py</div>
+    </div>
+    <div class="node" id="n-ntfy" style="left:1540px;top:340px;" data-id="ntfy">
+      <div class="node-icon">🔔</div>
+      <div class="node-title">ntfy</div>
+      <div class="node-sub">push + image</div>
+      <div class="node-file">notifications/ntfy.py</div>
+    </div>
+    <div class="node" id="n-desktop" style="left:1700px;top:280px;" data-id="desktop">
+      <div class="node-icon">🖥</div>
+      <div class="node-title">Desktop</div>
+      <div class="node-sub">native toast</div>
+      <div class="node-file">notifications/desktop.py</div>
+    </div>
+
+    <!-- POWER PLANT: Perception Loop -->
+    <div class="node" id="n-loop" style="left:60px;top:580px;min-width:400px;border-color:var(--belt);" data-id="loop">
+      <div class="node-icon">⚡</div>
+      <div class="node-title">Perception Loop — the reactor core</div>
+      <div class="node-sub">1 async task per camera &middot; wires entire pipeline &middot; 557 lines</div>
+      <div class="node-file">perception/loop.py</div>
+      <div class="node-badge pulse" id="loop-badge">RUNNING</div>
+    </div>
+
+    <!-- TRAIN STATIONS: APIs -->
+    <div class="node" id="n-mcp" style="left:540px;top:580px;" data-id="mcp">
+      <div class="node-icon">🚂</div>
+      <div class="node-title">MCP Server :8400</div>
+      <div class="node-sub">Claude · Cursor · VS Code</div>
+      <div class="node-file">server.py + __main__.py</div>
+    </div>
+    <div class="node" id="n-api" style="left:540px;top:720px;" data-id="api">
+      <div class="node-icon">🌐</div>
+      <div class="node-title">Vision API :8090</div>
+      <div class="node-sub">18 endpoints · dashboard</div>
+      <div class="node-file">vision_api.py</div>
+      <div class="node-badge active">LIVE</div>
+    </div>
+
+    <!-- SUPPORT BUILDINGS -->
+    <div class="node" id="n-config" style="left:1020px;top:580px;" data-id="config">
+      <div class="node-icon">⚙️</div>
+      <div class="node-title">Config</div>
+      <div class="node-sub">YAML + env + Pydantic</div>
+      <div class="node-file">config.py</div>
+    </div>
+    <div class="node" id="n-stats" style="left:1200px;top:580px;" data-id="stats">
+      <div class="node-icon">📊</div>
+      <div class="node-title">StatsTracker</div>
+      <div class="node-sub">budget · rate limit</div>
+      <div class="node-file">stats.py</div>
+    </div>
+    <div class="node" id="n-health" style="left:1020px;top:720px;" data-id="health">
+      <div class="node-icon">🏥</div>
+      <div class="node-title">Health</div>
+      <div class="node-sub">per-camera state</div>
+      <div class="node-file">health.py</div>
+    </div>
+    <div class="node" id="n-memory" style="left:1200px;top:720px;" data-id="memory">
+      <div class="node-icon">🧠</div>
+      <div class="node-title">Memory</div>
+      <div class="node-sub">persistent AI notes</div>
+      <div class="node-file">memory.py</div>
+    </div>
+    <div class="node" id="n-discover" style="left:1380px;top:580px;" data-id="discover">
+      <div class="node-icon">🔍</div>
+      <div class="node-title">Discovery</div>
+      <div class="node-sub">subnet + ONVIF</div>
+      <div class="node-file">camera/discover.py</div>
+    </div>
+    <div class="node" id="n-mdns" style="left:1380px;top:720px;" data-id="mdns">
+      <div class="node-icon">📡</div>
+      <div class="node-title">mDNS</div>
+      <div class="node-sub">Bonjour publish</div>
+      <div class="node-file">mdns.py</div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail panel -->
+<div id="detail">
+  <button id="detail-close" onclick="closeDetail()">&times;</button>
+  <h2 id="detail-title">—</h2>
+  <div class="detail-file" id="detail-file">—</div>
+  <div class="detail-desc" id="detail-desc">—</div>
+  <ul class="detail-stats" id="detail-stats"></ul>
+</div>
+
+<script>
+const TOKEN = '{auth_token}';
+const BASE = window.location.origin;
+const H = TOKEN ? {{'Authorization':'Bearer '+TOKEN}} : {{}};
+
+// Node metadata for detail panel
+const META = {{
+  usb: {{
+    title:'USB Camera', file:'camera/usb.py (120 lines)',
+    desc:'OpenCV-based USB camera with background capture thread. Grabs frames at ~2fps without blocking the async event loop. Includes warmup sequence for cheap cameras (Decxin needs 5 retries).',
+    stats:[['Capture method','Background thread'],['Frame rate','~2 fps'],['Warmup','5 frames, 0.2s each'],['First frame timeout','15 seconds']]
+  }},
+  rtsp: {{
+    title:'RTSP Camera', file:'camera/rtsp.py (194 lines)',
+    desc:'RTSP/HTTP stream camera with auto-reconnect and exponential backoff. Handles network drops gracefully — reconnects from 2s up to 30s delay.',
+    stats:[['Protocol','RTSP + HTTP MJPEG'],['Reconnect','Exponential 2s→30s'],['Buffering','1 frame (low latency)'],['First frame timeout','20 seconds']]
+  }},
+  'cam-factory': {{
+    title:'Camera Factory', file:'camera/factory.py',
+    desc:'Creates the right camera instance based on config type (usb/rtsp/http). Validates configuration and returns typed CameraSource.',
+    stats:[['Supported types','usb, rtsp, http'],['Config source','~/.physical-mcp/config.yaml']]
+  }},
+  buffer: {{
+    title:'FrameBuffer', file:'camera/buffer.py (59 lines)',
+    desc:'Fixed-size async ring buffer for recent frames. Supports time-based queries and even sampling. Wake-up event for MJPEG streaming.',
+    stats:[['Max frames','300'],['Lock','asyncio.Lock'],['Queries','latest, since(time), sampled(N)'],['Wake event','asyncio.Event']]
+  }},
+  detector: {{
+    title:'ChangeDetector', file:'perception/change_detector.py',
+    desc:'Perceptual hash + pixel diff change detection. No ML — runs in <5ms on any hardware. Three threshold levels determine change significance.',
+    stats:[['Speed','<5ms per frame'],['Method','pHash + pixel diff'],['Minor threshold','5'],['Moderate threshold','12'],['Major threshold','25']]
+  }},
+  sampler: {{
+    title:'FrameSampler', file:'perception/frame_sampler.py',
+    desc:'The COST GATE. Decides WHEN to call the expensive LLM API. Major changes = immediate. Moderate = debounce 3s. No rules = zero API calls ever.',
+    stats:[['Debounce','3 seconds'],['Cooldown','10 seconds'],['Heartbeat','0 (disabled)'],['Cost when idle','$0.000/hr']]
+  }},
+  analyzer: {{
+    title:'FrameAnalyzer', file:'reasoning/analyzer.py (219 lines)',
+    desc:'Encodes camera frame to base64, builds analysis prompt with scene context, calls LLM provider, parses structured JSON response. Zero retries (fail fast).',
+    stats:[['Input','Frame + scene context'],['Output','JSON (summary, objects, people, changes)'],['Retry policy','0 (fail fast)'],['Image quality','60% JPEG']]
+  }},
+  providers: {{
+    title:'LLM Providers', file:'reasoning/providers/ (5 files)',
+    desc:'Pluggable vision providers: Anthropic (Claude), Google (Gemini), OpenAI-compatible (OpenRouter, Kimi, DeepSeek). JSON extraction handles markdown fences and truncation.',
+    stats:[['Anthropic','Claude via Messages API'],['Google','Gemini Flash/Pro via genai SDK'],['OpenAI-compat','Any OpenAI-format API'],['JSON repair','Multi-strategy extraction']]
+  }},
+  scene: {{
+    title:'SceneState', file:'perception/scene_state.py',
+    desc:'Rolling summary of what the camera currently sees. Maintains change log (last 200 entries), object list, people count, and formatted context string for LLM prompts.',
+    stats:[['Fields','summary, objects, people_count'],['Change log','200 entries max'],['Update count','Tracks total analyses']]
+  }},
+  engine: {{
+    title:'RulesEngine', file:'rules/engine.py',
+    desc:'Evaluates watch rules against LLM analysis results. Manages cooldowns per rule, generates AlertEvents with confidence scores and reasoning.',
+    stats:[['Evaluation','Per-rule condition matching'],['Cooldown','Per-rule (default 60s)'],['Output','AlertEvent with confidence']]
+  }},
+  store: {{
+    title:'RulesStore', file:'rules/store.py',
+    desc:'YAML-based persistence for watch rules. CRUD operations with atomic writes. Creates parent directories automatically.',
+    stats:[['Format','YAML'],['Location','~/.physical-mcp/rules.yaml'],['Operations','save, load, add, remove']]
+  }},
+  templates: {{
+    title:'Rule Templates', file:'rules/templates.py (193 lines)',
+    desc:'9 pre-built rule presets that users can one-click deploy: person detection, package watch, pet monitor, parking, pantry, baby, workspace, weather, storefront.',
+    stats:[['Count','9 templates'],['Categories','Security, Home, Work, Retail']]
+  }},
+  dispatch: {{
+    title:'NotificationDispatcher', file:'notifications/__init__.py (152 lines)',
+    desc:'Routes each AlertEvent to the correct delivery channel based on the rule notification.type setting. Desktop bonus popup alongside any remote notification.',
+    stats:[['Channels','7 total'],['Routing','By rule notification.type'],['Desktop bonus','Auto-popup with remote']]
+  }},
+  telegram:{{ title:'Telegram', file:'notifications/telegram.py', desc:'Sends photo+caption via Bot API.', stats:[] }},
+  discord:{{ title:'Discord', file:'notifications/discord.py', desc:'Rich embed with image via webhooks.', stats:[] }},
+  slack:{{ title:'Slack', file:'notifications/slack.py', desc:'Block Kit formatted text via webhooks.', stats:[] }},
+  ntfy:{{ title:'ntfy', file:'notifications/ntfy.py', desc:'Push notification with image attachment.', stats:[] }},
+  desktop:{{ title:'Desktop', file:'notifications/desktop.py', desc:'Native OS toast notification (macOS/Linux/Win).', stats:[] }},
+  loop: {{
+    title:'Perception Loop', file:'perception/loop.py (557 lines)',
+    desc:'THE REACTOR CORE. One async task per camera. Orchestrates the entire pipeline: capture → buffer → detect → sample → analyze → evaluate → dispatch. Dual mode: server-side (has LLM) or client-side (queues for MCP client).',
+    stats:[['Pattern','1 async task per camera'],['Error backoff','5s → 300s max'],['Health tracking','ok/degraded/offline'],['Zero-rule cost','$0 (no API calls)']]
+  }},
+  mcp: {{
+    title:'MCP Server', file:'server.py (1266 lines) + __main__.py (1248 lines)',
+    desc:'FastMCP server exposing camera tools to AI clients. Tools: get_camera_frame, get_scene_analysis, watch_for, check_camera_alerts, manage_memory.',
+    stats:[['Port','8400'],['Transport','streamable-http'],['Clients','Claude, Cursor, VS Code, ChatGPT, Gemini']]
+  }},
+  api: {{
+    title:'Vision REST API', file:'vision_api.py (1194 lines)',
+    desc:'aiohttp web server with 18+ REST endpoints. Serves the web dashboard, MJPEG streams, scene data, rules CRUD, camera management, and this factory visualization.',
+    stats:[['Port','8090'],['Endpoints','18+'],['Auth','Bearer token (optional)'],['CORS','Open (LAN + app)']]
+  }},
+  config:{{ title:'Config', file:'config.py (203 lines)', desc:'YAML + env var config with Pydantic validation and ${{VAR}} interpolation.', stats:[] }},
+  stats:{{ title:'StatsTracker', file:'stats.py', desc:'Tracks API call count, daily budget, hourly rate limit. Prunes 1hr window.', stats:[] }},
+  health:{{ title:'Health', file:'health.py', desc:'Per-camera health state: ok, degraded, offline. Tracks consecutive failures.', stats:[] }},
+  memory:{{ title:'Memory', file:'memory.py (167 lines)', desc:'Thread-safe persistent markdown file. AI can store notes across sessions.', stats:[] }},
+  discover:{{ title:'Discovery', file:'camera/discover.py (366 lines)', desc:'Scans local subnet for RTSP cameras via port scanning + ONVIF WS-Discovery multicast.', stats:[] }},
+  mdns:{{ title:'mDNS', file:'mdns.py', desc:'Publishes physical-mcp.local via Zeroconf/Bonjour for LAN auto-discovery.', stats:[] }}
+}};
+
+// Belt connections: [fromId, toId]
+const BELTS = [
+  ['n-usb','n-buffer'],
+  ['n-rtsp','n-buffer'],
+  ['n-buffer','n-detector'],
+  ['n-detector','n-sampler'],
+  ['n-sampler','n-analyzer'],
+  ['n-analyzer','n-scene'],
+  ['n-analyzer','n-providers'],
+  ['n-scene','n-engine'],
+  ['n-store','n-engine'],
+  ['n-engine','n-dispatch'],
+  ['n-dispatch','n-telegram'],
+  ['n-dispatch','n-discord'],
+  ['n-dispatch','n-slack'],
+  ['n-dispatch','n-ntfy'],
+  ['n-dispatch','n-desktop'],
+  ['n-loop','n-buffer'],
+  ['n-loop','n-api'],
+  ['n-loop','n-mcp'],
+];
+
+// Draw SVG belts
+function drawBelts() {{
+  const svg = document.getElementById('belts');
+  svg.innerHTML = '';
+  BELTS.forEach(([fid,tid]) => {{
+    const f = document.getElementById(fid);
+    const t = document.getElementById(tid);
+    if (!f || !t) return;
+    const fx = f.offsetLeft + f.offsetWidth;
+    const fy = f.offsetTop + f.offsetHeight/2;
+    const tx = t.offsetLeft;
+    const ty = t.offsetTop + t.offsetHeight/2;
+    const mx = (fx+tx)/2;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', `M${{fx}},${{fy}} C${{mx}},${{fy}} ${{mx}},${{ty}} ${{tx}},${{ty}}`);
+    path.classList.add('flowing');
+    svg.appendChild(path);
+
+    // Junction dot at target
+    const dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    dot.setAttribute('cx', tx);
+    dot.setAttribute('cy', ty);
+    dot.setAttribute('r', '4');
+    dot.classList.add('junction');
+    svg.appendChild(dot);
+  }});
+}}
+
+// Pan & zoom
+let scale = 0.75, panX = 100, panY = 60;
+let dragging = false, dragStartX, dragStartY;
+const factory = document.getElementById('factory');
+const wrap = document.getElementById('canvas-wrap');
+
+function applyTransform() {{
+  factory.style.transform = `translate(${{panX}}px,${{panY}}px) scale(${{scale}})`;
+}}
+applyTransform();
+
+wrap.addEventListener('mousedown', e => {{
+  if (e.target.closest('.node') || e.target.closest('#detail')) return;
+  dragging = true; wrap.classList.add('grabbing');
+  dragStartX = e.clientX - panX;
+  dragStartY = e.clientY - panY;
+}});
+window.addEventListener('mousemove', e => {{
+  if (!dragging) return;
+  panX = e.clientX - dragStartX;
+  panY = e.clientY - dragStartY;
+  applyTransform();
+}});
+window.addEventListener('mouseup', () => {{ dragging=false; wrap.classList.remove('grabbing'); }});
+wrap.addEventListener('wheel', e => {{
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -0.05 : 0.05;
+  scale = Math.max(0.3, Math.min(2, scale + delta));
+  applyTransform();
+}}, {{passive:false}});
+
+function zoomIn() {{ scale = Math.min(2, scale+0.1); applyTransform(); }}
+function zoomOut() {{ scale = Math.max(0.3, scale-0.1); applyTransform(); }}
+function resetView() {{ scale=0.75; panX=100; panY=60; applyTransform(); }}
+
+// Detail panel
+function openDetail(id) {{
+  const m = META[id];
+  if (!m) return;
+  document.getElementById('detail-title').textContent = m.title;
+  document.getElementById('detail-file').textContent = m.file;
+  document.getElementById('detail-desc').textContent = m.desc;
+  const ul = document.getElementById('detail-stats');
+  ul.innerHTML = m.stats.map(([k,v]) => `<li>${{k}}<span class="val">${{v}}</span></li>`).join('');
+  document.getElementById('detail').classList.add('open');
+}}
+function closeDetail() {{
+  document.getElementById('detail').classList.remove('open');
+}}
+
+// Click handlers
+document.querySelectorAll('.node').forEach(n => {{
+  n.addEventListener('click', () => openDetail(n.dataset.id));
+}});
+
+// Live data polling
+async function api(path) {{
+  try {{
+    const r = await fetch(BASE+path, {{headers:H}});
+    return await r.json();
+  }} catch(e) {{ return null; }}
+}}
+
+async function refresh() {{
+  const [health, rules, alerts] = await Promise.all([
+    api('/health'), api('/rules'), api('/alerts')
+  ]);
+
+  if (health) {{
+    const cams = Object.keys(health).length;
+    document.getElementById('hud-cams').textContent = cams;
+    // Update camera nodes
+    if (cams > 0) {{
+      document.getElementById('n-usb').classList.add('active');
+      document.getElementById('loop-badge').textContent = 'RUNNING';
+      document.getElementById('loop-badge').className = 'node-badge pulse';
+    }} else {{
+      document.getElementById('n-usb').classList.remove('active');
+      document.getElementById('loop-badge').textContent = 'IDLE';
+      document.getElementById('loop-badge').className = 'node-badge warn';
+    }}
+  }}
+  if (rules) {{
+    const count = Array.isArray(rules) ? rules.length : (rules.rules||[]).length;
+    document.getElementById('hud-rules').textContent = count;
+    const eng = document.getElementById('n-engine');
+    if (count > 0) {{ eng.classList.add('active'); eng.querySelector('.node-badge')?.remove();
+      const b = document.createElement('div'); b.className='node-badge'; b.textContent=count;
+      eng.appendChild(b);
+    }}
+  }}
+  if (alerts) {{
+    const list = Array.isArray(alerts) ? alerts : (alerts.alerts||[]);
+    document.getElementById('hud-alerts').textContent = list.length;
+    if (list.length > 0) {{
+      document.getElementById('n-dispatch').classList.add('active');
+    }}
+  }}
+
+  // API node always live
+  document.getElementById('n-api').classList.add('active');
+}}
+
+drawBelts();
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>"""
 
 
 def _build_dashboard_html(auth_token: str = "") -> str:
