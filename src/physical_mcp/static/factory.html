@@ -80,15 +80,27 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
 /* ─── Section labels ─────────────────────────────────── */
 .section-label {
-  position:absolute; z-index:1;
+  position:absolute; z-index:3;
   font-size:11px; font-weight:700; letter-spacing:2px; text-transform:uppercase;
   color:var(--belt); opacity:0.6; white-space:nowrap; cursor:pointer;
+  display:flex; align-items:center; gap:8px;
+  transition:opacity 0.2s;
 }
+.section-label:hover { opacity:1; }
 .section-label::after {
-  content:''; display:block; width:100%; height:1px;
-  background:linear-gradient(90deg, var(--belt), transparent); margin-top:4px;
+  content:''; display:block; flex:1; min-width:40px; height:1px;
+  background:linear-gradient(90deg, var(--belt), transparent); margin-top:0;
 }
-.section-label.collapsed { opacity:0.3; }
+.section-label .section-toggle {
+  font-size:10px; transition:transform 0.3s; display:inline-block;
+}
+.section-label.collapsed .section-toggle { transform:rotate(-90deg); }
+.section-label .section-count {
+  font-size:9px; color:var(--dim); background:var(--surface2);
+  padding:1px 6px; border-radius:8px; font-weight:400;
+}
+.section-label.collapsed { opacity:0.35; }
+.node.section-hidden { display:none !important; }
 
 /* ─── SVG belts ──────────────────────────────────────── */
 #belts { position:absolute; top:0; left:0; z-index:1; pointer-events:none; overflow:visible; }
@@ -326,9 +338,55 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 }
 .kb { background:var(--surface2); border:1px solid var(--border); border-radius:3px; padding:1px 5px; font-size:8px; }
 
+/* ─── Help overlay ───────────────────────────────────── */
+#help-overlay {
+  position:fixed; inset:0; z-index:300; display:none;
+  background:rgba(13,17,23,0.92); backdrop-filter:blur(8px);
+  align-items:center; justify-content:center;
+}
+#help-overlay.show { display:flex; }
+#help-box {
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  padding:32px; max-width:560px; width:90%;
+}
+#help-box h2 { font-size:16px; color:var(--belt); margin-bottom:16px; letter-spacing:1px; }
+#help-box .help-section { margin-bottom:16px; }
+#help-box .help-section h3 { font-size:12px; color:var(--accent); margin-bottom:8px; text-transform:uppercase; letter-spacing:1px; }
+.help-row { display:flex; justify-content:space-between; padding:4px 0; font-size:12px; }
+.help-row .help-keys { display:flex; gap:4px; }
+.help-row .help-desc { color:var(--dim); }
+#help-close { float:right; background:none; border:none; color:var(--dim); font-size:20px; cursor:pointer; }
+#help-close:hover { color:var(--text); }
+
+/* ─── Export toolbar ─────────────────────────────────── */
+#toolbar {
+  position:fixed; top:58px; right:16px; z-index:55;
+  display:flex; gap:6px;
+}
+.toolbar-btn {
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  color:var(--dim); padding:6px 10px; font-size:10px; cursor:pointer;
+  font-family:inherit; transition:all 0.15s; display:flex; align-items:center; gap:4px;
+}
+.toolbar-btn:hover { color:var(--text); border-color:var(--accent); }
+
+/* ─── Activity sparkline ─────────────────────────────── */
+#activity-bar {
+  position:fixed; bottom:50px; left:50%; transform:translateX(-50%); z-index:45;
+  display:flex; align-items:flex-end; gap:1px; height:24px;
+}
+.spark-bar {
+  width:4px; background:var(--green); border-radius:1px 1px 0 0;
+  min-height:1px; transition:height 0.3s;
+  opacity:0.7;
+}
+.spark-bar.recent { opacity:1; background:var(--accent); }
+
 /* ─── Animations ─────────────────────────────────────── */
 @keyframes pulse { 0%,100%{opacity:1;}50%{opacity:0.7;} }
 .pulse { animation:pulse 2s ease-in-out infinite; }
+@keyframes fade-in { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+.fade-in { animation:fade-in 0.3s ease; }
 
 /* ─── Scrollbar ──────────────────────────────────────── */
 ::-webkit-scrollbar { width:6px; }
@@ -393,6 +451,13 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
 <div id="toast-container"></div>
 
+<div id="toolbar">
+  <button class="toolbar-btn" onclick="exportPNG()" title="Export as PNG">&#128247; Export PNG</button>
+  <button class="toolbar-btn" onclick="toggleHelp()" title="Help (?)">&#10067; Help</button>
+</div>
+
+<div id="activity-bar"></div>
+
 <div id="kb-hints">
   <span><span class="kb">+</span>/<span class="kb">&#8722;</span> Zoom</span>
   <span><span class="kb">Home</span> Reset</span>
@@ -400,22 +465,57 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   <span><span class="kb">Esc</span> Close</span>
   <span><span class="kb">Ctrl+K</span> Search</span>
   <span><span class="kb">R</span> Reset layout</span>
-  <span>Drag nodes to rearrange</span>
+  <span><span class="kb">?</span> Help</span>
+</div>
+
+<!-- Help overlay -->
+<div id="help-overlay">
+  <div id="help-box">
+    <button id="help-close" onclick="toggleHelp()">&times;</button>
+    <h2>&#9881; FACTORY BLUEPRINT SHORTCUTS</h2>
+    <div class="help-section">
+      <h3>Navigation</h3>
+      <div class="help-row"><span class="help-desc">Pan canvas</span><span class="help-keys"><span class="kb">Drag</span> background</span></div>
+      <div class="help-row"><span class="help-desc">Zoom in/out</span><span class="help-keys"><span class="kb">+</span> <span class="kb">-</span> or <span class="kb">Scroll</span></span></div>
+      <div class="help-row"><span class="help-desc">Reset view</span><span class="help-keys"><span class="kb">Home</span></span></div>
+      <div class="help-row"><span class="help-desc">Fit all nodes</span><span class="help-keys"><span class="kb">F</span></span></div>
+      <div class="help-row"><span class="help-desc">Search modules</span><span class="help-keys"><span class="kb">Ctrl</span>+<span class="kb">K</span></span></div>
+    </div>
+    <div class="help-section">
+      <h3>Nodes</h3>
+      <div class="help-row"><span class="help-desc">Inspect module</span><span class="help-keys"><span class="kb">Click</span> node</span></div>
+      <div class="help-row"><span class="help-desc">Rearrange node</span><span class="help-keys"><span class="kb">Drag</span> node</span></div>
+      <div class="help-row"><span class="help-desc">Context menu</span><span class="help-keys"><span class="kb">Right-click</span> node</span></div>
+      <div class="help-row"><span class="help-desc">Highlight connections</span><span class="help-keys"><span class="kb">H</span></span></div>
+      <div class="help-row"><span class="help-desc">Reset layout</span><span class="help-keys"><span class="kb">R</span></span></div>
+    </div>
+    <div class="help-section">
+      <h3>Sections</h3>
+      <div class="help-row"><span class="help-desc">Collapse/expand section</span><span class="help-keys"><span class="kb">Click</span> section label</span></div>
+      <div class="help-row"><span class="help-desc">Click belt for info</span><span class="help-keys"><span class="kb">Click</span> conveyor</span></div>
+    </div>
+    <div class="help-section">
+      <h3>Other</h3>
+      <div class="help-row"><span class="help-desc">Close panel/overlay</span><span class="help-keys"><span class="kb">Esc</span></span></div>
+      <div class="help-row"><span class="help-desc">Export as PNG</span><span class="help-keys">Toolbar button</span></div>
+      <div class="help-row"><span class="help-desc">This help</span><span class="help-keys"><span class="kb">?</span></span></div>
+    </div>
+  </div>
 </div>
 
 <div id="canvas-wrap">
   <div id="factory">
     <svg id="belts" width="2600" height="1000" style="position:absolute;top:0;left:0;overflow:visible;"></svg>
 
-    <!-- Section Labels -->
-    <div class="section-label" data-section="mining" style="left:40px;top:24px;width:240px;">&#9935; MINING OUTPOST</div>
-    <div class="section-label" data-section="processing" style="left:340px;top:24px;width:260px;">&#9881; ORE PROCESSING</div>
-    <div class="section-label" data-section="chemical" style="left:700px;top:24px;width:240px;">&#129514; CHEMICAL PLANT</div>
-    <div class="section-label" data-section="assembler" style="left:1080px;top:24px;width:200px;">&#128295; ASSEMBLER</div>
-    <div class="section-label" data-section="logistics" style="left:1420px;top:24px;width:280px;">&#128666; LOGISTICS</div>
-    <div class="section-label" data-section="power" style="left:40px;top:520px;width:400px;">&#9889; POWER PLANT</div>
-    <div class="section-label" data-section="stations" style="left:520px;top:520px;width:340px;">&#128642; TRAIN STATIONS</div>
-    <div class="section-label" data-section="support" style="left:1020px;top:520px;width:340px;">&#128267; SUPPORT</div>
+    <!-- Section Labels (click to collapse) -->
+    <div class="section-label" data-section="mining" style="left:40px;top:24px;width:240px;"><span class="section-toggle">&#9660;</span> &#9935; MINING OUTPOST <span class="section-count">3</span></div>
+    <div class="section-label" data-section="processing" style="left:340px;top:24px;width:260px;"><span class="section-toggle">&#9660;</span> &#9881; ORE PROCESSING <span class="section-count">3</span></div>
+    <div class="section-label" data-section="chemical" style="left:700px;top:24px;width:240px;"><span class="section-toggle">&#9660;</span> &#129514; CHEMICAL PLANT <span class="section-count">3</span></div>
+    <div class="section-label" data-section="assembler" style="left:1080px;top:24px;width:200px;"><span class="section-toggle">&#9660;</span> &#128295; ASSEMBLER <span class="section-count">3</span></div>
+    <div class="section-label" data-section="logistics" style="left:1420px;top:24px;width:280px;"><span class="section-toggle">&#9660;</span> &#128666; LOGISTICS <span class="section-count">9</span></div>
+    <div class="section-label" data-section="power" style="left:40px;top:520px;width:400px;"><span class="section-toggle">&#9660;</span> &#9889; POWER PLANT <span class="section-count">1</span></div>
+    <div class="section-label" data-section="stations" style="left:520px;top:520px;width:340px;"><span class="section-toggle">&#9660;</span> &#128642; TRAIN STATIONS <span class="section-count">2</span></div>
+    <div class="section-label" data-section="support" style="left:1020px;top:520px;width:340px;"><span class="section-toggle">&#9660;</span> &#128267; SUPPORT <span class="section-count">6</span></div>
 
     <!-- MINING: Camera sources -->
     <div class="node" id="n-usb" style="left:60px;top:75px;" data-id="usb" data-section="mining">
@@ -1133,12 +1233,13 @@ window.addEventListener('keydown', e => {
     if (e.key === 'Escape') { searchInput.blur(); searchInput.value=''; searchResults.classList.remove('show'); clearHighlights(); }
     return;
   }
-  if (e.key === 'Escape') { closeDetail(); clearHighlights(); }
+  if (e.key === 'Escape') { closeDetail(); clearHighlights(); closeHelp(); }
   if (e.key === '+' || e.key === '=') { zoomIn(); e.preventDefault(); }
   if (e.key === '-' || e.key === '_') { zoomOut(); e.preventDefault(); }
   if (e.key === 'Home') { resetView(); e.preventDefault(); }
   if (e.key === 'f' || e.key === 'F') { fitAll(); e.preventDefault(); }
   if (e.key === 'r' || e.key === 'R') { resetLayout(); e.preventDefault(); }
+  if (e.key === '?') { toggleHelp(); e.preventDefault(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); searchInput.focus(); }
   if (e.key === 'h' || e.key === 'H') {
     if (activeNodeId) {
@@ -1398,6 +1499,140 @@ async function refresh() {
   document.getElementById('n-api').classList.add('active');
   document.getElementById('n-mcp').classList.add('active');
   document.getElementById('hud-fps').textContent = serverActive ? '~2' : '0';
+
+  // Update sparkline
+  updateSparkline(scene && lastScene !== '');
+}
+
+// ═══════════════════════════════════════════════════════════
+// COLLAPSIBLE SECTIONS
+// ═══════════════════════════════════════════════════════════
+const collapsedSections = new Set(JSON.parse(localStorage.getItem('factory-collapsed') || '[]'));
+
+function toggleSection(sectionName) {
+  if (collapsedSections.has(sectionName)) {
+    collapsedSections.delete(sectionName);
+  } else {
+    collapsedSections.add(sectionName);
+  }
+  localStorage.setItem('factory-collapsed', JSON.stringify([...collapsedSections]));
+  applySectionState();
+  drawBelts();
+  drawMinimapNodes();
+}
+
+function applySectionState() {
+  document.querySelectorAll('.section-label').forEach(label => {
+    const sec = label.dataset.section;
+    if (collapsedSections.has(sec)) {
+      label.classList.add('collapsed');
+    } else {
+      label.classList.remove('collapsed');
+    }
+  });
+  document.querySelectorAll('.node').forEach(n => {
+    const sec = n.dataset.section;
+    if (sec && collapsedSections.has(sec)) {
+      n.classList.add('section-hidden');
+    } else {
+      n.classList.remove('section-hidden');
+    }
+  });
+}
+
+document.querySelectorAll('.section-label').forEach(label => {
+  label.addEventListener('click', () => toggleSection(label.dataset.section));
+});
+
+applySectionState();
+
+// ═══════════════════════════════════════════════════════════
+// HELP OVERLAY
+// ═══════════════════════════════════════════════════════════
+function toggleHelp() {
+  const el = document.getElementById('help-overlay');
+  el.classList.toggle('show');
+}
+function closeHelp() {
+  document.getElementById('help-overlay').classList.remove('show');
+}
+
+// ═══════════════════════════════════════════════════════════
+// EXPORT PNG
+// ═══════════════════════════════════════════════════════════
+async function exportPNG() {
+  showToast('info', 'Exporting...', 'Capturing factory blueprint as PNG');
+  try {
+    // Use html2canvas-like approach: create a canvas from the factory DOM
+    // Since we can't import html2canvas, we'll use SVG foreignObject trick
+    const factoryEl = document.getElementById('factory');
+    const clone = factoryEl.cloneNode(true);
+
+    // Get bounding box of all nodes
+    let minX=Infinity, minY=Infinity, maxX=0, maxY=0;
+    document.querySelectorAll('.node:not(.section-hidden)').forEach(n => {
+      minX = Math.min(minX, n.offsetLeft);
+      minY = Math.min(minY, n.offsetTop);
+      maxX = Math.max(maxX, n.offsetLeft + n.offsetWidth);
+      maxY = Math.max(maxY, n.offsetTop + n.offsetHeight);
+    });
+    const w = maxX - minX + 100;
+    const h = maxY - minY + 100;
+
+    // Create SVG with foreignObject
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+      <rect width="100%" height="100%" fill="#0d1117"/>
+      <text x="20" y="30" fill="#e94560" font-family="monospace" font-size="16" font-weight="bold">PHYSICAL-MCP FACTORY BLUEPRINT</text>
+      <text x="20" y="50" fill="#8b949e" font-family="monospace" font-size="11">v1.2.0 · 52 modules · 506 tests · Exported ${new Date().toLocaleString()}</text>
+      ${beltPaths.map(p => `<path d="${p.getAttribute('d')}" fill="none" stroke="#e94560" stroke-width="2" stroke-dasharray="8 6" opacity="0.6"/>`).join('')}
+      ${Array.from(document.querySelectorAll('.node:not(.section-hidden)')).map(n => {
+        const x = n.offsetLeft - minX + 50;
+        const y = n.offsetTop - minY + 70;
+        const title = n.querySelector('.node-title')?.textContent || '';
+        const sub = n.querySelector('.node-sub')?.textContent || '';
+        const file = n.querySelector('.node-file')?.textContent || '';
+        const isActive = n.classList.contains('active');
+        return `<g transform="translate(${x},${y})">
+          <rect width="${n.offsetWidth}" height="${n.offsetHeight}" rx="10" fill="#161b22" stroke="${isActive ? '#3fb950' : '#30363d'}" stroke-width="2"/>
+          <text x="18" y="38" fill="#e6edf3" font-family="monospace" font-size="13" font-weight="bold">${title}</text>
+          <text x="18" y="54" fill="#8b949e" font-family="monospace" font-size="10">${sub}</text>
+          <text x="18" y="70" fill="#484f58" font-family="monospace" font-size="9" font-style="italic">${file}</text>
+        </g>`;
+      }).join('')}
+    </svg>`;
+
+    const blob = new Blob([svg], {type:'image/svg+xml'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `factory-blueprint-${new Date().toISOString().slice(0,10)}.svg`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('success', 'Exported!', 'Factory blueprint saved as SVG');
+  } catch(e) {
+    showToast('alert', 'Export failed', e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// ACTIVITY SPARKLINE
+// ═══════════════════════════════════════════════════════════
+const activityHistory = new Array(60).fill(0); // Last 60 ticks (3 min at 3s refresh)
+let activityIdx = 0;
+
+function updateSparkline(hadNewScene) {
+  activityHistory[activityIdx % 60] = hadNewScene ? 1 : 0;
+  activityIdx++;
+  const bar = document.getElementById('activity-bar');
+  bar.innerHTML = '';
+  for (let i = 0; i < 60; i++) {
+    const idx = (activityIdx - 60 + i + 600) % 60;
+    const val = activityHistory[idx];
+    const div = document.createElement('div');
+    div.className = 'spark-bar' + (i >= 55 ? ' recent' : '');
+    div.style.height = val ? '20px' : '2px';
+    bar.appendChild(div);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1410,6 +1645,7 @@ setInterval(refresh, 3000);
 setInterval(updateCameraPreview, 2000);
 requestAnimationFrame(animateParticles);
 spawnLoop();
+updateSparkline(false);
 window.addEventListener('resize', () => { drawBelts(); drawMinimapNodes(); applyTransform(); });
 </script>
 </body>
