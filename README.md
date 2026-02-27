@@ -4,7 +4,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/physical-mcp)](https://pypi.org/project/physical-mcp/)
 [![Python](https://img.shields.io/pypi/pyversions/physical-mcp)](https://pypi.org/project/physical-mcp/)
-[![Tests](https://img.shields.io/badge/tests-493%20passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-506%20passing-brightgreen)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub Release](https://img.shields.io/github/v/release/hqbotics/physical-mcp)](https://github.com/hqbotics/physical-mcp/releases)
 
@@ -93,7 +93,7 @@ Your camera (laptop, USB, IP/RTSP)
 - **14 rule templates** — person detection, package delivery, pet monitoring, baby monitor, and more
 - **Web dashboard** — live camera feed, scene analysis, alerts at `localhost:8090/dashboard`
 - **Cloud-ready** — deploy to Fly.io or Docker with remote camera support
-- **493 tests** — thoroughly tested, MIT licensed
+- **506 tests** — thoroughly tested, MIT licensed
 
 ---
 

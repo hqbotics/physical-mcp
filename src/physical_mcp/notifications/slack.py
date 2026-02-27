@@ -16,7 +16,6 @@ Setup:
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import aiohttp
 
@@ -38,7 +37,7 @@ class SlackWebhookNotifier:
 
     def __init__(self, default_webhook_url: str = ""):
         self._default_url = default_webhook_url
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: aiohttp.ClientSession | None = None
 
     def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None:

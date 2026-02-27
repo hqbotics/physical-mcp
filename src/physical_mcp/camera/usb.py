@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 from datetime import datetime
-from typing import Optional
 
 import cv2
 
@@ -26,11 +26,11 @@ class USBCamera(CameraSource):
         self._device_index = device_index
         self._width = width
         self._height = height
-        self._cap: Optional[cv2.VideoCapture] = None
-        self._latest_frame: Optional[Frame] = None
+        self._cap: cv2.VideoCapture | None = None
+        self._latest_frame: Frame | None = None
         self._lock = threading.Lock()
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._sequence = 0
 
     async def open(self) -> None:
@@ -44,8 +44,6 @@ class USBCamera(CameraSource):
         # Warmup: kick-start USB cameras that are slow to initialize.
         # Some cheap USB cameras (e.g. Decxin) need a few read attempts
         # before they start delivering frames.
-        import time
-
         for _ in range(5):
             ret, _ = self._cap.read()
             if ret:
@@ -86,7 +84,7 @@ class USBCamera(CameraSource):
             raise CameraTimeoutError("No frame available")
         return frame
 
-    def _get_latest(self) -> Optional[Frame]:
+    def _get_latest(self) -> Frame | None:
         with self._lock:
             return self._latest_frame
 

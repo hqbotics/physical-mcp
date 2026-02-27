@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Optional
 
 
 @dataclass
@@ -21,7 +20,7 @@ class SceneState:
     summary: str = ""
     objects_present: list[str] = field(default_factory=list)
     people_count: int = 0
-    last_updated: Optional[datetime] = None
+    last_updated: datetime | None = None
     last_change_description: str = ""
     update_count: int = 0
     _change_log: deque[ChangeLogEntry] = field(

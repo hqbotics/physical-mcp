@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import base64
 import logging
-from typing import Optional
 
 import aiohttp
 
@@ -35,7 +34,7 @@ class TelegramNotifier:
         self._bot_token = bot_token
         self._default_chat_id = default_chat_id
         self._api_base = "https://api.telegram.org"
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: aiohttp.ClientSession | None = None
 
     def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None:

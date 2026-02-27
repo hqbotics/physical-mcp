@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from datetime import datetime
-from typing import Optional
 
 from .base import Frame
 
@@ -25,7 +24,7 @@ class FrameBuffer:
         self._new_frame_event.set()
         self._new_frame_event.clear()
 
-    async def wait_for_frame(self, timeout: float = 5.0) -> Optional[Frame]:
+    async def wait_for_frame(self, timeout: float = 5.0) -> Frame | None:
         """Wait for the next new frame, or return latest after timeout."""
         try:
             await asyncio.wait_for(self._new_frame_event.wait(), timeout)
@@ -33,7 +32,7 @@ class FrameBuffer:
             pass
         return await self.latest()
 
-    async def latest(self) -> Optional[Frame]:
+    async def latest(self) -> Frame | None:
         async with self._lock:
             return self._buffer[-1] if self._buffer else None
 

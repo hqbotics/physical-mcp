@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 
 import aiohttp
 
@@ -26,7 +25,7 @@ class WebhookNotifier:
 
     def __init__(self, default_url: str = ""):
         self._default_url = default_url
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: aiohttp.ClientSession | None = None
 
     def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None:

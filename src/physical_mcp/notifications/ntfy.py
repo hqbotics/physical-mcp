@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import base64
 import logging
-from typing import Optional
 
 import aiohttp
 
@@ -52,7 +51,7 @@ class NtfyNotifier:
     ):
         self._default_topic = default_topic
         self._server_url = server_url.rstrip("/")
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: aiohttp.ClientSession | None = None
 
     def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None:

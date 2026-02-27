@@ -15,7 +15,7 @@ import socket
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional
+from urllib.parse import urlparse
 from xml.etree import ElementTree
 
 logger = logging.getLogger("physical-mcp")
@@ -127,8 +127,6 @@ async def _probe_rtsp_url(url: str, timeout: float = 3.0) -> bool:
     try:
         # Parse host:port from URL
         # rtsp://user:pass@host:port/path
-        from urllib.parse import urlparse
-
         parsed = urlparse(url)
         host = parsed.hostname or ""
         port = parsed.port or 554
@@ -156,7 +154,7 @@ async def _probe_rtsp_url(url: str, timeout: float = 3.0) -> bool:
 
 async def _find_working_url(
     ip: str, port: int, timeout: float
-) -> Optional[DiscoveredCamera]:
+) -> DiscoveredCamera | None:
     """Try common RTSP URL patterns on a host and return the first that works."""
     for cred_user, cred_pass in DEFAULT_CREDENTIALS:
         for pattern in RTSP_URL_PATTERNS:
@@ -365,6 +363,4 @@ async def discover_cameras(
 
 def _sync_onvif_discover(timeout: float) -> list[DiscoveredCamera]:
     """Synchronous wrapper for ONVIF discovery (run in thread)."""
-    import asyncio
-
     return asyncio.run(_onvif_discover(timeout))

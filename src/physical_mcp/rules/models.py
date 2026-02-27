@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -18,9 +17,9 @@ class RulePriority(str, Enum):
 
 class NotificationTarget(BaseModel):
     type: str = "local"  # "local"|"desktop"|"ntfy"|"telegram"|"discord"|"slack"|"webhook"|"openclaw"
-    url: Optional[str] = None  # webhook URL
-    channel: Optional[str] = None  # ntfy topic OR openclaw channel type
-    target: Optional[str] = None  # openclaw destination (chat_id, phone, channel_id)
+    url: str | None = None  # webhook URL
+    channel: str | None = None  # ntfy topic OR openclaw channel type
+    target: str | None = None  # openclaw destination (chat_id, phone, channel_id)
 
 
 class WatchRule(BaseModel):
@@ -32,11 +31,11 @@ class WatchRule(BaseModel):
     enabled: bool = True
     notification: NotificationTarget = Field(default_factory=NotificationTarget)
     cooldown_seconds: int = 60
-    custom_message: Optional[str] = None  # User-defined notification text
+    custom_message: str | None = None  # User-defined notification text
     owner_id: str = ""  # "slack:U12345", "discord:987654321" — empty = visible to all
     owner_name: str = ""  # "Mom", "Alice" — human-readable owner label
     created_at: datetime = Field(default_factory=datetime.now)
-    last_triggered: Optional[datetime] = None
+    last_triggered: datetime | None = None
 
 
 class RuleEvaluation(BaseModel):
@@ -51,7 +50,7 @@ class AlertEvent(BaseModel):
     rule: WatchRule
     evaluation: RuleEvaluation
     scene_summary: str
-    frame_base64: Optional[str] = None
+    frame_base64: str | None = None
 
 
 class PendingAlert(BaseModel):

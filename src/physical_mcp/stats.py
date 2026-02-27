@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, date
+from datetime import date, datetime, timedelta
 
 
 class StatsTracker:
@@ -31,11 +31,6 @@ class StatsTracker:
         now = datetime.now()
         self._hour_analyses.append(now)
         # Prune entries older than 1 hour
-        cutoff = datetime(
-            now.year, now.month, now.day, now.hour, now.minute, now.second
-        )
-        from datetime import timedelta
-
         cutoff = now - timedelta(hours=1)
         self._hour_analyses = [t for t in self._hour_analyses if t >= cutoff]
 
@@ -44,8 +39,6 @@ class StatsTracker:
 
     def _prune_hour_analyses(self) -> None:
         """Remove entries older than 1 hour from the hourly window."""
-        from datetime import timedelta
-
         cutoff = datetime.now() - timedelta(hours=1)
         self._hour_analyses = [t for t in self._hour_analyses if t >= cutoff]
 

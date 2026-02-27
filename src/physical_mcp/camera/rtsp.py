@@ -16,7 +16,6 @@ import logging
 import threading
 import time
 from datetime import datetime
-from typing import Optional
 
 import cv2
 
@@ -52,11 +51,11 @@ class RTSPCamera(CameraSource):
         self._camera_id = camera_id
         self._width = width
         self._height = height
-        self._cap: Optional[cv2.VideoCapture] = None
-        self._latest_frame: Optional[Frame] = None
+        self._cap: cv2.VideoCapture | None = None
+        self._latest_frame: Frame | None = None
         self._lock = threading.Lock()
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._sequence = 0
         self._consecutive_failures = 0
 
@@ -161,7 +160,7 @@ class RTSPCamera(CameraSource):
             raise CameraTimeoutError(f"No frame available from {self._safe_url}")
         return frame
 
-    def _get_latest(self) -> Optional[Frame]:
+    def _get_latest(self) -> Frame | None:
         with self._lock:
             return self._latest_frame
 

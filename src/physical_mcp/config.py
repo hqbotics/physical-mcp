@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Optional
 
 import yaml
 from pydantic import BaseModel, Field
@@ -18,7 +17,7 @@ class CameraConfig(BaseModel):
     device_index: int = 0
     width: int = 1280
     height: int = 720
-    url: Optional[str] = None
+    url: str | None = None
     auth_token: str = ""  # Per-camera auth token (used by cloud cameras)
     enabled: bool = True
 

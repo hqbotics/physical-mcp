@@ -10,7 +10,6 @@ import asyncio
 import logging
 import shutil
 from pathlib import Path
-from typing import Optional
 
 from ..rules.models import AlertEvent
 
@@ -114,7 +113,7 @@ class OpenClawNotifier:
     # ── Internal helpers ────────────────────────────────────────────────
 
     @staticmethod
-    def _prepare_media() -> Optional[Path]:
+    def _prepare_media() -> Path | None:
         """Copy camera frame into OpenClaw's allowed media directory.
 
         Returns the path inside the workspace, or None if no frame exists.
