@@ -4,15 +4,18 @@
 
 [![PyPI](https://img.shields.io/pypi/v/physical-mcp)](https://pypi.org/project/physical-mcp/)
 [![Python](https://img.shields.io/pypi/pyversions/physical-mcp)](https://pypi.org/project/physical-mcp/)
+[![Tests](https://img.shields.io/badge/tests-456%20passing-brightgreen)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![OpenClaw](https://img.shields.io/badge/Works%20With-OpenClaw-orange)](#quick-start)
+[![GitHub Release](https://img.shields.io/github/v/release/hqbotics/physical-mcp)](https://github.com/hqbotics/physical-mcp/releases)
+
 [![Claude Desktop](https://img.shields.io/badge/Works%20With-Claude%20Desktop-blue)](#standalone-setup)
 [![ChatGPT](https://img.shields.io/badge/Works%20With-ChatGPT-10a37f)](#standalone-setup)
 [![Cursor](https://img.shields.io/badge/Works%20With-Cursor-6f42c1)](#standalone-setup)
 [![VS%20Code](https://img.shields.io/badge/Works%20With-VS%20Code-007acc)](#standalone-setup)
 [![Gemini](https://img.shields.io/badge/Works%20With-Gemini-8e75ff)](#standalone-setup)
+[![OpenClaw](https://img.shields.io/badge/Works%20With-OpenClaw-orange)](#quick-start)
 
-**physical-mcp** is an [OpenClaw](https://github.com/openclaw) skill that gives any AI real-time camera vision.
+**physical-mcp** is an open-source [MCP](https://modelcontextprotocol.io) server that gives any AI real-time camera vision.
 Get alerts on **WhatsApp, Telegram, Discord, Slack, Signal** — or talk to your AI about what it sees.
 
 > "Watch my front door and tell me when someone arrives"
@@ -80,14 +83,17 @@ Your camera (laptop, USB, IP/RTSP)
 
 ---
 
-## Why physical-mcp
+## Features
 
-- **Use the apps you already have** — WhatsApp, Telegram, Discord, Slack, Signal
-- **One command setup** (`physical-mcp`)
-- **Custom alerts in your words** — "say 'NO WAY YOU DID IT!' when I do an X shape"
-- **24/7 vision** with local change detection (<5ms, low cost)
-- **Works with any camera** — laptop, USB, IP/RTSP
-- **Open source** (MIT) — no lock-in, no subscription required
+- **Any camera** — laptop webcam, USB, RTSP/HTTP IP cameras
+- **Any AI** — Claude Desktop, ChatGPT, Cursor, VS Code, Gemini (via MCP protocol)
+- **Any messenger** — WhatsApp, Telegram, Discord, Slack, Signal (via OpenClaw)
+- **Custom alerts** — "say 'NO WAY YOU DID IT!' when I do an X shape"
+- **24/7 vision** — local change detection (<5ms), only calls AI when something changes (~$5/mo)
+- **14 rule templates** — person detection, package delivery, pet monitoring, baby monitor, and more
+- **Web dashboard** — live camera feed, scene analysis, alerts at `localhost:8090/dashboard`
+- **Cloud-ready** — deploy to Fly.io or Docker with remote camera support
+- **456 tests** — thoroughly tested, MIT licensed
 
 ---
 
@@ -142,18 +148,24 @@ physical-mcp tunnel
 ## CLI commands
 
 ```bash
-physical-mcp               # setup + run
-physical-mcp status        # service/status info
-physical-mcp tunnel        # HTTPS endpoint for ChatGPT
-physical-mcp doctor        # diagnostics
-physical-mcp --version     # version
+physical-mcp               # setup wizard + run server
+physical-mcp status        # check service status
+physical-mcp tunnel        # expose over HTTPS (for ChatGPT)
+physical-mcp doctor        # run diagnostics
+physical-mcp discover      # scan LAN for IP cameras
+physical-mcp cameras       # list available cameras
+physical-mcp rules         # list active watch rules
+physical-mcp --version     # show version
 ```
+
+Once running, open `http://localhost:8090/dashboard` for a live web dashboard.
 
 ---
 
 ## Guides
 
 - **[Setup Guide](docs/setup-guide.md)** — Full walkthrough: install, configure, first alert (10 min)
+- [Module Reference](docs/module-reference.md) — Complete API reference for all components
 - [Architecture](docs/architecture.md) — How the system works under the hood
 - [Vision agent architecture](docs/openclaw-vision-agent-architecture.md)
 - [Platform quickstarts](docs/) — Claude Desktop, ChatGPT, Cursor, VS Code, Gemini, Docker
