@@ -56,5 +56,8 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/physical_mcp"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/physical_mcp/static" = "physical_mcp/static"
+
 [tool.ruff]
 target-version = "py310"

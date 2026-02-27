@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>physical-mcp — Factory Blueprint</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #21262d;
+  --surface3: #2d333b;
+  --border: #30363d;
+  --belt: #e94560;
+  --belt-glow: #e9456044;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --yellow: #d29922;
+  --red: #f85149;
+  --orange: #db6d28;
+  --purple: #bc8cff;
+  --text: #e6edf3;
+  --dim: #8b949e;
+  --grid: #1b2230;
+  --particle: #ff6b6b;
+}
+html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--text); font-family:'SF Mono','Fira Code','JetBrains Mono','Consolas',monospace; }
+
+/* ─── Canvas ─────────────────────────────────────────── */
+#canvas-wrap { position:relative; width:100%; height:100%; overflow:hidden; cursor:grab; }
+#canvas-wrap.grabbing { cursor:grabbing; }
+#factory { position:absolute; transform-origin:0 0; will-change:transform; }
+#canvas-wrap::before {
+  content:''; position:absolute; inset:0; z-index:0;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size:48px 48px; opacity:0.5;
+}
+
+/* ─── Nodes ──────────────────────────────────────────── */
+.node {
+  position:absolute; background:var(--surface); border:2px solid var(--border);
+  border-radius:10px; padding:14px 18px; min-width:170px;
+  cursor:pointer; transition:border-color 0.2s, box-shadow 0.2s;
+  z-index:2; user-select:none;
+}
+.node:hover { border-color:var(--accent); box-shadow:0 0 24px rgba(88,166,255,0.2); z-index:10; }
+.node.active { border-color:var(--green); box-shadow:0 0 16px rgba(63,185,80,0.2); }
+.node.warn { border-color:var(--yellow); box-shadow:0 0 16px rgba(210,153,34,0.2); }
+.node.error { border-color:var(--red); box-shadow:0 0 16px rgba(248,81,73,0.2); }
+.node.dragging { opacity:0.85; z-index:100; cursor:grabbing; box-shadow:0 8px 32px rgba(0,0,0,0.5); }
+.node.selected { outline:2px solid var(--accent); outline-offset:2px; }
+.node.highlight { border-color:var(--purple); box-shadow:0 0 20px rgba(188,140,255,0.3); }
+.node.dim-node { opacity:0.3; transition:opacity 0.3s; }
+.node-icon { font-size:26px; margin-bottom:4px; }
+.node-title { font-size:13px; font-weight:700; color:var(--text); white-space:nowrap; }
+.node-sub { font-size:10px; color:var(--dim); margin-top:3px; white-space:nowrap; }
+.node-file { font-size:9px; color:#484f58; margin-top:5px; font-style:italic; }
+.node-badge {
+  position:absolute; top:-8px; right:-8px;
+  background:var(--green); color:#000; font-size:9px; font-weight:700;
+  padding:2px 8px; border-radius:10px; min-width:20px; text-align:center;
+}
+.node-badge.warn { background:var(--yellow); }
+.node-badge.err { background:var(--red); color:#fff; }
+.node-throughput {
+  position:absolute; bottom:-18px; left:50%; transform:translateX(-50%);
+  font-size:9px; color:var(--dim); white-space:nowrap;
+  background:var(--bg); padding:1px 6px; border-radius:4px; border:1px solid var(--border);
+}
+.node-throughput .tp-val { color:var(--green); font-weight:700; }
+/* Camera preview inside node */
+.node-preview {
+  width:140px; height:80px; margin-top:6px; border-radius:4px;
+  background:#000; overflow:hidden; border:1px solid var(--border);
+}
+.node-preview img { width:100%; height:100%; object-fit:cover; }
+
+/* ─── Section labels ─────────────────────────────────── */
+.section-label {
+  position:absolute; z-index:1;
+  font-size:11px; font-weight:700; letter-spacing:2px; text-transform:uppercase;
+  color:var(--belt); opacity:0.6; white-space:nowrap; cursor:pointer;
+}
+.section-label::after {
+  content:''; display:block; width:100%; height:1px;
+  background:linear-gradient(90deg, var(--belt), transparent); margin-top:4px;
+}
+.section-label.collapsed { opacity:0.3; }
+
+/* ─── SVG belts ──────────────────────────────────────── */
+#belts { position:absolute; top:0; left:0; z-index:1; pointer-events:none; overflow:visible; }
+.belt-path {
+  fill:none; stroke:var(--belt); stroke-width:2; stroke-dasharray:8 6;
+  opacity:0.6; filter:drop-shadow(0 0 3px var(--belt-glow));
+  pointer-events:stroke; cursor:pointer;
+}
+.belt-path.flowing { animation:belt-flow 1s linear infinite; }
+.belt-path.belt-hover { stroke-width:4; opacity:1; stroke:var(--accent); }
+.belt-path.belt-selected { stroke-width:4; opacity:1; stroke:var(--purple); }
+@keyframes belt-flow { to { stroke-dashoffset: -14; } }
+.belt-junction { fill:var(--belt); filter:drop-shadow(0 0 5px var(--belt-glow)); }
+.data-particle { fill:var(--particle); filter:drop-shadow(0 0 4px var(--particle)); }
+@keyframes particle-glow { 0%,100%{opacity:1;r:3.5;}50%{opacity:0.6;r:2.5;} }
+.data-particle { animation:particle-glow 0.8s ease-in-out infinite; }
+.belt-label { font-size:8px; fill:var(--dim); font-family:inherit; text-anchor:middle; dominant-baseline:middle; }
+.belt-label-bg { fill:var(--bg); rx:3; opacity:0.85; }
+
+/* ─── Search bar ─────────────────────────────────────── */
+#search-bar {
+  position:fixed; top:16px; right:16px; z-index:60;
+  display:flex; gap:6px; align-items:center;
+}
+#search-input {
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  color:var(--text); padding:8px 14px 8px 36px; font-size:12px; font-family:inherit;
+  width:220px; outline:none; transition:border-color 0.2s;
+}
+#search-input:focus { border-color:var(--accent); width:280px; }
+#search-icon {
+  position:absolute; left:12px; top:50%; transform:translateY(-50%);
+  color:var(--dim); font-size:14px; pointer-events:none;
+}
+#search-results {
+  position:absolute; top:42px; left:0; right:0;
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  max-height:240px; overflow-y:auto; display:none; z-index:61;
+}
+#search-results.show { display:block; }
+.search-item {
+  padding:8px 14px; cursor:pointer; font-size:12px;
+  display:flex; align-items:center; gap:8px;
+  border-bottom:1px solid var(--border);
+}
+.search-item:hover { background:var(--surface2); }
+.search-item:last-child { border-bottom:none; }
+.search-item .si-icon { font-size:16px; }
+.search-item .si-title { color:var(--text); font-weight:600; }
+.search-item .si-file { color:var(--dim); font-size:10px; margin-left:auto; }
+
+/* ─── Detail panel ───────────────────────────────────── */
+#detail {
+  position:fixed; right:-440px; top:0; width:440px; height:100%;
+  background:var(--surface); border-left:2px solid var(--belt);
+  z-index:100; transition:right 0.3s cubic-bezier(0.4,0,0.2,1);
+  overflow-y:auto; padding:24px;
+}
+#detail.open { right:0; }
+#detail-close {
+  position:absolute; top:12px; right:12px; background:none; border:none;
+  color:var(--dim); font-size:22px; cursor:pointer; width:32px; height:32px;
+  display:flex; align-items:center; justify-content:center;
+  border-radius:6px; transition:all 0.15s;
+}
+#detail-close:hover { color:var(--text); background:var(--surface2); }
+#detail h2 { font-size:18px; margin-bottom:4px; }
+#detail .detail-icon { font-size:36px; margin-bottom:8px; }
+#detail .detail-file { font-size:11px; color:var(--accent); margin-bottom:16px; font-family:inherit; cursor:pointer; }
+#detail .detail-file:hover { text-decoration:underline; }
+#detail .detail-desc { font-size:12px; color:var(--dim); line-height:1.7; margin-bottom:20px; }
+#detail .detail-section { font-size:11px; color:var(--belt); font-weight:700; letter-spacing:1px; margin:16px 0 8px; text-transform:uppercase; }
+#detail .detail-stats { list-style:none; }
+#detail .detail-stats li {
+  font-size:12px; padding:10px 0; border-bottom:1px solid var(--border);
+  display:flex; justify-content:space-between; align-items:center;
+}
+#detail .detail-stats .val { color:var(--green); font-weight:700; }
+#detail .detail-stats .val.warn { color:var(--yellow); }
+#detail .detail-stats .val.err { color:var(--red); }
+#detail-live { margin-top:8px; }
+.live-item {
+  font-size:11px; color:var(--dim); padding:6px 0;
+  border-bottom:1px solid var(--border);
+}
+.live-item .lk { color:var(--accent); }
+.live-item .lv { color:var(--green); font-weight:600; float:right; }
+/* Action buttons in detail panel */
+.detail-actions { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
+.detail-btn {
+  background:var(--surface2); border:1px solid var(--border); border-radius:6px;
+  color:var(--text); padding:6px 12px; font-size:11px; cursor:pointer;
+  font-family:inherit; transition:all 0.15s;
+}
+.detail-btn:hover { background:var(--border); border-color:var(--accent); }
+.detail-btn.primary { background:var(--accent); color:#000; border-color:var(--accent); }
+.detail-btn.danger { background:var(--red); color:#fff; border-color:var(--red); }
+/* Camera preview in detail */
+#detail-camera-preview {
+  width:100%; aspect-ratio:16/9; background:#000; border-radius:8px;
+  overflow:hidden; margin:12px 0; display:none;
+}
+#detail-camera-preview img { width:100%; height:100%; object-fit:contain; }
+
+/* ─── Context menu ───────────────────────────────────── */
+#ctx-menu {
+  position:fixed; display:none; z-index:200;
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:4px 0; min-width:180px; box-shadow:0 8px 24px rgba(0,0,0,0.4);
+}
+#ctx-menu.show { display:block; }
+.ctx-item {
+  padding:8px 16px; font-size:12px; cursor:pointer;
+  display:flex; align-items:center; gap:8px; color:var(--text);
+}
+.ctx-item:hover { background:var(--surface2); }
+.ctx-item.danger { color:var(--red); }
+.ctx-item .ctx-icon { width:16px; text-align:center; }
+.ctx-item .ctx-key { margin-left:auto; color:var(--dim); font-size:10px; }
+.ctx-sep { height:1px; background:var(--border); margin:4px 0; }
+
+/* ─── Belt info popup ────────────────────────────────── */
+#belt-info {
+  position:fixed; display:none; z-index:150;
+  background:var(--surface); border:1px solid var(--belt); border-radius:8px;
+  padding:12px 16px; min-width:200px; box-shadow:0 4px 16px rgba(0,0,0,0.3);
+}
+#belt-info.show { display:block; }
+#belt-info .bi-title { font-size:13px; font-weight:700; color:var(--belt); margin-bottom:6px; }
+#belt-info .bi-row { font-size:11px; color:var(--dim); padding:3px 0; display:flex; justify-content:space-between; }
+#belt-info .bi-row .bi-val { color:var(--green); font-weight:600; }
+
+/* ─── HUD overlay ────────────────────────────────────── */
+#hud {
+  position:fixed; top:16px; left:16px; z-index:50;
+  display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+}
+.hud-item {
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:8px 14px; font-size:11px; display:flex; align-items:center; gap:6px;
+}
+.hud-item .hud-dot { width:6px; height:6px; border-radius:50%; background:var(--green); }
+.hud-item .hud-dot.off { background:var(--red); }
+.hud-item .hud-dot.warn { background:var(--yellow); }
+.hud-item .val { color:var(--green); font-weight:700; }
+
+/* ─── Zoom controls ──────────────────────────────────── */
+#zoom-ctrl {
+  position:fixed; bottom:16px; right:16px; z-index:50;
+  display:flex; flex-direction:column; gap:4px;
+}
+#zoom-ctrl button {
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  color:var(--text); width:36px; height:36px; font-size:18px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; transition:all 0.15s;
+}
+#zoom-ctrl button:hover { background:var(--surface2); border-color:var(--accent); }
+#zoom-pct { font-size:10px; color:var(--dim); text-align:center; }
+
+/* ─── Title bar ──────────────────────────────────────── */
+#title-bar {
+  position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:50;
+  background:var(--surface); border:1px solid var(--belt); border-radius:10px;
+  padding:10px 28px; text-align:center;
+}
+#title-bar h1 { font-size:14px; color:var(--belt); letter-spacing:2px; }
+#title-bar .sub { font-size:10px; color:var(--dim); margin-top:3px; }
+
+/* ─── Mini-map ───────────────────────────────────────── */
+#minimap {
+  position:fixed; bottom:16px; left:16px; z-index:50;
+  width:200px; height:120px;
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  overflow:hidden; cursor:pointer;
+}
+#minimap canvas { width:100%; height:100%; }
+#minimap .viewport {
+  position:absolute; border:1.5px solid var(--accent);
+  border-radius:2px; pointer-events:none; background:rgba(88,166,255,0.08);
+}
+
+/* ─── Scene feed ─────────────────────────────────────── */
+#scene-feed {
+  position:fixed; bottom:150px; left:16px; z-index:50;
+  width:220px; max-height:220px; overflow-y:auto;
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:10px; font-size:9px; color:var(--dim);
+}
+#scene-feed .feed-title { color:var(--accent); font-weight:700; font-size:10px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; }
+#scene-feed .feed-title button { background:none; border:none; color:var(--dim); cursor:pointer; font-size:10px; }
+.feed-item { padding:4px 0; border-bottom:1px solid var(--border); line-height:1.4; }
+.feed-item:last-child { border-bottom:none; }
+.feed-time { color:var(--dim); }
+.feed-text { color:var(--text); }
+
+/* ─── Alert toasts ───────────────────────────────────── */
+#toast-container {
+  position:fixed; top:70px; right:16px; z-index:200;
+  display:flex; flex-direction:column; gap:8px; width:320px;
+}
+.toast {
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:12px 16px; font-size:12px; animation:toast-in 0.3s ease;
+  display:flex; gap:10px; align-items:flex-start;
+  box-shadow:0 4px 16px rgba(0,0,0,0.3);
+}
+.toast.alert { border-color:var(--red); }
+.toast.info { border-color:var(--accent); }
+.toast.success { border-color:var(--green); }
+.toast-icon { font-size:18px; flex-shrink:0; }
+.toast-body { flex:1; }
+.toast-title { font-weight:700; margin-bottom:2px; }
+.toast-msg { color:var(--dim); font-size:11px; }
+.toast-close { background:none; border:none; color:var(--dim); cursor:pointer; font-size:16px; }
+@keyframes toast-in { from{transform:translateX(100%);opacity:0;} to{transform:translateX(0);opacity:1;} }
+@keyframes toast-out { from{opacity:1;} to{opacity:0;transform:translateY(-20px);} }
+
+/* ─── Cost tracker ───────────────────────────────────── */
+#cost-bar {
+  position:fixed; top:58px; left:16px; z-index:50;
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  padding:6px 12px; font-size:10px; display:flex; gap:12px; align-items:center;
+}
+.cost-item { display:flex; align-items:center; gap:4px; }
+.cost-item .cost-val { color:var(--green); font-weight:700; }
+.cost-bar-fill {
+  width:80px; height:4px; background:var(--border); border-radius:2px; overflow:hidden;
+}
+.cost-bar-fill .fill { height:100%; background:var(--green); border-radius:2px; transition:width 0.5s; }
+
+/* ─── Keyboard hints ─────────────────────────────────── */
+#kb-hints {
+  position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:50;
+  font-size:9px; color:var(--dim); display:flex; gap:12px;
+}
+.kb { background:var(--surface2); border:1px solid var(--border); border-radius:3px; padding:1px 5px; font-size:8px; }
+
+/* ─── Animations ─────────────────────────────────────── */
+@keyframes pulse { 0%,100%{opacity:1;}50%{opacity:0.7;} }
+.pulse { animation:pulse 2s ease-in-out infinite; }
+
+/* ─── Scrollbar ──────────────────────────────────────── */
+::-webkit-scrollbar { width:6px; }
+::-webkit-scrollbar-track { background:var(--bg); }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:var(--dim); }
+
+/* ─── Responsive ─────────────────────────────────────── */
+@media (max-width: 768px) {
+  #search-input { width:160px; }
+  #search-input:focus { width:200px; }
+  #scene-feed { width:180px; }
+  #minimap { width:150px; height:90px; }
+  #kb-hints { display:none; }
+  #cost-bar { font-size:9px; }
+}
+</style>
+</head>
+<body>
+
+<div id="title-bar">
+  <h1>PHYSICAL-MCP FACTORY BLUEPRINT</h1>
+  <div class="sub">v1.2.0 &middot; 52 modules &middot; 506 tests &middot; <span id="hud-status" style="color:var(--green);">ONLINE</span></div>
+</div>
+
+<div id="hud">
+  <div class="hud-item"><div class="hud-dot" id="hud-health-dot"></div> Cameras <span class="val" id="hud-cams">0</span></div>
+  <div class="hud-item">Rules <span class="val" id="hud-rules">0</span></div>
+  <div class="hud-item">Alerts <span class="val" id="hud-alerts">0</span></div>
+  <div class="hud-item">FPS <span class="val" id="hud-fps">&mdash;</span></div>
+</div>
+
+<div id="cost-bar">
+  <div class="cost-item">API calls: <span class="cost-val" id="cost-calls">0</span></div>
+  <div class="cost-item">Est. cost: <span class="cost-val" id="cost-usd">$0.00</span></div>
+  <div class="cost-item">
+    Budget:
+    <div class="cost-bar-fill"><div class="fill" id="cost-fill" style="width:0%"></div></div>
+  </div>
+</div>
+
+<div id="search-bar">
+  <span id="search-icon">&#128269;</span>
+  <input type="text" id="search-input" placeholder="Search modules... (Ctrl+K)" autocomplete="off">
+  <div id="search-results"></div>
+</div>
+
+<div id="zoom-ctrl">
+  <button onclick="zoomIn()" title="Zoom in (+)">+</button>
+  <button onclick="zoomOut()" title="Zoom out (-)">&#8722;</button>
+  <div id="zoom-pct">65%</div>
+  <button onclick="resetView()" title="Reset view (Home)">&#8962;</button>
+  <button onclick="fitAll()" title="Fit all (F)">&#9635;</button>
+</div>
+
+<div id="minimap"><canvas id="minimap-canvas"></canvas><div class="viewport" id="minimap-vp"></div></div>
+
+<div id="scene-feed">
+  <div class="feed-title">LIVE SCENE FEED <button onclick="clearFeed()">clear</button></div>
+  <div id="feed-items"><div class="feed-item"><span class="feed-text" style="color:var(--dim);">Waiting for data...</span></div></div>
+</div>
+
+<div id="toast-container"></div>
+
+<div id="kb-hints">
+  <span><span class="kb">+</span>/<span class="kb">&#8722;</span> Zoom</span>
+  <span><span class="kb">Home</span> Reset</span>
+  <span><span class="kb">F</span> Fit</span>
+  <span><span class="kb">Esc</span> Close</span>
+  <span><span class="kb">Ctrl+K</span> Search</span>
+  <span><span class="kb">R</span> Reset layout</span>
+  <span>Drag nodes to rearrange</span>
+</div>
+
+<div id="canvas-wrap">
+  <div id="factory">
+    <svg id="belts" width="2600" height="1000" style="position:absolute;top:0;left:0;overflow:visible;"></svg>
+
+    <!-- Section Labels -->
+    <div class="section-label" data-section="mining" style="left:40px;top:24px;width:240px;">&#9935; MINING OUTPOST</div>
+    <div class="section-label" data-section="processing" style="left:340px;top:24px;width:260px;">&#9881; ORE PROCESSING</div>
+    <div class="section-label" data-section="chemical" style="left:700px;top:24px;width:240px;">&#129514; CHEMICAL PLANT</div>
+    <div class="section-label" data-section="assembler" style="left:1080px;top:24px;width:200px;">&#128295; ASSEMBLER</div>
+    <div class="section-label" data-section="logistics" style="left:1420px;top:24px;width:280px;">&#128666; LOGISTICS</div>
+    <div class="section-label" data-section="power" style="left:40px;top:520px;width:400px;">&#9889; POWER PLANT</div>
+    <div class="section-label" data-section="stations" style="left:520px;top:520px;width:340px;">&#128642; TRAIN STATIONS</div>
+    <div class="section-label" data-section="support" style="left:1020px;top:520px;width:340px;">&#128267; SUPPORT</div>
+
+    <!-- MINING: Camera sources -->
+    <div class="node" id="n-usb" style="left:60px;top:75px;" data-id="usb" data-section="mining">
+      <div class="node-icon">&#128247;</div>
+      <div class="node-title">USB Camera</div>
+      <div class="node-sub">OpenCV bg thread @ 2fps</div>
+      <div class="node-file">camera/usb.py</div>
+      <div class="node-preview" id="cam-preview-usb"><img id="cam-img-usb" alt=""></div>
+    </div>
+    <div class="node" id="n-rtsp" style="left:60px;top:250px;" data-id="rtsp" data-section="mining">
+      <div class="node-icon">&#128225;</div>
+      <div class="node-title">RTSP Camera</div>
+      <div class="node-sub">ffmpeg &middot; auto-reconnect</div>
+      <div class="node-file">camera/rtsp.py</div>
+    </div>
+    <div class="node" id="n-factory-cam" style="left:60px;top:390px;" data-id="cam-factory" data-section="mining">
+      <div class="node-icon">&#127981;</div>
+      <div class="node-title">Camera Factory</div>
+      <div class="node-sub">config &rarr; USB or RTSP</div>
+      <div class="node-file">camera/factory.py</div>
+    </div>
+
+    <!-- ORE PROCESSING -->
+    <div class="node" id="n-buffer" style="left:360px;top:75px;" data-id="buffer" data-section="processing">
+      <div class="node-icon">&#128230;</div>
+      <div class="node-title">FrameBuffer</div>
+      <div class="node-sub">async ring: 300 frames</div>
+      <div class="node-file">camera/buffer.py</div>
+      <div class="node-throughput"><span class="tp-val" id="tp-buffer">0</span> f/s</div>
+    </div>
+    <div class="node" id="n-detector" style="left:360px;top:250px;" data-id="detector" data-section="processing">
+      <div class="node-icon">&#128065;</div>
+      <div class="node-title">ChangeDetector</div>
+      <div class="node-sub">pHash + pixel diff &lt;5ms</div>
+      <div class="node-file">perception/change_detector.py</div>
+      <div class="node-throughput"><span class="tp-val" id="tp-detector">0</span> checks/s</div>
+    </div>
+    <div class="node" id="n-sampler" style="left:360px;top:390px;" data-id="sampler" data-section="processing">
+      <div class="node-icon">&#9201;</div>
+      <div class="node-title">FrameSampler</div>
+      <div class="node-sub">debounce 3s &middot; cooldown 10s</div>
+      <div class="node-file">perception/frame_sampler.py</div>
+    </div>
+
+    <!-- CHEMICAL PLANT -->
+    <div class="node" id="n-analyzer" style="left:700px;top:75px;" data-id="analyzer" data-section="chemical">
+      <div class="node-icon">&#129504;</div>
+      <div class="node-title">FrameAnalyzer</div>
+      <div class="node-sub">LLM vision API call ($$$)</div>
+      <div class="node-file">reasoning/analyzer.py</div>
+      <div class="node-throughput"><span class="tp-val" id="tp-analyzer">0</span> calls/min</div>
+    </div>
+    <div class="node" id="n-providers" style="left:700px;top:250px;" data-id="providers" data-section="chemical">
+      <div class="node-icon">&#128268;</div>
+      <div class="node-title">LLM Providers</div>
+      <div class="node-sub">Gemini &middot; Claude &middot; OpenAI</div>
+      <div class="node-file">reasoning/providers/</div>
+    </div>
+    <div class="node" id="n-scene" style="left:700px;top:390px;" data-id="scene" data-section="chemical">
+      <div class="node-icon">&#127916;</div>
+      <div class="node-title">SceneState</div>
+      <div class="node-sub">summary &middot; objects &middot; people</div>
+      <div class="node-file">perception/scene_state.py</div>
+    </div>
+
+    <!-- ASSEMBLER -->
+    <div class="node" id="n-engine" style="left:1080px;top:75px;" data-id="engine" data-section="assembler">
+      <div class="node-icon">&#9878;&#65039;</div>
+      <div class="node-title">RulesEngine</div>
+      <div class="node-sub">evaluate &middot; cooldown &middot; alert</div>
+      <div class="node-file">rules/engine.py</div>
+    </div>
+    <div class="node" id="n-store" style="left:1080px;top:250px;" data-id="store" data-section="assembler">
+      <div class="node-icon">&#128190;</div>
+      <div class="node-title">RulesStore</div>
+      <div class="node-sub">YAML persistence</div>
+      <div class="node-file">rules/store.py</div>
+    </div>
+    <div class="node" id="n-templates" style="left:1080px;top:390px;" data-id="templates" data-section="assembler">
+      <div class="node-icon">&#128203;</div>
+      <div class="node-title">Templates</div>
+      <div class="node-sub">9 presets</div>
+      <div class="node-file">rules/templates.py</div>
+    </div>
+
+    <!-- LOGISTICS -->
+    <div class="node" id="n-dispatch" style="left:1420px;top:75px;" data-id="dispatch" data-section="logistics">
+      <div class="node-icon">&#128236;</div>
+      <div class="node-title">Dispatcher</div>
+      <div class="node-sub">routes to 7 channels</div>
+      <div class="node-file">notifications/__init__.py</div>
+      <div class="node-throughput"><span class="tp-val" id="tp-dispatch">0</span> alerts</div>
+    </div>
+    <div class="node" id="n-telegram" style="left:1380px;top:250px;" data-id="telegram" data-section="logistics">
+      <div class="node-icon">&#128241;</div>
+      <div class="node-title">Telegram</div>
+      <div class="node-sub">sendPhoto + caption</div>
+      <div class="node-file">notifications/telegram.py</div>
+    </div>
+    <div class="node" id="n-discord" style="left:1540px;top:250px;" data-id="discord" data-section="logistics">
+      <div class="node-icon">&#128172;</div>
+      <div class="node-title">Discord</div>
+      <div class="node-sub">embed + image</div>
+      <div class="node-file">notifications/discord.py</div>
+    </div>
+    <div class="node" id="n-slack" style="left:1380px;top:370px;" data-id="slack" data-section="logistics">
+      <div class="node-icon">&#128188;</div>
+      <div class="node-title">Slack</div>
+      <div class="node-sub">Block Kit</div>
+      <div class="node-file">notifications/slack.py</div>
+    </div>
+    <div class="node" id="n-ntfy" style="left:1540px;top:370px;" data-id="ntfy" data-section="logistics">
+      <div class="node-icon">&#128276;</div>
+      <div class="node-title">ntfy</div>
+      <div class="node-sub">push + image</div>
+      <div class="node-file">notifications/ntfy.py</div>
+    </div>
+    <div class="node" id="n-desktop" style="left:1700px;top:310px;" data-id="desktop" data-section="logistics">
+      <div class="node-icon">&#128421;</div>
+      <div class="node-title">Desktop</div>
+      <div class="node-sub">native toast</div>
+      <div class="node-file">notifications/desktop.py</div>
+    </div>
+    <div class="node" id="n-webhook" style="left:1700px;top:430px;" data-id="webhook" data-section="logistics">
+      <div class="node-icon">&#128279;</div>
+      <div class="node-title">Webhook</div>
+      <div class="node-sub">generic HTTP POST</div>
+      <div class="node-file">notifications/webhook.py</div>
+    </div>
+    <div class="node" id="n-openclaw" style="left:1700px;top:190px;" data-id="openclaw" data-section="logistics">
+      <div class="node-icon">&#129430;</div>
+      <div class="node-title">OpenClaw</div>
+      <div class="node-sub">multi-channel CLI</div>
+      <div class="node-file">notifications/openclaw.py</div>
+    </div>
+
+    <!-- POWER PLANT -->
+    <div class="node" id="n-loop" style="left:60px;top:580px;min-width:420px;border-color:var(--belt);background:linear-gradient(135deg,var(--surface),#1a1020);" data-id="loop" data-section="power">
+      <div class="node-icon">&#9889;</div>
+      <div class="node-title">Perception Loop &mdash; the reactor core</div>
+      <div class="node-sub">1 async task per camera &middot; wires entire pipeline &middot; 557 lines</div>
+      <div class="node-file">perception/loop.py</div>
+      <div class="node-badge pulse" id="loop-badge">RUNNING</div>
+    </div>
+
+    <!-- TRAIN STATIONS -->
+    <div class="node" id="n-mcp" style="left:540px;top:580px;" data-id="mcp" data-section="stations">
+      <div class="node-icon">&#128642;</div>
+      <div class="node-title">MCP Server :8400</div>
+      <div class="node-sub">Claude &middot; Cursor &middot; VS Code</div>
+      <div class="node-file">server.py + __main__.py</div>
+    </div>
+    <div class="node" id="n-api" style="left:540px;top:720px;" data-id="api" data-section="stations">
+      <div class="node-icon">&#127760;</div>
+      <div class="node-title">Vision API :8090</div>
+      <div class="node-sub">18 endpoints &middot; dashboard &middot; factory</div>
+      <div class="node-file">vision_api.py</div>
+      <div class="node-badge pulse">LIVE</div>
+    </div>
+
+    <!-- SUPPORT -->
+    <div class="node" id="n-config" style="left:1020px;top:580px;" data-id="config" data-section="support">
+      <div class="node-icon">&#9881;&#65039;</div>
+      <div class="node-title">Config</div>
+      <div class="node-sub">YAML + env + Pydantic</div>
+      <div class="node-file">config.py</div>
+    </div>
+    <div class="node" id="n-stats" style="left:1200px;top:580px;" data-id="stats" data-section="support">
+      <div class="node-icon">&#128202;</div>
+      <div class="node-title">StatsTracker</div>
+      <div class="node-sub">budget &middot; rate limit</div>
+      <div class="node-file">stats.py</div>
+    </div>
+    <div class="node" id="n-health" style="left:1020px;top:720px;" data-id="health" data-section="support">
+      <div class="node-icon">&#127973;</div>
+      <div class="node-title">Health</div>
+      <div class="node-sub">per-camera state</div>
+      <div class="node-file">health.py</div>
+    </div>
+    <div class="node" id="n-memory" style="left:1200px;top:720px;" data-id="memory" data-section="support">
+      <div class="node-icon">&#129504;</div>
+      <div class="node-title">Memory</div>
+      <div class="node-sub">persistent AI notes</div>
+      <div class="node-file">memory.py</div>
+    </div>
+    <div class="node" id="n-discover" style="left:1380px;top:580px;" data-id="discover" data-section="support">
+      <div class="node-icon">&#128269;</div>
+      <div class="node-title">Discovery</div>
+      <div class="node-sub">subnet + ONVIF</div>
+      <div class="node-file">camera/discover.py</div>
+    </div>
+    <div class="node" id="n-mdns" style="left:1380px;top:720px;" data-id="mdns" data-section="support">
+      <div class="node-icon">&#128225;</div>
+      <div class="node-title">mDNS</div>
+      <div class="node-sub">Bonjour publish</div>
+      <div class="node-file">mdns.py</div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail panel -->
+<div id="detail">
+  <button id="detail-close" onclick="closeDetail()">&times;</button>
+  <div id="detail-icon" class="detail-icon"></div>
+  <h2 id="detail-title">&mdash;</h2>
+  <div class="detail-file" id="detail-file">&mdash;</div>
+  <div id="detail-camera-preview"><img id="detail-cam-img" alt="Live camera feed"></div>
+  <div class="detail-desc" id="detail-desc">&mdash;</div>
+  <div class="detail-section">SPECIFICATIONS</div>
+  <ul class="detail-stats" id="detail-stats"></ul>
+  <div id="detail-live"></div>
+  <div class="detail-actions" id="detail-actions"></div>
+</div>
+
+<!-- Context menu -->
+<div id="ctx-menu">
+  <div class="ctx-item" data-action="inspect"><span class="ctx-icon">&#128065;</span> Inspect module <span class="ctx-key">Click</span></div>
+  <div class="ctx-item" data-action="highlight"><span class="ctx-icon">&#128161;</span> Highlight connections <span class="ctx-key">H</span></div>
+  <div class="ctx-item" data-action="isolate"><span class="ctx-icon">&#127919;</span> Isolate pipeline</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" data-action="reset-pos"><span class="ctx-icon">&#8634;</span> Reset position</div>
+  <div class="ctx-item" data-action="center"><span class="ctx-icon">&#9678;</span> Center on screen</div>
+</div>
+
+<!-- Belt info popup -->
+<div id="belt-info">
+  <div class="bi-title" id="bi-title"></div>
+  <div class="bi-row">From: <span class="bi-val" id="bi-from"></span></div>
+  <div class="bi-row">To: <span class="bi-val" id="bi-to"></span></div>
+  <div class="bi-row">Data: <span class="bi-val" id="bi-data"></span></div>
+  <div class="bi-row">Throughput: <span class="bi-val" id="bi-throughput"></span></div>
+</div>
+
+<script>
+const TOKEN = '{{AUTH_TOKEN}}';
+const BASE = window.location.origin;
+const H = TOKEN ? {'Authorization':'Bearer '+TOKEN} : {};
+const STORAGE_KEY = 'physical-mcp-factory-layout';
+
+// ═══════════════════════════════════════════════════════════
+// NODE METADATA
+// ═══════════════════════════════════════════════════════════
+const META = {
+  usb:{icon:'&#128247;',title:'USB Camera',file:'camera/usb.py (120 lines)',desc:'OpenCV-based USB camera with background capture thread. Grabs frames at ~2fps without blocking the async event loop.',stats:[['Capture','Background thread'],['FPS','~2'],['Warmup','5 frames'],['Timeout','15s']],hasCamera:true},
+  rtsp:{icon:'&#128225;',title:'RTSP Camera',file:'camera/rtsp.py (194 lines)',desc:'RTSP/HTTP stream with auto-reconnect and exponential backoff. Handles network drops gracefully.',stats:[['Protocol','RTSP + MJPEG'],['Reconnect','2s&rarr;30s'],['Latency','1 frame'],['Timeout','20s']],hasCamera:true},
+  'cam-factory':{icon:'&#127981;',title:'Camera Factory',file:'camera/factory.py',desc:'Creates camera instance based on config type. Validates and returns typed CameraSource.',stats:[['Types','usb, rtsp, http'],['Config','~/.physical-mcp/config.yaml']]},
+  buffer:{icon:'&#128230;',title:'FrameBuffer',file:'camera/buffer.py (59 lines)',desc:'Fixed-size async ring buffer. Supports time queries and even sampling. Wake event for MJPEG.',stats:[['Max frames','300'],['Lock','asyncio.Lock'],['Queries','latest, since, sampled'],['Wake','asyncio.Event']]},
+  detector:{icon:'&#128065;',title:'ChangeDetector',file:'perception/change_detector.py',desc:'pHash + pixel diff change detection. No ML, runs in <5ms. Three threshold levels.',stats:[['Speed','<5ms'],['Method','pHash + pixel diff'],['Minor','5'],['Major','25']]},
+  sampler:{icon:'&#9201;',title:'FrameSampler',file:'perception/frame_sampler.py',desc:'The COST GATE. Decides WHEN to call expensive LLM. Major=immediate, moderate=debounce 3s, no rules=zero calls.',stats:[['Debounce','3s'],['Cooldown','10s'],['Idle cost','$0.000/hr']]},
+  analyzer:{icon:'&#129504;',title:'FrameAnalyzer',file:'reasoning/analyzer.py (219 lines)',desc:'Encodes frame to base64, builds prompt, calls LLM, parses JSON. Zero retries (fail fast).',stats:[['Input','Frame + context'],['Output','JSON'],['Retries','0'],['Quality','60% JPEG']]},
+  providers:{icon:'&#128268;',title:'LLM Providers',file:'reasoning/providers/ (5 files)',desc:'Pluggable: Claude, Gemini, OpenAI-compatible. Multi-strategy JSON extraction.',stats:[['Anthropic','Messages API'],['Google','genai SDK'],['OpenAI','Any compatible'],['Repair','Multi-strategy']]},
+  scene:{icon:'&#127916;',title:'SceneState',file:'perception/scene_state.py',desc:'Rolling summary: change log (200 entries), objects, people count, context string.',stats:[['Fields','summary, objects, people'],['Log','200 max'],['Tracking','Update count']]},
+  engine:{icon:'&#9878;&#65039;',title:'RulesEngine',file:'rules/engine.py',desc:'Evaluates rules against LLM results. Manages cooldowns, generates AlertEvents.',stats:[['Method','Condition matching'],['Cooldown','Per-rule 60s'],['Output','AlertEvent']]},
+  store:{icon:'&#128190;',title:'RulesStore',file:'rules/store.py',desc:'YAML persistence. CRUD with atomic writes.',stats:[['Format','YAML'],['Path','~/.physical-mcp/rules.yaml']]},
+  templates:{icon:'&#128203;',title:'Templates',file:'rules/templates.py (193 lines)',desc:'9 presets: person, package, pet, parking, pantry, baby, workspace, weather, storefront.',stats:[['Count','9'],['Categories','Security, Home, Work, Retail']]},
+  dispatch:{icon:'&#128236;',title:'Dispatcher',file:'notifications/__init__.py (152 lines)',desc:'Routes AlertEvent to delivery channel. Desktop popup bonus with remote notifications.',stats:[['Channels','7'],['Routing','By notification.type'],['Desktop','Auto-bonus']]},
+  telegram:{icon:'&#128241;',title:'Telegram',file:'notifications/telegram.py',desc:'Photo+caption via Bot API with rate limiting.',stats:[['Method','sendPhoto'],['Auth','Bot token']]},
+  discord:{icon:'&#128172;',title:'Discord',file:'notifications/discord.py',desc:'Rich embed with image via webhooks.',stats:[['Method','Webhook POST'],['Format','Embed']]},
+  slack:{icon:'&#128188;',title:'Slack',file:'notifications/slack.py',desc:'Block Kit formatted text via webhooks.',stats:[['Method','Webhook POST'],['Format','Block Kit']]},
+  ntfy:{icon:'&#128276;',title:'ntfy',file:'notifications/ntfy.py',desc:'Push notification with image. Free, zero signup.',stats:[['Server','ntfy.sh'],['Auth','None']]},
+  desktop:{icon:'&#128421;',title:'Desktop',file:'notifications/desktop.py',desc:'Native OS toast. Rate-limited 10s.',stats:[['macOS','osascript'],['Interval','10s min']]},
+  webhook:{icon:'&#128279;',title:'Webhook',file:'notifications/webhook.py',desc:'Generic HTTP POST with JSON payload.',stats:[['Method','POST'],['Format','JSON']]},
+  openclaw:{icon:'&#129430;',title:'OpenClaw',file:'notifications/openclaw.py',desc:'Multi-channel via CLI. Two-stage: image then text fallback.',stats:[['CLI','openclaw message send'],['Fallback','Text-only']]},
+  loop:{icon:'&#9889;',title:'Perception Loop',file:'perception/loop.py (557 lines)',desc:'THE REACTOR CORE. One async task per camera. Orchestrates: capture&rarr;buffer&rarr;detect&rarr;sample&rarr;analyze&rarr;evaluate&rarr;dispatch.',stats:[['Pattern','1 task/camera'],['Backoff','5s&rarr;300s'],['Health','ok/degraded/offline'],['Idle cost','$0']]},
+  mcp:{icon:'&#128642;',title:'MCP Server',file:'server.py + __main__.py',desc:'FastMCP server. Tools: get_camera_frame, get_scene_analysis, watch_for, check_alerts, manage_memory.',stats:[['Port','8400'],['Transport','streamable-http'],['Clients','Claude, Cursor, VS Code']]},
+  api:{icon:'&#127760;',title:'Vision REST API',file:'vision_api.py',desc:'aiohttp with 18+ endpoints. Dashboard, MJPEG, scene, rules, cameras, factory.',stats:[['Port','8090'],['Endpoints','18+'],['Auth','Bearer (optional)'],['CORS','Open']]},
+  config:{icon:'&#9881;&#65039;',title:'Config',file:'config.py (203 lines)',desc:'YAML + env with Pydantic validation and ${VAR} interpolation.',stats:[['Format','YAML + env'],['Validation','Pydantic v2']]},
+  stats:{icon:'&#128202;',title:'StatsTracker',file:'stats.py',desc:'API call count, daily budget, hourly rate limit.',stats:[['Budget','Daily cap'],['Rate','Hourly window']]},
+  health:{icon:'&#127973;',title:'Health',file:'health.py',desc:'Per-camera: ok, degraded, offline. Tracks consecutive failures.',stats:[['States','ok/degraded/offline']]},
+  memory:{icon:'&#129504;',title:'Memory',file:'memory.py (167 lines)',desc:'Thread-safe persistent markdown. AI stores notes across sessions.',stats:[['Format','Markdown'],['Path','~/.physical-mcp/memory.md']]},
+  discover:{icon:'&#128269;',title:'Discovery',file:'camera/discover.py (366 lines)',desc:'Subnet port scan + ONVIF WS-Discovery multicast.',stats:[['Port','554 (RTSP)'],['ONVIF','WS-Discovery']]},
+  mdns:{icon:'&#128225;',title:'mDNS',file:'mdns.py',desc:'Publishes physical-mcp.local via Zeroconf.',stats:[['Protocol','Bonjour/Zeroconf']]}
+};
+
+// ═══════════════════════════════════════════════════════════
+// BELT CONNECTIONS [fromId, toId, label, description]
+// ═══════════════════════════════════════════════════════════
+const BELTS = [
+  ['n-usb','n-buffer','frames','Raw JPEG frames at ~2fps from USB camera'],
+  ['n-rtsp','n-buffer','frames','Raw frames from RTSP network stream'],
+  ['n-buffer','n-detector','raw','Latest frame from ring buffer for change analysis'],
+  ['n-detector','n-sampler','changes','Change level: none/minor/moderate/major'],
+  ['n-sampler','n-analyzer','selected','Frames that passed the cost gate for LLM analysis'],
+  ['n-analyzer','n-scene','JSON','Structured analysis: summary, objects, people, changes'],
+  ['n-analyzer','n-providers','prompt','Base64 image + context prompt to LLM provider'],
+  ['n-scene','n-engine','context','Scene state fed into rule condition evaluation'],
+  ['n-store','n-engine','rules','Loaded watch rules from YAML persistence'],
+  ['n-engine','n-dispatch','alerts','Triggered AlertEvents with confidence scores'],
+  ['n-dispatch','n-telegram','','Alert routed to Telegram channel'],
+  ['n-dispatch','n-discord','','Alert routed to Discord webhook'],
+  ['n-dispatch','n-slack','','Alert routed to Slack webhook'],
+  ['n-dispatch','n-ntfy','','Alert routed to ntfy push'],
+  ['n-dispatch','n-desktop','','Alert routed to desktop toast'],
+  ['n-dispatch','n-webhook','','Alert routed to generic webhook'],
+  ['n-dispatch','n-openclaw','','Alert routed to OpenClaw multi-channel'],
+  ['n-loop','n-buffer','orchestrate','Loop drives frame capture into buffer'],
+  ['n-loop','n-api','share state','Loop exposes live data to REST API'],
+  ['n-loop','n-mcp','share state','Loop exposes live data to MCP tools'],
+  ['n-config','n-loop','settings','Camera config, LLM provider, thresholds'],
+  ['n-health','n-loop','status','Health state feeds back into loop decisions'],
+];
+
+// ═══════════════════════════════════════════════════════════
+// DRAG-TO-REARRANGE NODES
+// ═══════════════════════════════════════════════════════════
+let dragNode = null, dragOffX = 0, dragOffY = 0, hasDragged = false;
+const defaultPositions = {};
+
+// Save default positions on load
+document.querySelectorAll('.node').forEach(n => {
+  defaultPositions[n.id] = { left: n.offsetLeft, top: n.offsetTop };
+});
+
+function loadLayout() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return;
+    const layout = JSON.parse(saved);
+    Object.entries(layout).forEach(([id, pos]) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.style.left = pos.left + 'px';
+        el.style.top = pos.top + 'px';
+      }
+    });
+  } catch(e) { /* ignore */ }
+}
+
+function saveLayout() {
+  const layout = {};
+  document.querySelectorAll('.node').forEach(n => {
+    layout[n.id] = { left: n.offsetLeft, top: n.offsetTop };
+  });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+}
+
+function resetLayout() {
+  Object.entries(defaultPositions).forEach(([id, pos]) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.style.left = pos.left + 'px';
+      el.style.top = pos.top + 'px';
+    }
+  });
+  localStorage.removeItem(STORAGE_KEY);
+  drawBelts();
+  drawMinimapNodes();
+  showToast('info', 'Layout Reset', 'Node positions restored to defaults.');
+}
+
+document.querySelectorAll('.node').forEach(n => {
+  n.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    // Start drag after small movement threshold
+    const startX = e.clientX, startY = e.clientY;
+    hasDragged = false;
+
+    function onMove(ev) {
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      if (!hasDragged && Math.abs(dx) + Math.abs(dy) < 5) return;
+      if (!hasDragged) {
+        hasDragged = true;
+        dragNode = n;
+        n.classList.add('dragging');
+        dragOffX = startX / scale - n.offsetLeft - panX / scale;
+        dragOffY = startY / scale - n.offsetTop - panY / scale;
+      }
+      const newX = (ev.clientX / scale) - dragOffX - (panX / scale);
+      const newY = (ev.clientY / scale) - dragOffY - (panY / scale);
+      n.style.left = Math.round(newX) + 'px';
+      n.style.top = Math.round(newY) + 'px';
+      drawBelts();
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      if (hasDragged) {
+        n.classList.remove('dragging');
+        dragNode = null;
+        saveLayout();
+        drawMinimapNodes();
+      }
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
+});
+
+loadLayout();
+
+// ═══════════════════════════════════════════════════════════
+// PARTICLE SYSTEM
+// ═══════════════════════════════════════════════════════════
+const particles = [];
+const PARTICLE_SPEED = 0.008;
+let beltPaths = [];
+let serverActive = false;
+
+function spawnParticle(beltIndex) {
+  if (beltIndex >= beltPaths.length) return;
+  particles.push({ belt:beltIndex, t:0, el:null });
+}
+
+function drawBelts() {
+  const svg = document.getElementById('belts');
+  svg.innerHTML = '';
+  beltPaths = [];
+
+  BELTS.forEach(([fid, tid, label, desc], idx) => {
+    const f = document.getElementById(fid);
+    const t = document.getElementById(tid);
+    if (!f || !t) return;
+
+    const fx = f.offsetLeft + f.offsetWidth;
+    const fy = f.offsetTop + f.offsetHeight/2;
+    const tx = t.offsetLeft;
+    const ty = t.offsetTop + t.offsetHeight/2;
+    const dx = tx - fx, dy = ty - fy;
+
+    let d;
+    if (Math.abs(dy) < 10) {
+      d = `M${fx},${fy} L${tx},${ty}`;
+    } else if (fx > tx) {
+      const my = (fy+ty)/2;
+      d = `M${fx},${fy} L${fx+20},${fy} L${fx+20},${my} L${tx-20},${my} L${tx-20},${ty} L${tx},${ty}`;
+    } else {
+      const mx = fx + dx*0.4;
+      d = `M${fx},${fy} C${mx},${fy} ${fx+dx*0.6},${ty} ${tx},${ty}`;
+    }
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', d);
+    path.classList.add('belt-path','flowing');
+    path.dataset.idx = idx;
+    path.style.pointerEvents = 'stroke';
+    // Belt hover/click
+    path.addEventListener('mouseenter', e => { path.classList.add('belt-hover'); showBeltInfo(idx, e); });
+    path.addEventListener('mouseleave', () => { path.classList.remove('belt-hover'); hideBeltInfo(); });
+    path.addEventListener('click', e => { e.stopPropagation(); selectBelt(idx); });
+    svg.appendChild(path);
+    beltPaths.push(path);
+
+    const dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    dot.setAttribute('cx', tx); dot.setAttribute('cy', ty); dot.setAttribute('r', '3.5');
+    dot.classList.add('belt-junction');
+    svg.appendChild(dot);
+
+    if (label) {
+      const pathLen = path.getTotalLength();
+      const mid = path.getPointAtLength(pathLen * 0.5);
+      const textW = label.length * 5.5 + 8;
+      const bg = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      bg.setAttribute('x', mid.x - textW/2); bg.setAttribute('y', mid.y - 7);
+      bg.setAttribute('width', textW); bg.setAttribute('height', 14);
+      bg.classList.add('belt-label-bg');
+      svg.appendChild(bg);
+      const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+      text.setAttribute('x', mid.x); text.setAttribute('y', mid.y);
+      text.textContent = label; text.classList.add('belt-label');
+      svg.appendChild(text);
+    }
+  });
+}
+
+function animateParticles() {
+  const svg = document.getElementById('belts');
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.t += PARTICLE_SPEED;
+    if (p.t >= 1) { if (p.el) p.el.remove(); particles.splice(i, 1); continue; }
+    const path = beltPaths[p.belt];
+    if (!path) { particles.splice(i, 1); continue; }
+    const pt = path.getPointAtLength(p.t * path.getTotalLength());
+    if (!p.el) {
+      p.el = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      p.el.classList.add('data-particle'); p.el.setAttribute('r', '3');
+      svg.appendChild(p.el);
+    }
+    p.el.setAttribute('cx', pt.x); p.el.setAttribute('cy', pt.y);
+  }
+  requestAnimationFrame(animateParticles);
+}
+
+function spawnLoop() {
+  const activeBelts = [0,1,2,3,4,5,7,8,9];
+  if (serverActive) {
+    spawnParticle(activeBelts[Math.floor(Math.random()*activeBelts.length)]);
+  }
+  setTimeout(spawnLoop, 300 + Math.random()*700);
+}
+
+// ═══════════════════════════════════════════════════════════
+// BELT INFO POPUP + CLICK
+// ═══════════════════════════════════════════════════════════
+function showBeltInfo(idx, e) {
+  const belt = BELTS[idx];
+  if (!belt) return;
+  const popup = document.getElementById('belt-info');
+  const fromNode = document.getElementById(belt[0]);
+  const toNode = document.getElementById(belt[1]);
+  document.getElementById('bi-title').textContent = belt[2] ? `Belt: ${belt[2]}` : 'Connection';
+  document.getElementById('bi-from').textContent = fromNode?.querySelector('.node-title')?.textContent || belt[0];
+  document.getElementById('bi-to').textContent = toNode?.querySelector('.node-title')?.textContent || belt[1];
+  document.getElementById('bi-data').textContent = belt[3] || 'Data flow';
+  document.getElementById('bi-throughput').textContent = serverActive ? 'Active' : 'Idle';
+  popup.style.left = (e.clientX + 12) + 'px';
+  popup.style.top = (e.clientY - 10) + 'px';
+  popup.classList.add('show');
+}
+function hideBeltInfo() { document.getElementById('belt-info').classList.remove('show'); }
+
+let selectedBelt = -1;
+function selectBelt(idx) {
+  beltPaths.forEach(p => p.classList.remove('belt-selected'));
+  if (selectedBelt === idx) { selectedBelt = -1; clearHighlights(); return; }
+  selectedBelt = idx;
+  if (beltPaths[idx]) beltPaths[idx].classList.add('belt-selected');
+  // Highlight connected nodes
+  const belt = BELTS[idx];
+  clearHighlights();
+  const fromEl = document.getElementById(belt[0]);
+  const toEl = document.getElementById(belt[1]);
+  if (fromEl) fromEl.classList.add('highlight');
+  if (toEl) toEl.classList.add('highlight');
+}
+
+// ═══════════════════════════════════════════════════════════
+// DEPENDENCY HIGHLIGHTING
+// ═══════════════════════════════════════════════════════════
+function highlightConnections(nodeId) {
+  clearHighlights();
+  const connected = new Set();
+  connected.add(nodeId);
+  BELTS.forEach(([from, to], idx) => {
+    if (from === nodeId || to === nodeId) {
+      connected.add(from); connected.add(to);
+      if (beltPaths[idx]) beltPaths[idx].style.opacity = '1';
+    }
+  });
+  document.querySelectorAll('.node').forEach(n => {
+    if (!connected.has(n.id)) n.classList.add('dim-node');
+    else n.classList.add('highlight');
+  });
+}
+
+function isolatePipeline(nodeId) {
+  clearHighlights();
+  // Trace full pipeline from this node
+  const visited = new Set();
+  const queue = [nodeId];
+  const activeBelts = new Set();
+  while (queue.length) {
+    const id = queue.shift();
+    if (visited.has(id)) continue;
+    visited.add(id);
+    BELTS.forEach(([from, to], idx) => {
+      if (from === id && !visited.has(to)) { queue.push(to); activeBelts.add(idx); }
+      if (to === id && !visited.has(from)) { queue.push(from); activeBelts.add(idx); }
+    });
+  }
+  document.querySelectorAll('.node').forEach(n => {
+    if (!visited.has(n.id)) n.classList.add('dim-node');
+    else n.classList.add('highlight');
+  });
+  beltPaths.forEach((p, i) => {
+    if (!activeBelts.has(i)) p.style.opacity = '0.1';
+    else p.style.opacity = '1';
+  });
+}
+
+function clearHighlights() {
+  document.querySelectorAll('.node').forEach(n => {
+    n.classList.remove('dim-node','highlight');
+  });
+  beltPaths.forEach(p => { p.style.opacity = ''; p.classList.remove('belt-selected'); });
+  selectedBelt = -1;
+}
+
+// ═══════════════════════════════════════════════════════════
+// PAN & ZOOM
+// ═══════════════════════════════════════════════════════════
+let scale = 0.65, panX = 80, panY = 50;
+let dragging = false, dragStartX, dragStartY;
+const factory = document.getElementById('factory');
+const wrap = document.getElementById('canvas-wrap');
+
+function applyTransform() {
+  factory.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`;
+  document.getElementById('zoom-pct').textContent = Math.round(scale*100)+'%';
+  updateMinimap();
+}
+applyTransform();
+
+wrap.addEventListener('mousedown', e => {
+  if (e.target.closest('.node') || e.target.closest('#detail') || e.target.closest('#ctx-menu')) return;
+  dragging = true; wrap.classList.add('grabbing');
+  dragStartX = e.clientX - panX; dragStartY = e.clientY - panY;
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  panX = e.clientX - dragStartX; panY = e.clientY - dragStartY;
+  applyTransform();
+});
+window.addEventListener('mouseup', () => { dragging=false; wrap.classList.remove('grabbing'); });
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = wrap.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const oldScale = scale;
+  scale = Math.max(0.25, Math.min(2.5, scale + (e.deltaY > 0 ? -0.05 : 0.05)));
+  panX = mx - (mx - panX) * (scale / oldScale);
+  panY = my - (my - panY) * (scale / oldScale);
+  applyTransform();
+}, {passive:false});
+
+function zoomIn() { scale = Math.min(2.5, scale+0.1); applyTransform(); }
+function zoomOut() { scale = Math.max(0.25, scale-0.1); applyTransform(); }
+function resetView() { scale=0.65; panX=80; panY=50; applyTransform(); }
+function fitAll() {
+  const vw = wrap.clientWidth, vh = wrap.clientHeight;
+  scale = Math.min(vw/2000, vh/900, 1.0);
+  panX = (vw - 2000*scale)/2; panY = (vh - 900*scale)/2;
+  applyTransform();
+}
+function centerOnNode(nodeId) {
+  const el = document.getElementById(nodeId);
+  if (!el) return;
+  const nx = el.offsetLeft + el.offsetWidth/2;
+  const ny = el.offsetTop + el.offsetHeight/2;
+  panX = wrap.clientWidth/2 - nx*scale;
+  panY = wrap.clientHeight/2 - ny*scale;
+  applyTransform();
+}
+
+// ═══════════════════════════════════════════════════════════
+// SEARCH
+// ═══════════════════════════════════════════════════════════
+const searchInput = document.getElementById('search-input');
+const searchResults = document.getElementById('search-results');
+
+searchInput.addEventListener('input', () => {
+  const q = searchInput.value.toLowerCase().trim();
+  if (!q) { searchResults.classList.remove('show'); clearHighlights(); return; }
+  const matches = [];
+  Object.entries(META).forEach(([id, m]) => {
+    const text = `${m.title} ${m.file} ${m.desc}`.toLowerCase();
+    if (text.includes(q)) matches.push({id, ...m});
+  });
+  if (matches.length === 0) { searchResults.classList.remove('show'); return; }
+  searchResults.innerHTML = matches.map(m =>
+    `<div class="search-item" data-id="${m.id}"><span class="si-icon">${m.icon}</span><span class="si-title">${m.title}</span><span class="si-file">${m.file.split(' ')[0]}</span></div>`
+  ).join('');
+  searchResults.classList.add('show');
+  // Highlight matching nodes
+  clearHighlights();
+  const matchIds = new Set(matches.map(m => {
+    const el = document.querySelector(`[data-id="${m.id}"]`);
+    return el ? el.id : null;
+  }).filter(Boolean));
+  document.querySelectorAll('.node').forEach(n => {
+    if (!matchIds.has(n.id)) n.classList.add('dim-node');
+    else n.classList.add('highlight');
+  });
+});
+
+searchInput.addEventListener('blur', () => { setTimeout(() => searchResults.classList.remove('show'), 200); });
+searchResults.addEventListener('click', e => {
+  const item = e.target.closest('.search-item');
+  if (!item) return;
+  const id = item.dataset.id;
+  const nodeEl = document.querySelector(`[data-id="${id}"]`);
+  if (nodeEl) { centerOnNode(nodeEl.id); openDetail(id); }
+  searchInput.value = '';
+  searchResults.classList.remove('show');
+  clearHighlights();
+});
+
+// ═══════════════════════════════════════════════════════════
+// CONTEXT MENU
+// ═══════════════════════════════════════════════════════════
+let ctxNodeId = null;
+document.querySelectorAll('.node').forEach(n => {
+  n.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    ctxNodeId = n.id;
+    const menu = document.getElementById('ctx-menu');
+    menu.style.left = e.clientX + 'px'; menu.style.top = e.clientY + 'px';
+    menu.classList.add('show');
+  });
+});
+document.addEventListener('click', () => {
+  document.getElementById('ctx-menu').classList.remove('show');
+});
+document.querySelectorAll('.ctx-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const action = item.dataset.action;
+    if (!ctxNodeId) return;
+    if (action === 'inspect') openDetail(document.getElementById(ctxNodeId)?.dataset?.id);
+    if (action === 'highlight') highlightConnections(ctxNodeId);
+    if (action === 'isolate') isolatePipeline(ctxNodeId);
+    if (action === 'reset-pos') {
+      const def = defaultPositions[ctxNodeId];
+      const el = document.getElementById(ctxNodeId);
+      if (def && el) { el.style.left=def.left+'px'; el.style.top=def.top+'px'; drawBelts(); saveLayout(); drawMinimapNodes(); }
+    }
+    if (action === 'center') centerOnNode(ctxNodeId);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+// ═══════════════════════════════════════════════════════════
+window.addEventListener('keydown', e => {
+  if (e.target === searchInput) {
+    if (e.key === 'Escape') { searchInput.blur(); searchInput.value=''; searchResults.classList.remove('show'); clearHighlights(); }
+    return;
+  }
+  if (e.key === 'Escape') { closeDetail(); clearHighlights(); }
+  if (e.key === '+' || e.key === '=') { zoomIn(); e.preventDefault(); }
+  if (e.key === '-' || e.key === '_') { zoomOut(); e.preventDefault(); }
+  if (e.key === 'Home') { resetView(); e.preventDefault(); }
+  if (e.key === 'f' || e.key === 'F') { fitAll(); e.preventDefault(); }
+  if (e.key === 'r' || e.key === 'R') { resetLayout(); e.preventDefault(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); searchInput.focus(); }
+  if (e.key === 'h' || e.key === 'H') {
+    if (activeNodeId) {
+      const el = document.querySelector(`[data-id="${activeNodeId}"]`);
+      if (el) highlightConnections(el.id);
+    }
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// MINI-MAP
+// ═══════════════════════════════════════════════════════════
+function updateMinimap() {
+  const mmW=200, mmH=120, fW=2000, fH=900;
+  const scaleX=mmW/fW, scaleY=mmH/fH;
+  const vp = document.getElementById('minimap-vp');
+  const vw = wrap.clientWidth/scale, vh = wrap.clientHeight/scale;
+  const ox = -panX/scale, oy = -panY/scale;
+  vp.style.left=(ox*scaleX)+'px'; vp.style.top=(oy*scaleY)+'px';
+  vp.style.width=Math.min(vw*scaleX,mmW)+'px'; vp.style.height=Math.min(vh*scaleY,mmH)+'px';
+}
+function drawMinimapNodes() {
+  const canvas = document.getElementById('minimap-canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width=200; canvas.height=120;
+  const fW=2000, fH=900, sx=200/fW, sy=120/fH;
+  ctx.fillStyle='#0d1117'; ctx.fillRect(0,0,200,120);
+  document.querySelectorAll('.node').forEach(n => {
+    const x=n.offsetLeft*sx, y=n.offsetTop*sy, w=n.offsetWidth*sx, h=n.offsetHeight*sy;
+    ctx.fillStyle = n.classList.contains('active') ? '#3fb950' : n.classList.contains('error') ? '#f85149' : '#30363d';
+    ctx.fillRect(x,y,Math.max(w,3),Math.max(h,2));
+  });
+  ctx.strokeStyle='#e9456044'; ctx.lineWidth=0.5;
+  BELTS.forEach(([fid,tid])=>{
+    const f=document.getElementById(fid), t=document.getElementById(tid);
+    if(!f||!t)return;
+    ctx.beginPath();
+    ctx.moveTo((f.offsetLeft+f.offsetWidth)*sx,(f.offsetTop+f.offsetHeight/2)*sy);
+    ctx.lineTo(t.offsetLeft*sx,(t.offsetTop+t.offsetHeight/2)*sy);
+    ctx.stroke();
+  });
+}
+document.getElementById('minimap').addEventListener('click', e => {
+  const rect=e.currentTarget.getBoundingClientRect();
+  const fx=(e.clientX-rect.left)/200*2000, fy=(e.clientY-rect.top)/120*900;
+  panX=wrap.clientWidth/2-fx*scale; panY=wrap.clientHeight/2-fy*scale;
+  applyTransform();
+});
+
+// ═══════════════════════════════════════════════════════════
+// DETAIL PANEL
+// ═══════════════════════════════════════════════════════════
+let activeNodeId = null;
+function openDetail(id) {
+  const m = META[id]; if (!m) return;
+  activeNodeId = id;
+  document.getElementById('detail-icon').innerHTML = m.icon||'';
+  document.getElementById('detail-title').textContent = m.title;
+  document.getElementById('detail-file').textContent = m.file;
+  document.getElementById('detail-desc').innerHTML = m.desc;
+  const ul = document.getElementById('detail-stats');
+  ul.innerHTML = m.stats.map(([k,v])=>`<li>${k}<span class="val">${v}</span></li>`).join('');
+  document.getElementById('detail-live').innerHTML = '';
+
+  // Camera preview
+  const camPreview = document.getElementById('detail-camera-preview');
+  if (m.hasCamera) {
+    camPreview.style.display = 'block';
+    document.getElementById('detail-cam-img').src = BASE+'/frame?t='+Date.now();
+  } else {
+    camPreview.style.display = 'none';
+  }
+
+  // Action buttons
+  const actions = document.getElementById('detail-actions');
+  actions.innerHTML = '';
+  const highlightBtn = document.createElement('button');
+  highlightBtn.className='detail-btn'; highlightBtn.textContent='Highlight Connections';
+  highlightBtn.onclick = () => { const el=document.querySelector(`[data-id="${id}"]`); if(el) highlightConnections(el.id); };
+  actions.appendChild(highlightBtn);
+
+  const isolateBtn = document.createElement('button');
+  isolateBtn.className='detail-btn'; isolateBtn.textContent='Isolate Pipeline';
+  isolateBtn.onclick = () => { const el=document.querySelector(`[data-id="${id}"]`); if(el) isolatePipeline(el.id); };
+  actions.appendChild(isolateBtn);
+
+  const centerBtn = document.createElement('button');
+  centerBtn.className='detail-btn'; centerBtn.textContent='Center';
+  centerBtn.onclick = () => { const el=document.querySelector(`[data-id="${id}"]`); if(el) centerOnNode(el.id); };
+  actions.appendChild(centerBtn);
+
+  // Select node visually
+  document.querySelectorAll('.node').forEach(n => n.classList.remove('selected'));
+  const el = document.querySelector(`[data-id="${id}"]`);
+  if (el) el.classList.add('selected');
+  document.getElementById('detail').classList.add('open');
+}
+function closeDetail() {
+  document.getElementById('detail').classList.remove('open');
+  document.querySelectorAll('.node').forEach(n => n.classList.remove('selected'));
+  activeNodeId = null;
+}
+
+// Node click (only if not dragged)
+document.querySelectorAll('.node').forEach(n => {
+  n.addEventListener('click', e => {
+    if (hasDragged) return;
+    e.stopPropagation();
+    openDetail(n.dataset.id);
+  });
+});
+
+// Click canvas to deselect
+wrap.addEventListener('click', e => {
+  if (!e.target.closest('.node') && !e.target.closest('path')) clearHighlights();
+});
+
+// ═══════════════════════════════════════════════════════════
+// TOAST NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════
+function showToast(type, title, msg, duration=4000) {
+  const container = document.getElementById('toast-container');
+  const icons = {alert:'&#9888;&#65039;', info:'&#8505;&#65039;', success:'&#9989;'};
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<span class="toast-icon">${icons[type]||''}</span><div class="toast-body"><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div><button class="toast-close" onclick="this.parentElement.remove()">&times;</button>`;
+  container.appendChild(toast);
+  setTimeout(() => { toast.style.animation='toast-out 0.3s ease forwards'; setTimeout(()=>toast.remove(),300); }, duration);
+}
+
+// ═══════════════════════════════════════════════════════════
+// SCENE FEED
+// ═══════════════════════════════════════════════════════════
+function clearFeed() {
+  document.getElementById('feed-items').innerHTML = '<div class="feed-item"><span class="feed-text" style="color:var(--dim);">Feed cleared</span></div>';
+}
+
+// ═══════════════════════════════════════════════════════════
+// LIVE CAMERA PREVIEW
+// ═══════════════════════════════════════════════════════════
+function updateCameraPreview() {
+  const img = document.getElementById('cam-img-usb');
+  if (img && serverActive) {
+    img.src = BASE + '/frame?t=' + Date.now();
+  }
+  // Also update detail panel camera
+  if (activeNodeId && META[activeNodeId]?.hasCamera) {
+    const dImg = document.getElementById('detail-cam-img');
+    if (dImg) dImg.src = BASE + '/frame?t=' + Date.now();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// LIVE DATA POLLING
+// ═══════════════════════════════════════════════════════════
+let lastScene = '', apiCallCount = 0, lastAlertCount = 0;
+const COST_PER_CALL = 0.001; // Estimated $0.001 per LLM call
+
+async function api(path) {
+  try { const r = await fetch(BASE+path, {headers:H}); if(!r.ok)return null; return await r.json(); } catch(e) { return null; }
+}
+
+async function refresh() {
+  const [health, rules, alerts, scene] = await Promise.all([
+    api('/health'), api('/rules'), api('/alerts'), api('/scene')
+  ]);
+
+  if (health) {
+    const camIds = Object.keys(health); const cams = camIds.length;
+    document.getElementById('hud-cams').textContent = cams;
+    serverActive = cams > 0;
+    const dot = document.getElementById('hud-health-dot');
+    if (cams > 0) {
+      dot.className = 'hud-dot';
+      document.getElementById('n-usb').classList.add('active');
+      document.getElementById('loop-badge').textContent = 'RUNNING';
+      document.getElementById('loop-badge').className = 'node-badge pulse';
+      document.getElementById('tp-buffer').textContent = '~2';
+      document.getElementById('tp-detector').textContent = '~2';
+      let anyDegraded = false;
+      camIds.forEach(cid => { if (health[cid]?.status==='degraded') anyDegraded=true; });
+      if (anyDegraded) dot.className = 'hud-dot warn';
+    } else {
+      dot.className = 'hud-dot off';
+      document.getElementById('n-usb').classList.remove('active');
+      document.getElementById('loop-badge').textContent = 'IDLE';
+      document.getElementById('loop-badge').className = 'node-badge warn';
+    }
+  }
+
+  if (rules) {
+    const ruleList = Array.isArray(rules) ? rules : (rules.rules||[]);
+    document.getElementById('hud-rules').textContent = ruleList.length;
+    const eng = document.getElementById('n-engine');
+    if (ruleList.length > 0) {
+      eng.classList.add('active');
+      let badge = eng.querySelector('.node-badge');
+      if (!badge) { badge=document.createElement('div'); badge.className='node-badge'; eng.appendChild(badge); }
+      badge.textContent = ruleList.length;
+    }
+    if (activeNodeId === 'engine') {
+      document.getElementById('detail-live').innerHTML =
+        '<div class="detail-section">LIVE RULES</div>' +
+        ruleList.map(r => `<div class="live-item"><span class="lk">${r.name||r.id||'?'}</span><span class="lv">${r.enabled!==false?'ON':'OFF'}</span></div>`).join('');
+    }
+  }
+
+  if (alerts) {
+    const list = Array.isArray(alerts) ? alerts : (alerts.alerts||[]);
+    document.getElementById('hud-alerts').textContent = list.length;
+    document.getElementById('tp-dispatch').textContent = list.length;
+    if (list.length > 0) document.getElementById('n-dispatch').classList.add('active');
+    // Toast for new alerts
+    if (list.length > lastAlertCount) {
+      const newAlerts = list.slice(0, list.length - lastAlertCount);
+      newAlerts.forEach(a => {
+        showToast('alert', a.rule_name || 'Alert', a.reasoning || 'Rule triggered', 6000);
+        [10,11,12,13,14,15,16].forEach(i => { if(Math.random()>0.5) spawnParticle(i); });
+      });
+    }
+    lastAlertCount = list.length;
+  }
+
+  if (scene) {
+    let sceneText = '';
+    if (typeof scene === 'object' && !Array.isArray(scene)) {
+      const keys = Object.keys(scene);
+      if (keys.length > 0) {
+        const first = scene[keys[0]];
+        sceneText = first?.summary || first?.scene_summary || '';
+      }
+    }
+    if (sceneText && sceneText !== lastScene) {
+      lastScene = sceneText;
+      apiCallCount++;
+      document.getElementById('cost-calls').textContent = apiCallCount;
+      document.getElementById('cost-usd').textContent = '$' + (apiCallCount * COST_PER_CALL).toFixed(3);
+      const pct = Math.min(100, (apiCallCount * COST_PER_CALL / 1.0) * 100);
+      document.getElementById('cost-fill').style.width = pct + '%';
+      document.getElementById('tp-analyzer').textContent = apiCallCount;
+
+      const feed = document.getElementById('feed-items');
+      const now = new Date().toLocaleTimeString();
+      const item = document.createElement('div');
+      item.className = 'feed-item';
+      item.innerHTML = `<span class="feed-time">${now}</span> <span class="feed-text">${sceneText.slice(0,120)}</span>`;
+      feed.insertBefore(item, feed.firstChild);
+      while (feed.children.length > 25) feed.removeChild(feed.lastChild);
+
+      document.getElementById('n-analyzer').classList.add('active');
+      setTimeout(() => document.getElementById('n-analyzer').classList.remove('active'), 2000);
+      [0,2,3,4,5,7].forEach((b,i) => setTimeout(()=>spawnParticle(b), i*150));
+    }
+    if (scene && Object.keys(scene).length > 0) document.getElementById('n-scene').classList.add('active');
+  }
+
+  document.getElementById('n-api').classList.add('active');
+  document.getElementById('n-mcp').classList.add('active');
+  document.getElementById('hud-fps').textContent = serverActive ? '~2' : '0';
+}
+
+// ═══════════════════════════════════════════════════════════
+// INITIALIZE
+// ═══════════════════════════════════════════════════════════
+drawBelts();
+drawMinimapNodes();
+refresh();
+setInterval(refresh, 3000);
+setInterval(updateCameraPreview, 2000);
+requestAnimationFrame(animateParticles);
+spawnLoop();
+window.addEventListener('resize', () => { drawBelts(); drawMinimapNodes(); applyTransform(); });
+</script>
+</body>
+</html>
