@@ -113,6 +113,27 @@ for cam_id in "usb:0" "usb:1"; do
     echo "  Rule for ${cam_id}: $(echo "$RULE" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("name","?"))' 2>/dev/null)"
 done
 
+cleanup() {
+    echo ""
+    echo "Cleaning up..."
+    kill $SERVER_PID 2>/dev/null || true
+    wait $SERVER_PID 2>/dev/null || true
+    # Restore MacBook camera to disabled
+    $VENV/python -c "
+import yaml
+with open('$HOME/.physical-mcp/config.yaml') as f:
+    cfg = yaml.safe_load(f)
+for cam in cfg.get('cameras', []):
+    if cam.get('id') == 'usb:1':
+        cam['enabled'] = False
+with open('$HOME/.physical-mcp/config.yaml', 'w') as f:
+    yaml.dump(cfg, f, default_flow_style=False)
+print('  MacBook camera disabled in config')
+" 2>/dev/null
+    echo "Done."
+}
+trap cleanup EXIT INT TERM
+
 echo ""
 echo "Server running with both cameras. Check:"
 echo "  Dashboard: http://127.0.0.1:8090/dashboard"

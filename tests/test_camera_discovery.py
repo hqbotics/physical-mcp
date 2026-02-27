@@ -141,7 +141,7 @@ class TestDiscoverCameras:
                 try_onvif=False,
             )
 
-        assert result.scan_time_seconds > 0
+        assert result.scan_time_seconds >= 0  # Windows timer can return 0.0
 
     def test_constants(self):
         """Verify expected RTSP ports and patterns."""
