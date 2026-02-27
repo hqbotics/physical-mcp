@@ -262,12 +262,13 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
 /* ─── Title bar ──────────────────────────────────────── */
 #title-bar {
-  position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:50;
+  position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:40;
   background:var(--surface); border:1px solid var(--belt); border-radius:10px;
-  padding:10px 28px; text-align:center;
+  padding:6px 20px; text-align:center; opacity:0.7; transition:opacity 0.2s;
 }
-#title-bar h1 { font-size:14px; color:var(--belt); letter-spacing:2px; }
-#title-bar .sub { font-size:10px; color:var(--dim); margin-top:3px; }
+#title-bar:hover { opacity:1; }
+#title-bar h1 { font-size:11px; color:var(--belt); letter-spacing:2px; }
+#title-bar .sub { font-size:9px; color:var(--dim); margin-top:2px; }
 
 /* ─── Mini-map ───────────────────────────────────────── */
 #minimap {
@@ -360,8 +361,9 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
 /* ─── Export toolbar ─────────────────────────────────── */
 #toolbar {
-  position:fixed; top:58px; right:16px; z-index:55;
-  display:flex; gap:6px;
+  position:fixed; top:54px; right:16px; z-index:55;
+  display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:flex-end;
+  max-width:calc(100vw - 380px);
 }
 .toolbar-btn {
   background:var(--surface); border:1px solid var(--border); border-radius:6px;
@@ -382,6 +384,96 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 }
 .spark-bar.recent { opacity:1; background:var(--accent); }
 
+/* ─── Node inline sparklines ────────────────────────── */
+.node-spark {
+  display:flex; align-items:flex-end; gap:1px; height:18px;
+  margin-top:6px; padding:2px 0;
+}
+.node-spark-bar {
+  width:3px; border-radius:1px 1px 0 0; min-height:1px;
+  background:var(--green); opacity:0.6; transition:height 0.2s;
+}
+.node-spark-bar.hot { background:var(--belt); opacity:0.9; }
+
+/* ─── Status indicator on nodes ─────────────────────── */
+.node-status-dot {
+  position:absolute; top:8px; left:8px;
+  width:8px; height:8px; border-radius:50%;
+  background:var(--dim); transition:background 0.3s;
+}
+.node-status-dot.online { background:var(--green); box-shadow:0 0 6px var(--green); }
+.node-status-dot.processing { background:var(--accent); box-shadow:0 0 6px var(--accent); animation:pulse 1s ease-in-out infinite; }
+.node-status-dot.idle { background:var(--yellow); }
+.node-status-dot.offline { background:var(--red); box-shadow:0 0 6px var(--red); }
+
+/* ─── Alert timeline drawer ─────────────────────────── */
+#alert-timeline {
+  position:fixed; bottom:-260px; left:0; right:0; z-index:80;
+  height:260px; background:var(--surface); border-top:2px solid var(--belt);
+  transition:bottom 0.3s cubic-bezier(0.4,0,0.2,1);
+  display:flex; flex-direction:column;
+}
+#alert-timeline.open { bottom:0; }
+#alert-timeline-header {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:10px 20px; border-bottom:1px solid var(--border); flex-shrink:0;
+}
+#alert-timeline-header h3 { font-size:12px; color:var(--belt); letter-spacing:1px; text-transform:uppercase; }
+#alert-timeline-header .at-count { background:var(--belt); color:#000; font-size:10px; font-weight:700; padding:2px 8px; border-radius:8px; margin-left:8px; }
+.at-toggle {
+  background:none; border:1px solid var(--border); border-radius:6px;
+  color:var(--dim); padding:4px 10px; font-size:10px; cursor:pointer; font-family:inherit;
+}
+.at-toggle:hover { color:var(--text); border-color:var(--accent); }
+#alert-timeline-body {
+  flex:1; overflow-y:auto; padding:8px 20px;
+}
+.at-item {
+  display:flex; align-items:flex-start; gap:12px; padding:10px 0;
+  border-bottom:1px solid var(--border); font-size:11px;
+}
+.at-item:last-child { border-bottom:none; }
+.at-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; margin-top:3px; }
+.at-dot.critical { background:var(--red); box-shadow:0 0 6px var(--red); }
+.at-dot.warning { background:var(--yellow); }
+.at-dot.info { background:var(--accent); }
+.at-time { color:var(--dim); white-space:nowrap; min-width:60px; }
+.at-rule { color:var(--accent); font-weight:600; }
+.at-msg { color:var(--text); flex:1; }
+.at-confidence { color:var(--green); font-weight:700; min-width:40px; text-align:right; }
+.at-empty { color:var(--dim); text-align:center; padding:24px; font-size:12px; }
+
+/* ─── Filter bar ────────────────────────────────────── */
+#filter-bar {
+  position:fixed; top:88px; left:16px; z-index:50;
+}
+.toolbar-filter {
+  display:flex; gap:2px; background:var(--surface2); border-radius:6px; padding:2px; border:1px solid var(--border);
+}
+.filter-btn {
+  background:none; border:none; border-radius:4px;
+  color:var(--dim); padding:4px 10px; font-size:10px; cursor:pointer;
+  font-family:inherit; transition:all 0.15s;
+}
+.filter-btn:hover { color:var(--text); }
+.filter-btn.active { background:var(--accent); color:#000; font-weight:700; }
+.filter-btn .filter-count { font-size:9px; opacity:0.7; margin-left:2px; }
+
+/* ─── Performance stats panel ───────────────────────── */
+#perf-panel {
+  position:fixed; bottom:150px; right:16px; z-index:50;
+  width:200px; background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:10px 14px; font-size:10px;
+}
+.perf-title { color:var(--accent); font-weight:700; font-size:10px; margin-bottom:8px; text-transform:uppercase; letter-spacing:1px; }
+.perf-row { display:flex; justify-content:space-between; padding:3px 0; }
+.perf-row .perf-label { color:var(--dim); }
+.perf-row .perf-val { color:var(--green); font-weight:700; }
+.perf-row .perf-val.warn { color:var(--yellow); }
+.perf-row .perf-val.bad { color:var(--red); }
+.perf-chart { height:40px; display:flex; align-items:flex-end; gap:1px; margin-top:6px; }
+.perf-bar { width:4px; background:var(--accent); border-radius:1px 1px 0 0; min-height:1px; opacity:0.7; }
+
 /* ─── Animations ─────────────────────────────────────── */
 @keyframes pulse { 0%,100%{opacity:1;}50%{opacity:0.7;} }
 .pulse { animation:pulse 2s ease-in-out infinite; }
@@ -395,13 +487,26 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 ::-webkit-scrollbar-thumb:hover { background:var(--dim); }
 
 /* ─── Responsive ─────────────────────────────────────── */
-@media (max-width: 768px) {
-  #search-input { width:160px; }
-  #search-input:focus { width:200px; }
-  #scene-feed { width:180px; }
-  #minimap { width:150px; height:90px; }
+@media (max-width: 600px) {
+  #search-input { width:120px; font-size:11px; }
+  #search-input:focus { width:160px; }
+  #scene-feed { width:140px; max-height:140px; }
+  #minimap { width:120px; height:72px; }
   #kb-hints { display:none; }
-  #cost-bar { font-size:9px; }
+  #cost-bar { font-size:9px; gap:8px; }
+  #title-bar { display:none; }
+  #perf-panel { width:140px; font-size:9px; }
+  #filter-bar { display:none; }
+  #toolbar { gap:4px; }
+  .toolbar-btn { padding:4px 8px; font-size:9px; }
+  #activity-bar { display:none; }
+}
+@media (max-width: 420px) {
+  #scene-feed { display:none; }
+  #minimap { display:none; }
+  #perf-panel { display:none; }
+  #cost-bar { display:none; }
+  #hud { flex-wrap:nowrap; overflow-x:auto; }
 }
 </style>
 </head>
@@ -452,8 +557,18 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 <div id="toast-container"></div>
 
 <div id="toolbar">
+  <button class="toolbar-btn" onclick="toggleTimeline()" title="Alert Timeline (T)">&#128200; Timeline</button>
   <button class="toolbar-btn" onclick="exportPNG()" title="Export as PNG">&#128247; Export PNG</button>
   <button class="toolbar-btn" onclick="toggleHelp()" title="Help (?)">&#10067; Help</button>
+</div>
+
+<div id="filter-bar">
+  <div class="toolbar-filter">
+    <button class="filter-btn active" data-filter="all" onclick="filterNodes('all',this)">All</button>
+    <button class="filter-btn" data-filter="active" onclick="filterNodes('active',this)">Active</button>
+    <button class="filter-btn" data-filter="idle" onclick="filterNodes('idle',this)">Idle</button>
+    <button class="filter-btn" data-filter="error" onclick="filterNodes('error',this)">Error</button>
+  </div>
 </div>
 
 <div id="activity-bar"></div>
@@ -497,10 +612,35 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     <div class="help-section">
       <h3>Other</h3>
       <div class="help-row"><span class="help-desc">Close panel/overlay</span><span class="help-keys"><span class="kb">Esc</span></span></div>
+      <div class="help-row"><span class="help-desc">Alert timeline</span><span class="help-keys"><span class="kb">T</span></span></div>
       <div class="help-row"><span class="help-desc">Export as PNG</span><span class="help-keys">Toolbar button</span></div>
       <div class="help-row"><span class="help-desc">This help</span><span class="help-keys"><span class="kb">?</span></span></div>
     </div>
   </div>
+</div>
+
+<!-- Alert timeline drawer -->
+<div id="alert-timeline">
+  <div id="alert-timeline-header">
+    <h3>&#128200; Alert Timeline <span class="at-count" id="at-count">0</span></h3>
+    <div style="display:flex;gap:6px;">
+      <button class="at-toggle" onclick="clearTimeline()">Clear</button>
+      <button class="at-toggle" onclick="toggleTimeline()">&times; Close</button>
+    </div>
+  </div>
+  <div id="alert-timeline-body">
+    <div class="at-empty">No alerts yet. Create watch rules to start receiving alerts.</div>
+  </div>
+</div>
+
+<!-- Performance panel -->
+<div id="perf-panel">
+  <div class="perf-title">&#9889; Performance</div>
+  <div class="perf-row"><span class="perf-label">Uptime</span><span class="perf-val" id="perf-uptime">0s</span></div>
+  <div class="perf-row"><span class="perf-label">Polls</span><span class="perf-val" id="perf-polls">0</span></div>
+  <div class="perf-row"><span class="perf-label">Latency</span><span class="perf-val" id="perf-latency">—</span></div>
+  <div class="perf-row"><span class="perf-label">Errors</span><span class="perf-val" id="perf-errors">0</span></div>
+  <div class="perf-chart" id="perf-chart"></div>
 </div>
 
 <div id="canvas-wrap">
@@ -519,6 +659,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
     <!-- MINING: Camera sources -->
     <div class="node" id="n-usb" style="left:60px;top:75px;" data-id="usb" data-section="mining">
+      <div class="node-status-dot" id="status-usb"></div>
       <div class="node-icon">&#128247;</div>
       <div class="node-title">USB Camera</div>
       <div class="node-sub">OpenCV bg thread @ 2fps</div>
@@ -540,10 +681,12 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
     <!-- ORE PROCESSING -->
     <div class="node" id="n-buffer" style="left:360px;top:75px;" data-id="buffer" data-section="processing">
+      <div class="node-status-dot" id="status-buffer"></div>
       <div class="node-icon">&#128230;</div>
       <div class="node-title">FrameBuffer</div>
       <div class="node-sub">async ring: 300 frames</div>
       <div class="node-file">camera/buffer.py</div>
+      <div class="node-spark" id="spark-buffer"></div>
       <div class="node-throughput"><span class="tp-val" id="tp-buffer">0</span> f/s</div>
     </div>
     <div class="node" id="n-detector" style="left:360px;top:250px;" data-id="detector" data-section="processing">
@@ -562,10 +705,12 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
     <!-- CHEMICAL PLANT -->
     <div class="node" id="n-analyzer" style="left:700px;top:75px;" data-id="analyzer" data-section="chemical">
+      <div class="node-status-dot" id="status-analyzer"></div>
       <div class="node-icon">&#129504;</div>
       <div class="node-title">FrameAnalyzer</div>
       <div class="node-sub">LLM vision API call ($$$)</div>
       <div class="node-file">reasoning/analyzer.py</div>
+      <div class="node-spark" id="spark-analyzer"></div>
       <div class="node-throughput"><span class="tp-val" id="tp-analyzer">0</span> calls/min</div>
     </div>
     <div class="node" id="n-providers" style="left:700px;top:250px;" data-id="providers" data-section="chemical">
@@ -583,10 +728,12 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
     <!-- ASSEMBLER -->
     <div class="node" id="n-engine" style="left:1080px;top:75px;" data-id="engine" data-section="assembler">
+      <div class="node-status-dot" id="status-engine"></div>
       <div class="node-icon">&#9878;&#65039;</div>
       <div class="node-title">RulesEngine</div>
       <div class="node-sub">evaluate &middot; cooldown &middot; alert</div>
       <div class="node-file">rules/engine.py</div>
+      <div class="node-spark" id="spark-engine"></div>
     </div>
     <div class="node" id="n-store" style="left:1080px;top:250px;" data-id="store" data-section="assembler">
       <div class="node-icon">&#128190;</div>
@@ -603,10 +750,12 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
     <!-- LOGISTICS -->
     <div class="node" id="n-dispatch" style="left:1420px;top:75px;" data-id="dispatch" data-section="logistics">
+      <div class="node-status-dot" id="status-dispatch"></div>
       <div class="node-icon">&#128236;</div>
       <div class="node-title">Dispatcher</div>
       <div class="node-sub">routes to 7 channels</div>
       <div class="node-file">notifications/__init__.py</div>
+      <div class="node-spark" id="spark-dispatch"></div>
       <div class="node-throughput"><span class="tp-val" id="tp-dispatch">0</span> alerts</div>
     </div>
     <div class="node" id="n-telegram" style="left:1380px;top:250px;" data-id="telegram" data-section="logistics">
@@ -654,6 +803,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
     <!-- POWER PLANT -->
     <div class="node" id="n-loop" style="left:60px;top:580px;min-width:420px;border-color:var(--belt);background:linear-gradient(135deg,var(--surface),#1a1020);" data-id="loop" data-section="power">
+      <div class="node-status-dot" id="status-loop"></div>
       <div class="node-icon">&#9889;</div>
       <div class="node-title">Perception Loop &mdash; the reactor core</div>
       <div class="node-sub">1 async task per camera &middot; wires entire pipeline &middot; 557 lines</div>
@@ -663,12 +813,14 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
     <!-- TRAIN STATIONS -->
     <div class="node" id="n-mcp" style="left:540px;top:580px;" data-id="mcp" data-section="stations">
+      <div class="node-status-dot" id="status-mcp"></div>
       <div class="node-icon">&#128642;</div>
       <div class="node-title">MCP Server :8400</div>
       <div class="node-sub">Claude &middot; Cursor &middot; VS Code</div>
       <div class="node-file">server.py + __main__.py</div>
     </div>
     <div class="node" id="n-api" style="left:540px;top:720px;" data-id="api" data-section="stations">
+      <div class="node-status-dot" id="status-api"></div>
       <div class="node-icon">&#127760;</div>
       <div class="node-title">Vision API :8090</div>
       <div class="node-sub">18 endpoints &middot; dashboard &middot; factory</div>
@@ -928,6 +1080,8 @@ function drawBelts() {
     const f = document.getElementById(fid);
     const t = document.getElementById(tid);
     if (!f || !t) return;
+    // Hide belt if either node is in a collapsed section
+    if (f.classList.contains('section-hidden') || t.classList.contains('section-hidden')) return;
 
     const fx = f.offsetLeft + f.offsetWidth;
     const fy = f.offsetTop + f.offsetHeight/2;
@@ -1229,17 +1383,20 @@ document.querySelectorAll('.ctx-item').forEach(item => {
 // KEYBOARD SHORTCUTS
 // ═══════════════════════════════════════════════════════════
 window.addEventListener('keydown', e => {
-  if (e.target === searchInput) {
-    if (e.key === 'Escape') { searchInput.blur(); searchInput.value=''; searchResults.classList.remove('show'); clearHighlights(); }
+  // Don't trigger shortcuts when typing in inputs
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+    if (e.key === 'Escape') { e.target.blur(); if (e.target === searchInput) { searchInput.value=''; searchResults.classList.remove('show'); clearHighlights(); } }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); searchInput.focus(); }
     return;
   }
-  if (e.key === 'Escape') { closeDetail(); clearHighlights(); closeHelp(); }
+  if (e.key === 'Escape') { closeDetail(); clearHighlights(); closeHelp(); document.getElementById('alert-timeline').classList.remove('open'); }
   if (e.key === '+' || e.key === '=') { zoomIn(); e.preventDefault(); }
   if (e.key === '-' || e.key === '_') { zoomOut(); e.preventDefault(); }
   if (e.key === 'Home') { resetView(); e.preventDefault(); }
   if (e.key === 'f' || e.key === 'F') { fitAll(); e.preventDefault(); }
   if (e.key === 'r' || e.key === 'R') { resetLayout(); e.preventDefault(); }
   if (e.key === '?') { toggleHelp(); e.preventDefault(); }
+  if (e.key === 't' || e.key === 'T') { toggleTimeline(); e.preventDefault(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); searchInput.focus(); }
   if (e.key === 'h' || e.key === 'H') {
     if (activeNodeId) {
@@ -1312,6 +1469,42 @@ function openDetail(id) {
   } else {
     camPreview.style.display = 'none';
   }
+
+  // Connection graph — upstream/downstream
+  const nodeEl = document.querySelector(`[data-id="${id}"]`);
+  const nodeHtmlId = nodeEl?.id || '';
+  const upstream = [], downstream = [];
+  BELTS.forEach(([from, to, lbl, desc]) => {
+    if (to === nodeHtmlId) {
+      const fromEl = document.getElementById(from);
+      const fromTitle = fromEl?.querySelector('.node-title')?.textContent || from;
+      upstream.push({id: from, title: fromTitle, label: lbl, desc: desc});
+    }
+    if (from === nodeHtmlId) {
+      const toEl = document.getElementById(to);
+      const toTitle = toEl?.querySelector('.node-title')?.textContent || to;
+      downstream.push({id: to, title: toTitle, label: lbl, desc: desc});
+    }
+  });
+
+  let connHtml = '';
+  if (upstream.length > 0) {
+    connHtml += '<div class="detail-section">UPSTREAM INPUTS</div>';
+    connHtml += upstream.map(c =>
+      `<div class="live-item" style="cursor:pointer;" onclick="openDetail(document.getElementById('${c.id}')?.dataset?.id)">` +
+      `<span class="lk">&#8592; ${c.title}</span>` +
+      `<span class="lv" style="color:var(--dim);font-size:10px;">${c.label || 'data'}</span></div>`
+    ).join('');
+  }
+  if (downstream.length > 0) {
+    connHtml += '<div class="detail-section">DOWNSTREAM OUTPUTS</div>';
+    connHtml += downstream.map(c =>
+      `<div class="live-item" style="cursor:pointer;" onclick="openDetail(document.getElementById('${c.id}')?.dataset?.id)">` +
+      `<span class="lk">${c.title} &#8594;</span>` +
+      `<span class="lv" style="color:var(--dim);font-size:10px;">${c.label || c.desc?.slice(0,30) || 'data'}</span></div>`
+    ).join('');
+  }
+  document.getElementById('detail-live').innerHTML = connHtml;
 
   // Action buttons
   const actions = document.getElementById('detail-actions');
@@ -1403,9 +1596,14 @@ async function api(path) {
 }
 
 async function refresh() {
+  const t0 = Date.now();
+  let hadError = false;
   const [health, rules, alerts, scene] = await Promise.all([
     api('/health'), api('/rules'), api('/alerts'), api('/scene')
   ]);
+  const latency = Date.now() - t0;
+  if (!health && !rules && !alerts && !scene) hadError = true;
+  updatePerfPanel(latency, hadError);
 
   if (health) {
     const camIds = Object.keys(health); const cams = camIds.length;
@@ -1436,14 +1634,27 @@ async function refresh() {
     const eng = document.getElementById('n-engine');
     if (ruleList.length > 0) {
       eng.classList.add('active');
+      setStatus('status-engine', 'online');
       let badge = eng.querySelector('.node-badge');
       if (!badge) { badge=document.createElement('div'); badge.className='node-badge'; eng.appendChild(badge); }
       badge.textContent = ruleList.length;
+      pushNodeSpark('engine', ruleList.filter(r => r.enabled !== false).length);
+    } else {
+      setStatus('status-engine', 'idle');
+      pushNodeSpark('engine', 0);
     }
     if (activeNodeId === 'engine') {
-      document.getElementById('detail-live').innerHTML =
-        '<div class="detail-section">LIVE RULES</div>' +
+      const liveDiv = document.getElementById('detail-live');
+      // Preserve connections + add live rules
+      const existingConn = liveDiv.innerHTML;
+      const rulesSection = '<div class="detail-section">LIVE RULES</div>' +
         ruleList.map(r => `<div class="live-item"><span class="lk">${r.name||r.id||'?'}</span><span class="lv">${r.enabled!==false?'ON':'OFF'}</span></div>`).join('');
+      if (!existingConn.includes('LIVE RULES')) liveDiv.innerHTML += rulesSection;
+      else {
+        // Update just the rules section
+        const before = existingConn.split('<div class="detail-section">LIVE RULES</div>')[0];
+        liveDiv.innerHTML = before + rulesSection;
+      }
     }
   }
 
@@ -1452,11 +1663,13 @@ async function refresh() {
     document.getElementById('hud-alerts').textContent = list.length;
     document.getElementById('tp-dispatch').textContent = list.length;
     if (list.length > 0) document.getElementById('n-dispatch').classList.add('active');
-    // Toast for new alerts
+    pushNodeSpark('dispatch', list.length > lastAlertCount ? (list.length - lastAlertCount) : 0);
+    // Toast + timeline for new alerts
     if (list.length > lastAlertCount) {
       const newAlerts = list.slice(0, list.length - lastAlertCount);
       newAlerts.forEach(a => {
         showToast('alert', a.rule_name || 'Alert', a.reasoning || 'Rule triggered', 6000);
+        addTimelineAlert(a);
         [10,11,12,13,14,15,16].forEach(i => { if(Math.random()>0.5) spawnParticle(i); });
       });
     }
@@ -1490,7 +1703,10 @@ async function refresh() {
       while (feed.children.length > 25) feed.removeChild(feed.lastChild);
 
       document.getElementById('n-analyzer').classList.add('active');
-      setTimeout(() => document.getElementById('n-analyzer').classList.remove('active'), 2000);
+      setStatus('status-analyzer', 'processing');
+      setTimeout(() => { document.getElementById('n-analyzer').classList.remove('active'); setStatus('status-analyzer', 'online'); }, 2000);
+      pushNodeSpark('analyzer', 1);
+      pushNodeSpark('buffer', 2);
       [0,2,3,4,5,7].forEach((b,i) => setTimeout(()=>spawnParticle(b), i*150));
     }
     if (scene && Object.keys(scene).length > 0) document.getElementById('n-scene').classList.add('active');
@@ -1500,8 +1716,16 @@ async function refresh() {
   document.getElementById('n-mcp').classList.add('active');
   document.getElementById('hud-fps').textContent = serverActive ? '~2' : '0';
 
-  // Update sparkline
+  // Update global sparkline
   updateSparkline(scene && lastScene !== '');
+  // Update status dots
+  updateStatusDots();
+
+  // Push idle sparkline data when no new scene
+  if (!scene || lastScene === '') {
+    pushNodeSpark('analyzer', 0);
+    pushNodeSpark('buffer', serverActive ? 1 : 0);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1558,17 +1782,11 @@ function closeHelp() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// EXPORT PNG
+// EXPORT PNG (True Canvas-based)
 // ═══════════════════════════════════════════════════════════
 async function exportPNG() {
-  showToast('info', 'Exporting...', 'Capturing factory blueprint as PNG');
+  showToast('info', 'Exporting...', 'Rendering factory blueprint to PNG...');
   try {
-    // Use html2canvas-like approach: create a canvas from the factory DOM
-    // Since we can't import html2canvas, we'll use SVG foreignObject trick
-    const factoryEl = document.getElementById('factory');
-    const clone = factoryEl.cloneNode(true);
-
-    // Get bounding box of all nodes
     let minX=Infinity, minY=Infinity, maxX=0, maxY=0;
     document.querySelectorAll('.node:not(.section-hidden)').forEach(n => {
       minX = Math.min(minX, n.offsetLeft);
@@ -1576,48 +1794,153 @@ async function exportPNG() {
       maxX = Math.max(maxX, n.offsetLeft + n.offsetWidth);
       maxY = Math.max(maxY, n.offsetTop + n.offsetHeight);
     });
-    const w = maxX - minX + 100;
-    const h = maxY - minY + 100;
+    const pad = 80;
+    const w = maxX - minX + pad*2;
+    const h = maxY - minY + pad*2 + 60;
+    const dpr = 2; // hi-dpi for sharp export
 
-    // Create SVG with foreignObject
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
-      <rect width="100%" height="100%" fill="#0d1117"/>
-      <text x="20" y="30" fill="#e94560" font-family="monospace" font-size="16" font-weight="bold">PHYSICAL-MCP FACTORY BLUEPRINT</text>
-      <text x="20" y="50" fill="#8b949e" font-family="monospace" font-size="11">v1.2.0 · 52 modules · 506 tests · Exported ${new Date().toLocaleString()}</text>
-      ${beltPaths.map(p => `<path d="${p.getAttribute('d')}" fill="none" stroke="#e94560" stroke-width="2" stroke-dasharray="8 6" opacity="0.6"/>`).join('')}
-      ${Array.from(document.querySelectorAll('.node:not(.section-hidden)')).map(n => {
-        const x = n.offsetLeft - minX + 50;
-        const y = n.offsetTop - minY + 70;
-        const title = n.querySelector('.node-title')?.textContent || '';
-        const sub = n.querySelector('.node-sub')?.textContent || '';
-        const file = n.querySelector('.node-file')?.textContent || '';
-        const isActive = n.classList.contains('active');
-        return `<g transform="translate(${x},${y})">
-          <rect width="${n.offsetWidth}" height="${n.offsetHeight}" rx="10" fill="#161b22" stroke="${isActive ? '#3fb950' : '#30363d'}" stroke-width="2"/>
-          <text x="18" y="38" fill="#e6edf3" font-family="monospace" font-size="13" font-weight="bold">${title}</text>
-          <text x="18" y="54" fill="#8b949e" font-family="monospace" font-size="10">${sub}</text>
-          <text x="18" y="70" fill="#484f58" font-family="monospace" font-size="9" font-style="italic">${file}</text>
-        </g>`;
-      }).join('')}
-    </svg>`;
+    const canvas = document.createElement('canvas');
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
 
-    const blob = new Blob([svg], {type:'image/svg+xml'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `factory-blueprint-${new Date().toISOString().slice(0,10)}.svg`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('success', 'Exported!', 'Factory blueprint saved as SVG');
+    // Background
+    ctx.fillStyle = '#0d1117';
+    ctx.fillRect(0, 0, w, h);
+
+    // Grid
+    ctx.strokeStyle = '#1b223044';
+    ctx.lineWidth = 0.5;
+    for (let x = 0; x < w; x += 48) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+    for (let y = 0; y < h; y += 48) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+
+    // Title
+    ctx.font = 'bold 18px "SF Mono","Fira Code",monospace';
+    ctx.fillStyle = '#e94560';
+    ctx.fillText('PHYSICAL-MCP FACTORY BLUEPRINT', pad, 36);
+    ctx.font = '12px "SF Mono","Fira Code",monospace';
+    ctx.fillStyle = '#8b949e';
+    ctx.fillText(`v1.2.0 · 52 modules · 506 tests · Exported ${new Date().toLocaleString()}`, pad, 54);
+
+    const offX = pad - minX;
+    const offY = pad + 60 - minY;
+
+    // Draw belts
+    BELTS.forEach(([fid, tid, label]) => {
+      const f = document.getElementById(fid);
+      const t = document.getElementById(tid);
+      if (!f || !t || f.classList.contains('section-hidden') || t.classList.contains('section-hidden')) return;
+      const fx = f.offsetLeft + f.offsetWidth + offX;
+      const fy = f.offsetTop + f.offsetHeight/2 + offY;
+      const tx = t.offsetLeft + offX;
+      const ty = t.offsetTop + t.offsetHeight/2 + offY;
+      ctx.strokeStyle = '#e9456088';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      if (Math.abs(ty - fy) < 10) {
+        ctx.moveTo(fx, fy); ctx.lineTo(tx, ty);
+      } else {
+        const mx = fx + (tx-fx)*0.4;
+        ctx.moveTo(fx, fy); ctx.bezierCurveTo(mx, fy, fx+(tx-fx)*0.6, ty, tx, ty);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Junction dot
+      ctx.fillStyle = '#e94560';
+      ctx.beginPath(); ctx.arc(tx, ty, 3, 0, Math.PI*2); ctx.fill();
+      // Label
+      if (label) {
+        const lx = (fx+tx)/2, ly = (fy+ty)/2;
+        ctx.font = '9px monospace'; ctx.fillStyle='#8b949e'; ctx.textAlign='center';
+        ctx.fillText(label, lx, ly - 4); ctx.textAlign='left';
+      }
+    });
+
+    // Draw nodes
+    document.querySelectorAll('.node:not(.section-hidden)').forEach(n => {
+      const x = n.offsetLeft + offX;
+      const y = n.offsetTop + offY;
+      const nw = n.offsetWidth;
+      const nh = n.offsetHeight;
+      const isActive = n.classList.contains('active');
+      const isError = n.classList.contains('error');
+      // Card background
+      ctx.fillStyle = n.id === 'n-loop' ? '#1a1020' : '#161b22';
+      ctx.strokeStyle = isActive ? '#3fb950' : isError ? '#f85149' : n.id==='n-loop' ? '#e94560' : '#30363d';
+      ctx.lineWidth = 2;
+      roundRect(ctx, x, y, nw, nh, 10);
+      ctx.fill(); ctx.stroke();
+      // Status dot
+      if (isActive) {
+        ctx.fillStyle = '#3fb950';
+        ctx.beginPath(); ctx.arc(x+12, y+14, 4, 0, Math.PI*2); ctx.fill();
+      }
+      // Text
+      const title = n.querySelector('.node-title')?.textContent || '';
+      const sub = n.querySelector('.node-sub')?.textContent || '';
+      const file = n.querySelector('.node-file')?.textContent || '';
+      ctx.font = 'bold 13px monospace'; ctx.fillStyle='#e6edf3';
+      ctx.fillText(title, x+18, y+42);
+      ctx.font = '10px monospace'; ctx.fillStyle='#8b949e';
+      ctx.fillText(sub, x+18, y+58);
+      ctx.font = 'italic 9px monospace'; ctx.fillStyle='#484f58';
+      ctx.fillText(file, x+18, y+72);
+      // Badge
+      const badge = n.querySelector('.node-badge');
+      if (badge) {
+        const bt = badge.textContent;
+        ctx.fillStyle = badge.classList.contains('warn') ? '#d29922' : badge.classList.contains('err') ? '#f85149' : '#3fb950';
+        const bw = bt.length * 6 + 16;
+        roundRect(ctx, x+nw-bw-4, y-8, bw, 18, 9); ctx.fill();
+        ctx.font = 'bold 9px monospace'; ctx.fillStyle='#000'; ctx.textAlign='center';
+        ctx.fillText(bt, x+nw-bw/2-4, y+5); ctx.textAlign='left';
+      }
+    });
+
+    // Section labels
+    document.querySelectorAll('.section-label:not(.collapsed)').forEach(label => {
+      const x = parseInt(label.style.left) + offX;
+      const y = parseInt(label.style.top) + offY;
+      ctx.font = 'bold 11px monospace';
+      ctx.fillStyle = '#e9456088';
+      ctx.fillText(label.textContent.trim(), x, y);
+    });
+
+    // Watermark
+    ctx.font = '10px monospace'; ctx.fillStyle='#30363d'; ctx.textAlign='right';
+    ctx.fillText('physical-mcp.dev · github.com/hqbotics/physical-mcp', w-20, h-16);
+    ctx.textAlign='left';
+
+    // Download as PNG
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `factory-blueprint-${new Date().toISOString().slice(0,10)}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('success', 'Exported!', 'Factory blueprint saved as PNG (2x resolution)');
+    }, 'image/png');
   } catch(e) {
     showToast('alert', 'Export failed', e.message);
   }
 }
 
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y); ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r); ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h); ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r); ctx.quadraticCurveTo(x, y, x+r, y);
+  ctx.closePath();
+}
+
 // ═══════════════════════════════════════════════════════════
-// ACTIVITY SPARKLINE
+// ACTIVITY SPARKLINE (global)
 // ═══════════════════════════════════════════════════════════
-const activityHistory = new Array(60).fill(0); // Last 60 ticks (3 min at 3s refresh)
+const activityHistory = new Array(60).fill(0);
 let activityIdx = 0;
 
 function updateSparkline(hadNewScene) {
@@ -1636,16 +1959,188 @@ function updateSparkline(hadNewScene) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// NODE INLINE SPARKLINES
+// ═══════════════════════════════════════════════════════════
+const nodeSparkData = {
+  buffer: new Array(20).fill(0),
+  analyzer: new Array(20).fill(0),
+  engine: new Array(20).fill(0),
+  dispatch: new Array(20).fill(0),
+};
+
+function pushNodeSpark(nodeKey, value) {
+  if (!nodeSparkData[nodeKey]) return;
+  nodeSparkData[nodeKey].push(value);
+  if (nodeSparkData[nodeKey].length > 20) nodeSparkData[nodeKey].shift();
+  renderNodeSpark(nodeKey);
+}
+
+function renderNodeSpark(nodeKey) {
+  const el = document.getElementById('spark-' + nodeKey);
+  if (!el) return;
+  const data = nodeSparkData[nodeKey];
+  const max = Math.max(1, ...data);
+  el.innerHTML = data.map((v, i) => {
+    const h = Math.max(1, (v / max) * 16);
+    const hot = i >= data.length - 3 && v > 0;
+    return `<div class="node-spark-bar${hot ? ' hot' : ''}" style="height:${h}px"></div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+// ALERT TIMELINE
+// ═══════════════════════════════════════════════════════════
+const timelineAlerts = [];
+
+function toggleTimeline() {
+  document.getElementById('alert-timeline').classList.toggle('open');
+}
+
+function clearTimeline() {
+  timelineAlerts.length = 0;
+  renderTimeline();
+}
+
+function addTimelineAlert(alert) {
+  timelineAlerts.unshift({
+    time: new Date(),
+    rule: alert.rule_name || 'Unknown',
+    msg: alert.reasoning || 'Rule triggered',
+    confidence: alert.confidence || 0,
+    severity: (alert.confidence || 0) > 0.8 ? 'critical' : (alert.confidence || 0) > 0.5 ? 'warning' : 'info'
+  });
+  if (timelineAlerts.length > 100) timelineAlerts.pop();
+  renderTimeline();
+}
+
+function renderTimeline() {
+  const body = document.getElementById('alert-timeline-body');
+  document.getElementById('at-count').textContent = timelineAlerts.length;
+  if (timelineAlerts.length === 0) {
+    body.innerHTML = '<div class="at-empty">No alerts yet. Create watch rules to start receiving alerts.</div>';
+    return;
+  }
+  body.innerHTML = timelineAlerts.map(a => {
+    const time = a.time.toLocaleTimeString();
+    return `<div class="at-item">
+      <div class="at-dot ${a.severity}"></div>
+      <span class="at-time">${time}</span>
+      <span class="at-rule">${a.rule}</span>
+      <span class="at-msg">${a.msg.slice(0, 80)}</span>
+      <span class="at-confidence">${Math.round((a.confidence||0)*100)}%</span>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+// NODE FILTER
+// ═══════════════════════════════════════════════════════════
+let currentFilter = 'all';
+
+function filterNodes(filter, btn) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  document.querySelectorAll('.node').forEach(n => {
+    if (n.classList.contains('section-hidden')) return; // don't override section collapse
+    const isActive = n.classList.contains('active');
+    const isError = n.classList.contains('error');
+    if (filter === 'all') {
+      n.style.opacity = ''; n.style.pointerEvents = '';
+    } else if (filter === 'active') {
+      n.style.opacity = isActive ? '' : '0.2';
+      n.style.pointerEvents = isActive ? '' : 'none';
+    } else if (filter === 'idle') {
+      n.style.opacity = !isActive && !isError ? '' : '0.2';
+      n.style.pointerEvents = !isActive && !isError ? '' : 'none';
+    } else if (filter === 'error') {
+      n.style.opacity = isError ? '' : '0.2';
+      n.style.pointerEvents = isError ? '' : 'none';
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// STATUS DOT UPDATES
+// ═══════════════════════════════════════════════════════════
+function updateStatusDots() {
+  // API & MCP always online if server responds
+  setStatus('status-api', 'online');
+  setStatus('status-mcp', 'online');
+
+  // Camera + loop based on server health
+  if (serverActive) {
+    setStatus('status-usb', 'online');
+    setStatus('status-loop', 'processing');
+    setStatus('status-buffer', 'online');
+  } else {
+    setStatus('status-usb', 'idle');
+    setStatus('status-loop', 'idle');
+    setStatus('status-buffer', 'idle');
+  }
+}
+
+function setStatus(id, state) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'node-status-dot ' + state;
+}
+
+// ═══════════════════════════════════════════════════════════
+// PERFORMANCE TRACKING
+// ═══════════════════════════════════════════════════════════
+const perfStart = Date.now();
+let pollCount = 0, errorCount = 0;
+const latencyHistory = new Array(30).fill(0);
+let latencyIdx = 0;
+
+function updatePerfPanel(latency, hadError) {
+  pollCount++;
+  if (hadError) errorCount++;
+  latencyHistory[latencyIdx % 30] = latency;
+  latencyIdx++;
+
+  const uptime = Math.floor((Date.now() - perfStart) / 1000);
+  const hrs = Math.floor(uptime/3600);
+  const mins = Math.floor((uptime%3600)/60);
+  const secs = uptime % 60;
+  document.getElementById('perf-uptime').textContent =
+    hrs > 0 ? `${hrs}h ${mins}m` : mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+  document.getElementById('perf-polls').textContent = pollCount;
+
+  const avgLat = latencyHistory.reduce((a,b)=>a+b,0) / Math.min(latencyIdx, 30);
+  const latEl = document.getElementById('perf-latency');
+  latEl.textContent = Math.round(avgLat) + 'ms';
+  latEl.className = 'perf-val' + (avgLat > 1000 ? ' bad' : avgLat > 500 ? ' warn' : '');
+
+  const errEl = document.getElementById('perf-errors');
+  errEl.textContent = errorCount;
+  errEl.className = 'perf-val' + (errorCount > 5 ? ' bad' : errorCount > 0 ? ' warn' : '');
+
+  // Latency chart
+  const chart = document.getElementById('perf-chart');
+  const maxLat = Math.max(100, ...latencyHistory);
+  chart.innerHTML = latencyHistory.map((l, i) => {
+    const h = Math.max(1, (l / maxLat) * 36);
+    return `<div class="perf-bar" style="height:${h}px;opacity:${i >= latencyIdx%30-3 ? 1 : 0.5}"></div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
 // INITIALIZE
 // ═══════════════════════════════════════════════════════════
 drawBelts();
 drawMinimapNodes();
+// Initialize node sparklines
+Object.keys(nodeSparkData).forEach(k => renderNodeSpark(k));
 refresh();
 setInterval(refresh, 3000);
 setInterval(updateCameraPreview, 2000);
 requestAnimationFrame(animateParticles);
 spawnLoop();
 updateSparkline(false);
+updatePerfPanel(0, false);
 window.addEventListener('resize', () => { drawBelts(); drawMinimapNodes(); applyTransform(); });
 </script>
 </body>
