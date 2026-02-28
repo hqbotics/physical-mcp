@@ -30,6 +30,7 @@ dependencies = [
     "click>=8.0",
     "qrcode>=7.0",
     "zeroconf>=0.130",
+    "uvicorn>=0.20",
 ]
 
 [project.urls]

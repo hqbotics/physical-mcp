@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>physical-mcp — Factory Blueprint</title>
+<title>physical-mcp — Product Architecture</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 :root {
@@ -20,6 +20,7 @@
   --red: #f85149;
   --orange: #db6d28;
   --purple: #bc8cff;
+  --cyan: #39d2c0;
   --text: #e6edf3;
   --dim: #8b949e;
   --grid: #1b2230;
@@ -42,7 +43,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 /* ─── Nodes ──────────────────────────────────────────── */
 .node {
   position:absolute; background:var(--surface); border:2px solid var(--border);
-  border-radius:10px; padding:14px 18px; min-width:170px;
+  border-radius:12px; padding:16px 20px; min-width:180px;
   cursor:pointer; transition:border-color 0.2s, box-shadow 0.2s;
   z-index:2; user-select:none;
 }
@@ -54,9 +55,9 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 .node.selected { outline:2px solid var(--accent); outline-offset:2px; }
 .node.highlight { border-color:var(--purple); box-shadow:0 0 20px rgba(188,140,255,0.3); }
 .node.dim-node { opacity:0.3; transition:opacity 0.3s; }
-.node-icon { font-size:26px; margin-bottom:4px; }
-.node-title { font-size:13px; font-weight:700; color:var(--text); white-space:nowrap; }
-.node-sub { font-size:10px; color:var(--dim); margin-top:3px; white-space:nowrap; }
+.node-icon { font-size:30px; margin-bottom:6px; }
+.node-title { font-size:14px; font-weight:700; color:var(--text); white-space:nowrap; }
+.node-sub { font-size:10px; color:var(--dim); margin-top:4px; white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; }
 .node-file { font-size:9px; color:#484f58; margin-top:5px; font-style:italic; }
 .node-badge {
   position:absolute; top:-8px; right:-8px;
@@ -65,24 +66,36 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 }
 .node-badge.warn { background:var(--yellow); }
 .node-badge.err { background:var(--red); color:#fff; }
-.node-throughput {
-  position:absolute; bottom:-18px; left:50%; transform:translateX(-50%);
-  font-size:9px; color:var(--dim); white-space:nowrap;
-  background:var(--bg); padding:1px 6px; border-radius:4px; border:1px solid var(--border);
+.node-badge.new { background:var(--cyan); }
+.node-status-dot {
+  position:absolute; top:10px; left:10px;
+  width:8px; height:8px; border-radius:50%;
+  background:var(--dim); transition:background 0.3s;
 }
-.node-throughput .tp-val { color:var(--green); font-weight:700; }
-/* Camera preview inside node */
-.node-preview {
-  width:140px; height:80px; margin-top:6px; border-radius:4px;
-  background:#000; overflow:hidden; border:1px solid var(--border);
+.node-status-dot.online { background:var(--green); box-shadow:0 0 6px var(--green); }
+.node-status-dot.processing { background:var(--accent); box-shadow:0 0 6px var(--accent); animation:pulse 1s ease-in-out infinite; }
+.node-status-dot.idle { background:var(--yellow); }
+.node-status-dot.offline { background:var(--red); box-shadow:0 0 6px var(--red); }
+
+/* Consumer node special styling */
+.node.consumer {
+  background:linear-gradient(135deg, #161b22, #1a1525);
+  border-color:var(--purple);
 }
-.node-preview img { width:100%; height:100%; object-fit:cover; }
+.node.cloud-node {
+  background:linear-gradient(135deg, #161b22, #0d1a2a);
+  border-color:var(--accent);
+}
+.node.chat-node {
+  background:linear-gradient(135deg, #161b22, #0d2018);
+  border-color:var(--green);
+}
 
 /* ─── Section labels ─────────────────────────────────── */
 .section-label {
   position:absolute; z-index:3;
-  font-size:11px; font-weight:700; letter-spacing:2px; text-transform:uppercase;
-  color:var(--belt); opacity:0.6; white-space:nowrap; cursor:pointer;
+  font-size:12px; font-weight:700; letter-spacing:2px; text-transform:uppercase;
+  color:var(--belt); opacity:0.7; white-space:nowrap; cursor:pointer;
   display:flex; align-items:center; gap:8px;
   transition:opacity 0.2s;
 }
@@ -105,7 +118,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 /* ─── SVG belts ──────────────────────────────────────── */
 #belts { position:absolute; top:0; left:0; z-index:1; pointer-events:none; overflow:visible; }
 .belt-path {
-  fill:none; stroke:var(--belt); stroke-width:2; stroke-dasharray:8 6;
+  fill:none; stroke:var(--belt); stroke-width:2.5; stroke-dasharray:8 6;
   opacity:0.6; filter:drop-shadow(0 0 3px var(--belt-glow));
   pointer-events:stroke; cursor:pointer;
 }
@@ -117,8 +130,35 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 .data-particle { fill:var(--particle); filter:drop-shadow(0 0 4px var(--particle)); }
 @keyframes particle-glow { 0%,100%{opacity:1;r:3.5;}50%{opacity:0.6;r:2.5;} }
 .data-particle { animation:particle-glow 0.8s ease-in-out infinite; }
-.belt-label { font-size:8px; fill:var(--dim); font-family:inherit; text-anchor:middle; dominant-baseline:middle; }
+.belt-label { font-size:9px; fill:var(--dim); font-family:inherit; text-anchor:middle; dominant-baseline:middle; }
 .belt-label-bg { fill:var(--bg); rx:3; opacity:0.85; }
+
+/* ─── HUD overlay ────────────────────────────────────── */
+#hud {
+  position:fixed; top:16px; left:16px; z-index:50;
+  display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+}
+.hud-item {
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:8px 14px; font-size:11px; display:flex; align-items:center; gap:6px;
+}
+.hud-item .hud-dot { width:6px; height:6px; border-radius:50%; background:var(--green); }
+.hud-item .hud-dot.off { background:var(--red); }
+.hud-item .hud-dot.warn { background:var(--yellow); }
+.hud-item .val { color:var(--green); font-weight:700; }
+
+/* ─── Zoom controls ──────────────────────────────────── */
+#zoom-ctrl {
+  position:fixed; bottom:16px; right:16px; z-index:50;
+  display:flex; flex-direction:column; gap:4px;
+}
+#zoom-ctrl button {
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  color:var(--text); width:36px; height:36px; font-size:18px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; transition:all 0.15s;
+}
+#zoom-ctrl button:hover { background:var(--surface2); border-color:var(--accent); }
+#zoom-pct { font-size:10px; color:var(--dim); text-align:center; }
 
 /* ─── Search bar ─────────────────────────────────────── */
 #search-bar {
@@ -128,7 +168,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 #search-input {
   background:var(--surface); border:1px solid var(--border); border-radius:8px;
   color:var(--text); padding:8px 14px 8px 36px; font-size:12px; font-family:inherit;
-  width:220px; outline:none; transition:border-color 0.2s;
+  width:220px; outline:none; transition:border-color 0.2s, width 0.2s;
 }
 #search-input:focus { border-color:var(--accent); width:280px; }
 #search-icon {
@@ -169,8 +209,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 #detail-close:hover { color:var(--text); background:var(--surface2); }
 #detail h2 { font-size:18px; margin-bottom:4px; }
 #detail .detail-icon { font-size:36px; margin-bottom:8px; }
-#detail .detail-file { font-size:11px; color:var(--accent); margin-bottom:16px; font-family:inherit; cursor:pointer; }
-#detail .detail-file:hover { text-decoration:underline; }
+#detail .detail-file { font-size:11px; color:var(--accent); margin-bottom:16px; font-family:inherit; }
 #detail .detail-desc { font-size:12px; color:var(--dim); line-height:1.7; margin-bottom:20px; }
 #detail .detail-section { font-size:11px; color:var(--belt); font-weight:700; letter-spacing:1px; margin:16px 0 8px; text-transform:uppercase; }
 #detail .detail-stats { list-style:none; }
@@ -184,11 +223,10 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 #detail-live { margin-top:8px; }
 .live-item {
   font-size:11px; color:var(--dim); padding:6px 0;
-  border-bottom:1px solid var(--border);
+  border-bottom:1px solid var(--border); cursor:pointer;
 }
 .live-item .lk { color:var(--accent); }
 .live-item .lv { color:var(--green); font-weight:600; float:right; }
-/* Action buttons in detail panel */
 .detail-actions { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
 .detail-btn {
   background:var(--surface2); border:1px solid var(--border); border-radius:6px;
@@ -196,72 +234,6 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   font-family:inherit; transition:all 0.15s;
 }
 .detail-btn:hover { background:var(--border); border-color:var(--accent); }
-.detail-btn.primary { background:var(--accent); color:#000; border-color:var(--accent); }
-.detail-btn.danger { background:var(--red); color:#fff; border-color:var(--red); }
-/* Camera preview in detail */
-#detail-camera-preview {
-  width:100%; aspect-ratio:16/9; background:#000; border-radius:8px;
-  overflow:hidden; margin:12px 0; display:none;
-}
-#detail-camera-preview img { width:100%; height:100%; object-fit:contain; }
-
-/* ─── Context menu ───────────────────────────────────── */
-#ctx-menu {
-  position:fixed; display:none; z-index:200;
-  background:var(--surface); border:1px solid var(--border); border-radius:8px;
-  padding:4px 0; min-width:180px; box-shadow:0 8px 24px rgba(0,0,0,0.4);
-}
-#ctx-menu.show { display:block; }
-.ctx-item {
-  padding:8px 16px; font-size:12px; cursor:pointer;
-  display:flex; align-items:center; gap:8px; color:var(--text);
-}
-.ctx-item:hover { background:var(--surface2); }
-.ctx-item.danger { color:var(--red); }
-.ctx-item .ctx-icon { width:16px; text-align:center; }
-.ctx-item .ctx-key { margin-left:auto; color:var(--dim); font-size:10px; }
-.ctx-sep { height:1px; background:var(--border); margin:4px 0; }
-
-/* ─── Belt info popup ────────────────────────────────── */
-#belt-info {
-  position:fixed; display:none; z-index:150;
-  background:var(--surface); border:1px solid var(--belt); border-radius:8px;
-  padding:12px 16px; min-width:200px; box-shadow:0 4px 16px rgba(0,0,0,0.3);
-}
-#belt-info.show { display:block; }
-#belt-info .bi-title { font-size:13px; font-weight:700; color:var(--belt); margin-bottom:6px; }
-#belt-info .bi-row { font-size:11px; color:var(--dim); padding:3px 0; display:flex; justify-content:space-between; }
-#belt-info .bi-row .bi-val { color:var(--green); font-weight:600; }
-
-/* ─── HUD overlay ────────────────────────────────────── */
-#hud {
-  position:fixed; top:16px; left:16px; z-index:50;
-  display:flex; gap:10px; align-items:center; flex-wrap:wrap;
-}
-.hud-item {
-  background:var(--surface); border:1px solid var(--border); border-radius:8px;
-  padding:8px 14px; font-size:11px; display:flex; align-items:center; gap:6px;
-}
-.hud-item .hud-dot { width:6px; height:6px; border-radius:50%; background:var(--green); }
-.hud-item .hud-dot.off { background:var(--red); }
-.hud-item .hud-dot.warn { background:var(--yellow); }
-.hud-item .val { color:var(--green); font-weight:700; }
-
-/* ─── Zoom controls ──────────────────────────────────── */
-#zoom-ctrl {
-  position:fixed; bottom:16px; right:16px; z-index:50;
-  display:flex; flex-direction:column; gap:4px;
-}
-#zoom-ctrl button {
-  background:var(--surface); border:1px solid var(--border); border-radius:6px;
-  color:var(--text); width:36px; height:36px; font-size:18px; cursor:pointer;
-  display:flex; align-items:center; justify-content:center; transition:all 0.15s;
-}
-#zoom-ctrl button:hover { background:var(--surface2); border-color:var(--accent); }
-#zoom-pct { font-size:10px; color:var(--dim); text-align:center; }
-
-/* ─── Title bar (hidden — info in HUD) ───────────────── */
-#title-bar { display:none; }
 
 /* ─── Mini-map ───────────────────────────────────────── */
 #minimap {
@@ -290,7 +262,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 .feed-time { color:var(--dim); }
 .feed-text { color:var(--text); }
 
-/* ─── Alert toasts ───────────────────────────────────── */
+/* ─── Toast notifications ────────────────────────────── */
 #toast-container {
   position:fixed; top:70px; right:16px; z-index:200;
   display:flex; flex-direction:column; gap:8px; width:320px;
@@ -312,22 +284,17 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 @keyframes toast-in { from{transform:translateX(100%);opacity:0;} to{transform:translateX(0);opacity:1;} }
 @keyframes toast-out { from{opacity:1;} to{opacity:0;transform:translateY(-20px);} }
 
-/* ─── Cost tracker ───────────────────────────────────── */
-#cost-bar {
-  position:fixed; top:58px; left:16px; z-index:50;
+/* ─── Toolbar ────────────────────────────────────────── */
+#toolbar {
+  position:fixed; top:54px; right:16px; z-index:55;
+  display:flex; gap:6px; align-items:center;
+}
+.toolbar-btn {
   background:var(--surface); border:1px solid var(--border); border-radius:6px;
-  padding:6px 12px; font-size:10px; display:flex; gap:12px; align-items:center;
+  color:var(--dim); padding:6px 10px; font-size:10px; cursor:pointer;
+  font-family:inherit; transition:all 0.15s; display:flex; align-items:center; gap:4px;
 }
-.cost-item { display:flex; align-items:center; gap:4px; }
-.cost-item .cost-val { color:var(--green); font-weight:700; }
-.cost-bar-fill {
-  width:80px; height:4px; background:var(--border); border-radius:2px; overflow:hidden;
-}
-.cost-bar-fill .fill { height:100%; background:var(--green); border-radius:2px; transition:width 0.5s; }
-
-/* ─── Keyboard hints (hidden — use ? for help) ──────── */
-#kb-hints { display:none; }
-.kb { background:var(--surface2); border:1px solid var(--border); border-radius:3px; padding:1px 5px; font-size:8px; }
+.toolbar-btn:hover { color:var(--text); border-color:var(--accent); }
 
 /* ─── Help overlay ───────────────────────────────────── */
 #help-overlay {
@@ -341,128 +308,31 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   padding:32px; max-width:560px; width:90%;
 }
 #help-box h2 { font-size:16px; color:var(--belt); margin-bottom:16px; letter-spacing:1px; }
-#help-box .help-section { margin-bottom:16px; }
-#help-box .help-section h3 { font-size:12px; color:var(--accent); margin-bottom:8px; text-transform:uppercase; letter-spacing:1px; }
 .help-row { display:flex; justify-content:space-between; padding:4px 0; font-size:12px; }
 .help-row .help-keys { display:flex; gap:4px; }
 .help-row .help-desc { color:var(--dim); }
+.kb { background:var(--surface2); border:1px solid var(--border); border-radius:3px; padding:1px 5px; font-size:9px; }
 #help-close { float:right; background:none; border:none; color:var(--dim); font-size:20px; cursor:pointer; }
 #help-close:hover { color:var(--text); }
 
-/* ─── Export toolbar ─────────────────────────────────── */
-#toolbar {
-  position:fixed; top:54px; right:16px; z-index:55;
-  display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:flex-end;
-  max-width:calc(100vw - 380px);
+/* ─── Consumer flow callout ──────────────────────────── */
+.flow-callout {
+  position:absolute; z-index:3;
+  background:linear-gradient(135deg, rgba(233,69,96,0.1), rgba(88,166,255,0.05));
+  border:1px dashed rgba(233,69,96,0.3); border-radius:16px;
+  padding:16px 20px;
 }
-.toolbar-btn {
-  background:var(--surface); border:1px solid var(--border); border-radius:6px;
-  color:var(--dim); padding:6px 10px; font-size:10px; cursor:pointer;
-  font-family:inherit; transition:all 0.15s; display:flex; align-items:center; gap:4px;
+.flow-callout h3 {
+  font-size:11px; color:var(--belt); letter-spacing:2px; text-transform:uppercase;
+  margin-bottom:6px;
 }
-.toolbar-btn:hover { color:var(--text); border-color:var(--accent); }
-
-/* ─── Activity sparkline ─────────────────────────────── */
-#activity-bar {
-  position:fixed; bottom:50px; left:50%; transform:translateX(-50%); z-index:45;
-  display:flex; align-items:flex-end; gap:1px; height:24px;
+.flow-callout p {
+  font-size:10px; color:var(--dim); line-height:1.5;
 }
-.spark-bar {
-  width:4px; background:var(--green); border-radius:1px 1px 0 0;
-  min-height:1px; transition:height 0.3s;
-  opacity:0.7;
+.flow-step {
+  font-size:24px; color:var(--belt); opacity:0.15; font-weight:900;
+  position:absolute; top:8px; right:12px;
 }
-.spark-bar.recent { opacity:1; background:var(--accent); }
-
-/* ─── Node inline sparklines ────────────────────────── */
-.node-spark {
-  display:flex; align-items:flex-end; gap:1px; height:18px;
-  margin-top:6px; padding:2px 0;
-}
-.node-spark-bar {
-  width:3px; border-radius:1px 1px 0 0; min-height:1px;
-  background:var(--green); opacity:0.6; transition:height 0.2s;
-}
-.node-spark-bar.hot { background:var(--belt); opacity:0.9; }
-
-/* ─── Status indicator on nodes ─────────────────────── */
-.node-status-dot {
-  position:absolute; top:8px; left:8px;
-  width:8px; height:8px; border-radius:50%;
-  background:var(--dim); transition:background 0.3s;
-}
-.node-status-dot.online { background:var(--green); box-shadow:0 0 6px var(--green); }
-.node-status-dot.processing { background:var(--accent); box-shadow:0 0 6px var(--accent); animation:pulse 1s ease-in-out infinite; }
-.node-status-dot.idle { background:var(--yellow); }
-.node-status-dot.offline { background:var(--red); box-shadow:0 0 6px var(--red); }
-
-/* ─── Alert timeline drawer ─────────────────────────── */
-#alert-timeline {
-  position:fixed; bottom:-260px; left:0; right:0; z-index:80;
-  height:260px; background:var(--surface); border-top:2px solid var(--belt);
-  transition:bottom 0.3s cubic-bezier(0.4,0,0.2,1);
-  display:flex; flex-direction:column;
-}
-#alert-timeline.open { bottom:0; }
-#alert-timeline-header {
-  display:flex; justify-content:space-between; align-items:center;
-  padding:10px 20px; border-bottom:1px solid var(--border); flex-shrink:0;
-}
-#alert-timeline-header h3 { font-size:12px; color:var(--belt); letter-spacing:1px; text-transform:uppercase; }
-#alert-timeline-header .at-count { background:var(--belt); color:#000; font-size:10px; font-weight:700; padding:2px 8px; border-radius:8px; margin-left:8px; }
-.at-toggle {
-  background:none; border:1px solid var(--border); border-radius:6px;
-  color:var(--dim); padding:4px 10px; font-size:10px; cursor:pointer; font-family:inherit;
-}
-.at-toggle:hover { color:var(--text); border-color:var(--accent); }
-#alert-timeline-body {
-  flex:1; overflow-y:auto; padding:8px 20px;
-}
-.at-item {
-  display:flex; align-items:flex-start; gap:12px; padding:10px 0;
-  border-bottom:1px solid var(--border); font-size:11px;
-}
-.at-item:last-child { border-bottom:none; }
-.at-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; margin-top:3px; }
-.at-dot.critical { background:var(--red); box-shadow:0 0 6px var(--red); }
-.at-dot.warning { background:var(--yellow); }
-.at-dot.info { background:var(--accent); }
-.at-time { color:var(--dim); white-space:nowrap; min-width:60px; }
-.at-rule { color:var(--accent); font-weight:600; }
-.at-msg { color:var(--text); flex:1; }
-.at-confidence { color:var(--green); font-weight:700; min-width:40px; text-align:right; }
-.at-empty { color:var(--dim); text-align:center; padding:24px; font-size:12px; }
-
-/* ─── Filter bar ────────────────────────────────────── */
-#filter-bar {
-  position:fixed; top:88px; left:16px; z-index:50;
-}
-.toolbar-filter {
-  display:flex; gap:2px; background:var(--surface2); border-radius:6px; padding:2px; border:1px solid var(--border);
-}
-.filter-btn {
-  background:none; border:none; border-radius:4px;
-  color:var(--dim); padding:4px 10px; font-size:10px; cursor:pointer;
-  font-family:inherit; transition:all 0.15s;
-}
-.filter-btn:hover { color:var(--text); }
-.filter-btn.active { background:var(--accent); color:#000; font-weight:700; }
-.filter-btn .filter-count { font-size:9px; opacity:0.7; margin-left:2px; }
-
-/* ─── Performance stats panel ───────────────────────── */
-#perf-panel {
-  position:fixed; bottom:150px; right:16px; z-index:50;
-  width:200px; background:var(--surface); border:1px solid var(--border);
-  border-radius:8px; padding:10px 14px; font-size:10px;
-}
-.perf-title { color:var(--accent); font-weight:700; font-size:10px; margin-bottom:8px; text-transform:uppercase; letter-spacing:1px; }
-.perf-row { display:flex; justify-content:space-between; padding:3px 0; }
-.perf-row .perf-label { color:var(--dim); }
-.perf-row .perf-val { color:var(--green); font-weight:700; }
-.perf-row .perf-val.warn { color:var(--yellow); }
-.perf-row .perf-val.bad { color:var(--red); }
-.perf-chart { height:40px; display:flex; align-items:flex-end; gap:1px; margin-top:6px; }
-.perf-bar { width:4px; background:var(--accent); border-radius:1px 1px 0 0; min-height:1px; opacity:0.7; }
 
 /* ─── Animations ─────────────────────────────────────── */
 @keyframes pulse { 0%,100%{opacity:1;}50%{opacity:0.7;} }
@@ -482,43 +352,20 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   #search-input:focus { width:160px; }
   #scene-feed { width:140px; max-height:140px; }
   #minimap { width:120px; height:72px; }
-  #cost-bar { font-size:9px; gap:8px; }
-  #perf-panel { width:140px; font-size:9px; }
-  #filter-bar { display:none; }
-  #toolbar { gap:4px; }
-  .toolbar-btn { padding:4px 8px; font-size:9px; }
-  #activity-bar { display:none; }
 }
 @media (max-width: 420px) {
   #scene-feed { display:none; }
   #minimap { display:none; }
-  #perf-panel { display:none; }
-  #cost-bar { display:none; }
-  #hud { flex-wrap:nowrap; overflow-x:auto; }
 }
 </style>
 </head>
 <body>
-
-<div id="title-bar">
-  <h1>PHYSICAL-MCP FACTORY BLUEPRINT</h1>
-  <div class="sub">v1.2.0 &middot; 52 modules &middot; 506 tests &middot; <span id="hud-status" style="color:var(--green);">ONLINE</span></div>
-</div>
 
 <div id="hud">
   <div class="hud-item"><div class="hud-dot" id="hud-health-dot"></div> Cameras <span class="val" id="hud-cams">0</span></div>
   <div class="hud-item">Rules <span class="val" id="hud-rules">0</span></div>
   <div class="hud-item">Alerts <span class="val" id="hud-alerts">0</span></div>
   <div class="hud-item">FPS <span class="val" id="hud-fps">&mdash;</span></div>
-</div>
-
-<div id="cost-bar">
-  <div class="cost-item">API calls: <span class="cost-val" id="cost-calls">0</span></div>
-  <div class="cost-item">Est. cost: <span class="cost-val" id="cost-usd">$0.00</span></div>
-  <div class="cost-item">
-    Budget:
-    <div class="cost-bar-fill"><div class="fill" id="cost-fill" style="width:0%"></div></div>
-  </div>
 </div>
 
 <div id="search-bar">
@@ -530,7 +377,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 <div id="zoom-ctrl">
   <button onclick="zoomIn()" title="Zoom in (+)">+</button>
   <button onclick="zoomOut()" title="Zoom out (-)">&#8722;</button>
-  <div id="zoom-pct">65%</div>
+  <div id="zoom-pct">55%</div>
   <button onclick="resetView()" title="Reset view (Home)">&#8962;</button>
   <button onclick="fitAll()" title="Fit all (F)">&#9635;</button>
 </div>
@@ -545,314 +392,278 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 <div id="toast-container"></div>
 
 <div id="toolbar">
-  <button class="toolbar-btn" onclick="toggleTimeline()" title="Alert Timeline (T)">&#128200; Timeline</button>
-  <button class="toolbar-btn" onclick="exportPNG()" title="Export as PNG">&#128247; Export PNG</button>
   <button class="toolbar-btn" onclick="toggleHelp()" title="Help (?)">&#10067; Help</button>
-</div>
-
-<div id="filter-bar">
-  <div class="toolbar-filter">
-    <button class="filter-btn active" data-filter="all" onclick="filterNodes('all',this)">All</button>
-    <button class="filter-btn" data-filter="active" onclick="filterNodes('active',this)">Active</button>
-    <button class="filter-btn" data-filter="idle" onclick="filterNodes('idle',this)">Idle</button>
-    <button class="filter-btn" data-filter="error" onclick="filterNodes('error',this)">Error</button>
-  </div>
-</div>
-
-<div id="activity-bar"></div>
-
-<div id="kb-hints">
-  <span><span class="kb">+</span>/<span class="kb">&#8722;</span> Zoom</span>
-  <span><span class="kb">Home</span> Reset</span>
-  <span><span class="kb">F</span> Fit</span>
-  <span><span class="kb">Esc</span> Close</span>
-  <span><span class="kb">Ctrl+K</span> Search</span>
-  <span><span class="kb">R</span> Reset layout</span>
-  <span><span class="kb">?</span> Help</span>
-</div>
-
-<!-- Help overlay -->
-<div id="help-overlay">
-  <div id="help-box">
-    <button id="help-close" onclick="toggleHelp()">&times;</button>
-    <h2>&#9881; FACTORY BLUEPRINT SHORTCUTS</h2>
-    <div class="help-section">
-      <h3>Navigation</h3>
-      <div class="help-row"><span class="help-desc">Pan canvas</span><span class="help-keys"><span class="kb">Drag</span> background</span></div>
-      <div class="help-row"><span class="help-desc">Zoom in/out</span><span class="help-keys"><span class="kb">+</span> <span class="kb">-</span> or <span class="kb">Scroll</span></span></div>
-      <div class="help-row"><span class="help-desc">Reset view</span><span class="help-keys"><span class="kb">Home</span></span></div>
-      <div class="help-row"><span class="help-desc">Fit all nodes</span><span class="help-keys"><span class="kb">F</span></span></div>
-      <div class="help-row"><span class="help-desc">Search modules</span><span class="help-keys"><span class="kb">Ctrl</span>+<span class="kb">K</span></span></div>
-    </div>
-    <div class="help-section">
-      <h3>Nodes</h3>
-      <div class="help-row"><span class="help-desc">Inspect module</span><span class="help-keys"><span class="kb">Click</span> node</span></div>
-      <div class="help-row"><span class="help-desc">Rearrange node</span><span class="help-keys"><span class="kb">Drag</span> node</span></div>
-      <div class="help-row"><span class="help-desc">Context menu</span><span class="help-keys"><span class="kb">Right-click</span> node</span></div>
-      <div class="help-row"><span class="help-desc">Highlight connections</span><span class="help-keys"><span class="kb">H</span></span></div>
-      <div class="help-row"><span class="help-desc">Reset layout</span><span class="help-keys"><span class="kb">R</span></span></div>
-    </div>
-    <div class="help-section">
-      <h3>Sections</h3>
-      <div class="help-row"><span class="help-desc">Collapse/expand section</span><span class="help-keys"><span class="kb">Click</span> section label</span></div>
-      <div class="help-row"><span class="help-desc">Click belt for info</span><span class="help-keys"><span class="kb">Click</span> conveyor</span></div>
-    </div>
-    <div class="help-section">
-      <h3>Other</h3>
-      <div class="help-row"><span class="help-desc">Close panel/overlay</span><span class="help-keys"><span class="kb">Esc</span></span></div>
-      <div class="help-row"><span class="help-desc">Alert timeline</span><span class="help-keys"><span class="kb">T</span></span></div>
-      <div class="help-row"><span class="help-desc">Export as PNG</span><span class="help-keys">Toolbar button</span></div>
-      <div class="help-row"><span class="help-desc">This help</span><span class="help-keys"><span class="kb">?</span></span></div>
-    </div>
-  </div>
-</div>
-
-<!-- Alert timeline drawer -->
-<div id="alert-timeline">
-  <div id="alert-timeline-header">
-    <h3>&#128200; Alert Timeline <span class="at-count" id="at-count">0</span></h3>
-    <div style="display:flex;gap:6px;">
-      <button class="at-toggle" onclick="clearTimeline()">Clear</button>
-      <button class="at-toggle" onclick="toggleTimeline()">&times; Close</button>
-    </div>
-  </div>
-  <div id="alert-timeline-body">
-    <div class="at-empty">No alerts yet. Create watch rules to start receiving alerts.</div>
-  </div>
-</div>
-
-<!-- Performance panel -->
-<div id="perf-panel">
-  <div class="perf-title">&#9889; Performance</div>
-  <div class="perf-row"><span class="perf-label">Uptime</span><span class="perf-val" id="perf-uptime">0s</span></div>
-  <div class="perf-row"><span class="perf-label">Polls</span><span class="perf-val" id="perf-polls">0</span></div>
-  <div class="perf-row"><span class="perf-label">Latency</span><span class="perf-val" id="perf-latency">—</span></div>
-  <div class="perf-row"><span class="perf-label">Errors</span><span class="perf-val" id="perf-errors">0</span></div>
-  <div class="perf-chart" id="perf-chart"></div>
 </div>
 
 <div id="canvas-wrap">
   <div id="factory">
-    <svg id="belts" width="2600" height="1000" style="position:absolute;top:0;left:0;overflow:visible;"></svg>
+    <svg id="belts" width="3200" height="1200" style="position:absolute;top:0;left:0;overflow:visible;"></svg>
 
-    <!-- Section Labels (click to collapse) -->
-    <div class="section-label" data-section="mining" style="left:40px;top:24px;width:240px;"><span class="section-toggle">&#9660;</span> &#9935; MINING OUTPOST <span class="section-count">3</span></div>
-    <div class="section-label" data-section="processing" style="left:340px;top:24px;width:260px;"><span class="section-toggle">&#9660;</span> &#9881; ORE PROCESSING <span class="section-count">3</span></div>
-    <div class="section-label" data-section="chemical" style="left:700px;top:24px;width:240px;"><span class="section-toggle">&#9660;</span> &#129514; CHEMICAL PLANT <span class="section-count">3</span></div>
-    <div class="section-label" data-section="assembler" style="left:1080px;top:24px;width:200px;"><span class="section-toggle">&#9660;</span> &#128295; ASSEMBLER <span class="section-count">3</span></div>
-    <div class="section-label" data-section="logistics" style="left:1420px;top:24px;width:280px;"><span class="section-toggle">&#9660;</span> &#128666; LOGISTICS <span class="section-count">9</span></div>
-    <div class="section-label" data-section="power" style="left:40px;top:520px;width:400px;"><span class="section-toggle">&#9660;</span> &#9889; POWER PLANT <span class="section-count">1</span></div>
-    <div class="section-label" data-section="stations" style="left:520px;top:520px;width:340px;"><span class="section-toggle">&#9660;</span> &#128642; TRAIN STATIONS <span class="section-count">2</span></div>
-    <div class="section-label" data-section="support" style="left:1020px;top:520px;width:340px;"><span class="section-toggle">&#9660;</span> &#128267; SUPPORT <span class="section-count">6</span></div>
-
-    <!-- MINING: Camera sources -->
-    <div class="node" id="n-usb" style="left:60px;top:75px;" data-id="usb" data-section="mining">
-      <div class="node-status-dot" id="status-usb"></div>
-      <div class="node-icon">&#128247;</div>
-      <div class="node-title">USB Camera</div>
-      <div class="node-sub">OpenCV bg thread @ 2fps</div>
-      <div class="node-file">camera/usb.py</div>
-      <div class="node-preview" id="cam-preview-usb"><img id="cam-img-usb" alt=""></div>
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- SECTION: YOUR CAMERAS                              -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div class="section-label" data-section="cameras" style="left:40px;top:24px;width:300px;">
+      <span class="section-toggle">&#9660;</span> &#128247; YOUR CAMERAS <span class="section-count">5</span>
     </div>
-    <div class="node" id="n-rtsp" style="left:60px;top:250px;" data-id="rtsp" data-section="mining">
+
+    <div class="node consumer" id="n-yoosee" style="left:60px;top:80px;" data-id="yoosee" data-section="cameras">
+      <div class="node-status-dot" id="status-yoosee"></div>
+      <div class="node-icon">&#128249;</div>
+      <div class="node-title">WiFi Camera (Yoosee)</div>
+      <div class="node-sub">RTSP &middot; &#165;25-40 &middot; plug and play</div>
+      <div class="node-file">rtsp://admin:admin@IP:554/onvif1</div>
+      <div class="node-badge new">RECOMMENDED</div>
+    </div>
+
+    <div class="node consumer" id="n-ipcam" style="left:60px;top:240px;" data-id="ipcam" data-section="cameras">
+      <div class="node-status-dot" id="status-ipcam"></div>
       <div class="node-icon">&#128225;</div>
-      <div class="node-title">RTSP Camera</div>
-      <div class="node-sub">ffmpeg &middot; auto-reconnect</div>
+      <div class="node-title">IP Camera (ONVIF)</div>
+      <div class="node-sub">TP-Link &middot; Mercury &middot; Dahua</div>
       <div class="node-file">camera/rtsp.py</div>
     </div>
-    <div class="node" id="n-factory-cam" style="left:60px;top:390px;" data-id="cam-factory" data-section="mining">
-      <div class="node-icon">&#127981;</div>
-      <div class="node-title">Camera Factory</div>
-      <div class="node-sub">config &rarr; USB or RTSP</div>
-      <div class="node-file">camera/factory.py</div>
+
+    <div class="node consumer" id="n-usb" style="left:60px;top:390px;" data-id="usb" data-section="cameras">
+      <div class="node-status-dot" id="status-usb"></div>
+      <div class="node-icon">&#128247;</div>
+      <div class="node-title">USB / Laptop Camera</div>
+      <div class="node-sub">OpenCV &middot; built-in webcam</div>
+      <div class="node-file">camera/usb.py</div>
     </div>
 
-    <!-- ORE PROCESSING -->
-    <div class="node" id="n-buffer" style="left:360px;top:75px;" data-id="buffer" data-section="processing">
+    <div class="node consumer" id="n-phone" style="left:60px;top:530px;" data-id="phone" data-section="cameras">
+      <div class="node-icon">&#128241;</div>
+      <div class="node-title">Phone Camera</div>
+      <div class="node-sub">DroidCam &middot; IP Webcam app</div>
+      <div class="node-file">MJPEG over HTTP</div>
+    </div>
+
+    <div class="node" id="n-cloud-cam" style="left:60px;top:670px;" data-id="cloud-cam" data-section="cameras">
+      <div class="node-icon">&#9729;&#65039;</div>
+      <div class="node-title">Cloud Camera</div>
+      <div class="node-sub">Receives pushed JPEG frames</div>
+      <div class="node-file">camera/cloud.py</div>
+      <div class="node-badge new">NEW</div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- SECTION: RELAY                                     -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div class="section-label" data-section="relay" style="left:400px;top:24px;width:300px;">
+      <span class="section-toggle">&#9660;</span> &#128259; RELAY AGENT <span class="section-count">3</span>
+    </div>
+
+    <div class="flow-callout" style="left:390px;top:400px;width:260px;">
+      <div class="flow-step">2</div>
+      <h3>Bridge to Cloud</h3>
+      <p>Relay pulls video from camera on your WiFi, compresses to JPEG, pushes to cloud over HTTPS. Runs on any device.</p>
+    </div>
+
+    <div class="node" id="n-relay" style="left:420px;top:80px;" data-id="relay" data-section="relay">
+      <div class="node-status-dot" id="status-relay"></div>
+      <div class="node-icon">&#128259;</div>
+      <div class="node-title">Relay Agent</div>
+      <div class="node-sub">RTSP pull &rarr; JPEG &rarr; HTTPS POST</div>
+      <div class="node-file">relay/relay_agent.py</div>
+      <div class="node-badge pulse">BRIDGE</div>
+    </div>
+
+    <div class="node" id="n-provision" style="left:420px;top:240px;" data-id="provision" data-section="relay">
+      <div class="node-icon">&#128246;</div>
+      <div class="node-title">WiFi Provisioning</div>
+      <div class="node-sub">AP mode &middot; captive portal</div>
+      <div class="node-file">relay/wifi_provision.py</div>
+    </div>
+
+    <div class="node" id="n-pair" style="left:420px;top:390px;" data-id="pair" data-section="relay">
+      <div class="node-icon">&#128279;</div>
+      <div class="node-title">Claim Code Pairing</div>
+      <div class="node-sub">6-digit code &middot; links camera to user</div>
+      <div class="node-file">relay/pair.py</div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- SECTION: CLOUD SERVER                              -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div class="section-label" data-section="cloud" style="left:780px;top:24px;width:340px;">
+      <span class="section-toggle">&#9660;</span> &#9729;&#65039; CLOUD SERVER (FLY.IO) <span class="section-count">5</span>
+    </div>
+
+    <div class="node cloud-node" id="n-push" style="left:800px;top:80px;" data-id="push" data-section="cloud">
+      <div class="node-status-dot" id="status-push"></div>
+      <div class="node-icon">&#128229;</div>
+      <div class="node-title">Push Endpoints</div>
+      <div class="node-sub">POST /push/frame &middot; /push/register</div>
+      <div class="node-file">vision_api.py</div>
+      <div class="node-badge new">NEW</div>
+    </div>
+
+    <div class="node cloud-node" id="n-buffer" style="left:800px;top:240px;" data-id="buffer" data-section="cloud">
       <div class="node-status-dot" id="status-buffer"></div>
       <div class="node-icon">&#128230;</div>
       <div class="node-title">FrameBuffer</div>
-      <div class="node-sub">async ring: 300 frames</div>
+      <div class="node-sub">async ring &middot; 300 frames</div>
       <div class="node-file">camera/buffer.py</div>
-      <div class="node-spark" id="spark-buffer"></div>
-      <div class="node-throughput"><span class="tp-val" id="tp-buffer">0</span> f/s</div>
-    </div>
-    <div class="node" id="n-detector" style="left:360px;top:250px;" data-id="detector" data-section="processing">
-      <div class="node-icon">&#128065;</div>
-      <div class="node-title">ChangeDetector</div>
-      <div class="node-sub">pHash + pixel diff &lt;5ms</div>
-      <div class="node-file">perception/change_detector.py</div>
-      <div class="node-throughput"><span class="tp-val" id="tp-detector">0</span> checks/s</div>
-    </div>
-    <div class="node" id="n-sampler" style="left:360px;top:390px;" data-id="sampler" data-section="processing">
-      <div class="node-icon">&#9201;</div>
-      <div class="node-title">FrameSampler</div>
-      <div class="node-sub">debounce 3s &middot; cooldown 10s</div>
-      <div class="node-file">perception/frame_sampler.py</div>
     </div>
 
-    <!-- CHEMICAL PLANT -->
-    <div class="node" id="n-analyzer" style="left:700px;top:75px;" data-id="analyzer" data-section="chemical">
-      <div class="node-status-dot" id="status-analyzer"></div>
-      <div class="node-icon">&#129504;</div>
-      <div class="node-title">FrameAnalyzer</div>
-      <div class="node-sub">LLM vision API call ($$$)</div>
-      <div class="node-file">reasoning/analyzer.py</div>
-      <div class="node-spark" id="spark-analyzer"></div>
-      <div class="node-throughput"><span class="tp-val" id="tp-analyzer">0</span> calls/min</div>
-    </div>
-    <div class="node" id="n-providers" style="left:700px;top:250px;" data-id="providers" data-section="chemical">
-      <div class="node-icon">&#128268;</div>
-      <div class="node-title">LLM Providers</div>
-      <div class="node-sub">Gemini &middot; Claude &middot; OpenAI</div>
-      <div class="node-file">reasoning/providers/</div>
-    </div>
-    <div class="node" id="n-scene" style="left:700px;top:390px;" data-id="scene" data-section="chemical">
-      <div class="node-icon">&#127916;</div>
-      <div class="node-title">SceneState</div>
-      <div class="node-sub">summary &middot; objects &middot; people</div>
-      <div class="node-file">perception/scene_state.py</div>
-    </div>
-
-    <!-- ASSEMBLER -->
-    <div class="node" id="n-engine" style="left:1080px;top:75px;" data-id="engine" data-section="assembler">
-      <div class="node-status-dot" id="status-engine"></div>
-      <div class="node-icon">&#9878;&#65039;</div>
-      <div class="node-title">RulesEngine</div>
-      <div class="node-sub">evaluate &middot; cooldown &middot; alert</div>
-      <div class="node-file">rules/engine.py</div>
-      <div class="node-spark" id="spark-engine"></div>
-    </div>
-    <div class="node" id="n-store" style="left:1080px;top:250px;" data-id="store" data-section="assembler">
-      <div class="node-icon">&#128190;</div>
-      <div class="node-title">RulesStore</div>
-      <div class="node-sub">YAML persistence</div>
-      <div class="node-file">rules/store.py</div>
-    </div>
-    <div class="node" id="n-templates" style="left:1080px;top:390px;" data-id="templates" data-section="assembler">
-      <div class="node-icon">&#128203;</div>
-      <div class="node-title">Templates</div>
-      <div class="node-sub">9 presets</div>
-      <div class="node-file">rules/templates.py</div>
-    </div>
-
-    <!-- LOGISTICS -->
-    <div class="node" id="n-dispatch" style="left:1420px;top:75px;" data-id="dispatch" data-section="logistics">
-      <div class="node-status-dot" id="status-dispatch"></div>
-      <div class="node-icon">&#128236;</div>
-      <div class="node-title">Dispatcher</div>
-      <div class="node-sub">routes to 7 channels</div>
-      <div class="node-file">notifications/__init__.py</div>
-      <div class="node-spark" id="spark-dispatch"></div>
-      <div class="node-throughput"><span class="tp-val" id="tp-dispatch">0</span> alerts</div>
-    </div>
-    <div class="node" id="n-telegram" style="left:1380px;top:250px;" data-id="telegram" data-section="logistics">
-      <div class="node-icon">&#128241;</div>
-      <div class="node-title">Telegram</div>
-      <div class="node-sub">sendPhoto + caption</div>
-      <div class="node-file">notifications/telegram.py</div>
-    </div>
-    <div class="node" id="n-discord" style="left:1540px;top:250px;" data-id="discord" data-section="logistics">
-      <div class="node-icon">&#128172;</div>
-      <div class="node-title">Discord</div>
-      <div class="node-sub">embed + image</div>
-      <div class="node-file">notifications/discord.py</div>
-    </div>
-    <div class="node" id="n-slack" style="left:1380px;top:370px;" data-id="slack" data-section="logistics">
-      <div class="node-icon">&#128188;</div>
-      <div class="node-title">Slack</div>
-      <div class="node-sub">Block Kit</div>
-      <div class="node-file">notifications/slack.py</div>
-    </div>
-    <div class="node" id="n-ntfy" style="left:1540px;top:370px;" data-id="ntfy" data-section="logistics">
-      <div class="node-icon">&#128276;</div>
-      <div class="node-title">ntfy</div>
-      <div class="node-sub">push + image</div>
-      <div class="node-file">notifications/ntfy.py</div>
-    </div>
-    <div class="node" id="n-desktop" style="left:1700px;top:310px;" data-id="desktop" data-section="logistics">
-      <div class="node-icon">&#128421;</div>
-      <div class="node-title">Desktop</div>
-      <div class="node-sub">native toast</div>
-      <div class="node-file">notifications/desktop.py</div>
-    </div>
-    <div class="node" id="n-webhook" style="left:1700px;top:430px;" data-id="webhook" data-section="logistics">
-      <div class="node-icon">&#128279;</div>
-      <div class="node-title">Webhook</div>
-      <div class="node-sub">generic HTTP POST</div>
-      <div class="node-file">notifications/webhook.py</div>
-    </div>
-    <div class="node" id="n-openclaw" style="left:1700px;top:190px;" data-id="openclaw" data-section="logistics">
-      <div class="node-icon">&#129430;</div>
-      <div class="node-title">OpenClaw</div>
-      <div class="node-sub">multi-channel CLI</div>
-      <div class="node-file">notifications/openclaw.py</div>
-    </div>
-
-    <!-- POWER PLANT -->
-    <div class="node" id="n-loop" style="left:60px;top:580px;min-width:420px;border-color:var(--belt);background:linear-gradient(135deg,var(--surface),#1a1020);" data-id="loop" data-section="power">
+    <div class="node cloud-node" id="n-loop" style="left:800px;top:400px;min-width:300px;border-color:var(--belt);background:linear-gradient(135deg,var(--surface),#1a1020);" data-id="loop" data-section="cloud">
       <div class="node-status-dot" id="status-loop"></div>
       <div class="node-icon">&#9889;</div>
-      <div class="node-title">Perception Loop &mdash; the reactor core</div>
-      <div class="node-sub">1 async task per camera &middot; wires entire pipeline &middot; 557 lines</div>
+      <div class="node-title">Perception Loop &mdash; the reactor</div>
+      <div class="node-sub">1 async task per camera &middot; wires entire pipeline</div>
       <div class="node-file">perception/loop.py</div>
-      <div class="node-badge pulse" id="loop-badge">RUNNING</div>
+      <div class="node-badge pulse">RUNNING</div>
     </div>
 
-    <!-- TRAIN STATIONS -->
-    <div class="node" id="n-mcp" style="left:540px;top:580px;" data-id="mcp" data-section="stations">
-      <div class="node-status-dot" id="status-mcp"></div>
-      <div class="node-icon">&#128642;</div>
-      <div class="node-title">MCP Server :8400</div>
-      <div class="node-sub">Claude &middot; Cursor &middot; VS Code</div>
-      <div class="node-file">server.py + __main__.py</div>
-    </div>
-    <div class="node" id="n-api" style="left:540px;top:720px;" data-id="api" data-section="stations">
+    <div class="node cloud-node" id="n-api" style="left:800px;top:570px;" data-id="api" data-section="cloud">
       <div class="node-status-dot" id="status-api"></div>
       <div class="node-icon">&#127760;</div>
       <div class="node-title">Vision API :8090</div>
-      <div class="node-sub">18 endpoints &middot; dashboard &middot; factory</div>
+      <div class="node-sub">18+ endpoints &middot; dashboard &middot; CORS</div>
       <div class="node-file">vision_api.py</div>
       <div class="node-badge pulse">LIVE</div>
     </div>
 
-    <!-- SUPPORT -->
-    <div class="node" id="n-config" style="left:1020px;top:580px;" data-id="config" data-section="support">
-      <div class="node-icon">&#9881;&#65039;</div>
-      <div class="node-title">Config</div>
-      <div class="node-sub">YAML + env + Pydantic</div>
-      <div class="node-file">config.py</div>
+    <div class="node cloud-node" id="n-mcp" style="left:800px;top:720px;" data-id="mcp" data-section="cloud">
+      <div class="node-status-dot" id="status-mcp"></div>
+      <div class="node-icon">&#128642;</div>
+      <div class="node-title">MCP Server :8400</div>
+      <div class="node-sub">Claude &middot; Cursor &middot; VS Code &middot; Gemini</div>
+      <div class="node-file">server.py</div>
     </div>
-    <div class="node" id="n-stats" style="left:1200px;top:580px;" data-id="stats" data-section="support">
-      <div class="node-icon">&#128202;</div>
-      <div class="node-title">StatsTracker</div>
-      <div class="node-sub">budget &middot; rate limit</div>
-      <div class="node-file">stats.py</div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- SECTION: AI BRAIN                                  -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div class="section-label" data-section="brain" style="left:1240px;top:24px;width:280px;">
+      <span class="section-toggle">&#9660;</span> &#129504; AI BRAIN <span class="section-count">4</span>
     </div>
-    <div class="node" id="n-health" style="left:1020px;top:720px;" data-id="health" data-section="support">
-      <div class="node-icon">&#127973;</div>
-      <div class="node-title">Health</div>
-      <div class="node-sub">per-camera state</div>
-      <div class="node-file">health.py</div>
+
+    <div class="node" id="n-detector" style="left:1260px;top:80px;" data-id="detector" data-section="brain">
+      <div class="node-icon">&#128065;</div>
+      <div class="node-title">ChangeDetector</div>
+      <div class="node-sub">pHash + pixel diff &lt;5ms</div>
+      <div class="node-file">perception/change_detector.py</div>
     </div>
-    <div class="node" id="n-memory" style="left:1200px;top:720px;" data-id="memory" data-section="support">
+
+    <div class="node" id="n-sampler" style="left:1260px;top:240px;" data-id="sampler" data-section="brain">
+      <div class="node-icon">&#9201;</div>
+      <div class="node-title">FrameSampler</div>
+      <div class="node-sub">cost gate &middot; debounce 3s</div>
+      <div class="node-file">perception/frame_sampler.py</div>
+    </div>
+
+    <div class="node" id="n-analyzer" style="left:1260px;top:400px;" data-id="analyzer" data-section="brain">
+      <div class="node-status-dot" id="status-analyzer"></div>
       <div class="node-icon">&#129504;</div>
-      <div class="node-title">Memory</div>
-      <div class="node-sub">persistent AI notes</div>
-      <div class="node-file">memory.py</div>
+      <div class="node-title">FrameAnalyzer</div>
+      <div class="node-sub">LLM vision API &middot; "what do you see?"</div>
+      <div class="node-file">reasoning/analyzer.py</div>
     </div>
-    <div class="node" id="n-discover" style="left:1380px;top:580px;" data-id="discover" data-section="support">
-      <div class="node-icon">&#128269;</div>
-      <div class="node-title">Discovery</div>
-      <div class="node-sub">subnet + ONVIF</div>
-      <div class="node-file">camera/discover.py</div>
+
+    <div class="node" id="n-scene" style="left:1260px;top:570px;" data-id="scene" data-section="brain">
+      <div class="node-icon">&#127916;</div>
+      <div class="node-title">SceneState</div>
+      <div class="node-sub">summary &middot; objects &middot; people &middot; context</div>
+      <div class="node-file">perception/scene_state.py</div>
     </div>
-    <div class="node" id="n-mdns" style="left:1380px;top:720px;" data-id="mdns" data-section="support">
-      <div class="node-icon">&#128225;</div>
-      <div class="node-title">mDNS</div>
-      <div class="node-sub">Bonjour publish</div>
-      <div class="node-file">mdns.py</div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- SECTION: RULES                                     -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div class="section-label" data-section="rules" style="left:1640px;top:24px;width:240px;">
+      <span class="section-toggle">&#9660;</span> &#9878;&#65039; WATCH RULES <span class="section-count">3</span>
     </div>
+
+    <div class="node" id="n-engine" style="left:1660px;top:80px;" data-id="engine" data-section="rules">
+      <div class="node-status-dot" id="status-engine"></div>
+      <div class="node-icon">&#9878;&#65039;</div>
+      <div class="node-title">RulesEngine</div>
+      <div class="node-sub">evaluate conditions &middot; fire alerts</div>
+      <div class="node-file">rules/engine.py</div>
+    </div>
+
+    <div class="node" id="n-templates" style="left:1660px;top:240px;" data-id="templates" data-section="rules">
+      <div class="node-icon">&#128203;</div>
+      <div class="node-title">Rule Templates</div>
+      <div class="node-sub">person &middot; package &middot; pet &middot; pantry</div>
+      <div class="node-file">rules/templates.py</div>
+    </div>
+
+    <div class="node" id="n-store" style="left:1660px;top:400px;" data-id="store" data-section="rules">
+      <div class="node-icon">&#128190;</div>
+      <div class="node-title">RulesStore</div>
+      <div class="node-sub">YAML persistence &middot; CRUD</div>
+      <div class="node-file">rules/store.py</div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- SECTION: CHAT — THE USER INTERFACE                 -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div class="section-label" data-section="chat" style="left:2000px;top:24px;width:340px;">
+      <span class="section-toggle">&#9660;</span> &#128172; CHAT WITH YOUR CAMERA <span class="section-count">6</span>
+    </div>
+
+    <div class="flow-callout" style="left:1990px;top:530px;width:300px;">
+      <div class="flow-step">3</div>
+      <h3>Your Interface</h3>
+      <p>No app to install. Just message your camera on Telegram, WhatsApp, Discord, or Slack. Ask questions, set rules, get alerts.</p>
+    </div>
+
+    <div class="node chat-node" id="n-tgbot" style="left:2020px;top:80px;" data-id="tgbot" data-section="chat">
+      <div class="node-status-dot" id="status-tgbot"></div>
+      <div class="node-icon">&#128172;</div>
+      <div class="node-title">Telegram Bot</div>
+      <div class="node-sub">/snap &middot; /watch &middot; /scene &middot; free text chat</div>
+      <div class="node-file">bot/telegram_bot.py</div>
+      <div class="node-badge new">NEW</div>
+    </div>
+
+    <div class="node chat-node" id="n-whatsapp" style="left:2020px;top:240px;" data-id="whatsapp" data-section="chat">
+      <div class="node-icon">&#128242;</div>
+      <div class="node-title">WhatsApp</div>
+      <div class="node-sub">via OpenClaw &middot; Baileys</div>
+      <div class="node-file">OpenClaw channel</div>
+    </div>
+
+    <div class="node chat-node" id="n-discord-ch" style="left:2220px;top:80px;" data-id="discord-ch" data-section="chat">
+      <div class="node-icon">&#127918;</div>
+      <div class="node-title">Discord</div>
+      <div class="node-sub">via OpenClaw &middot; bot commands</div>
+      <div class="node-file">OpenClaw channel</div>
+    </div>
+
+    <div class="node chat-node" id="n-slack-ch" style="left:2220px;top:240px;" data-id="slack-ch" data-section="chat">
+      <div class="node-icon">&#128188;</div>
+      <div class="node-title">Slack</div>
+      <div class="node-sub">via OpenClaw &middot; Block Kit</div>
+      <div class="node-file">OpenClaw channel</div>
+    </div>
+
+    <div class="node chat-node" id="n-signal" style="left:2220px;top:400px;" data-id="signal" data-section="chat">
+      <div class="node-icon">&#128274;</div>
+      <div class="node-title">Signal</div>
+      <div class="node-sub">via OpenClaw &middot; signal-cli</div>
+      <div class="node-file">OpenClaw channel</div>
+    </div>
+
+    <div class="node" id="n-dispatch" style="left:2020px;top:400px;" data-id="dispatch" data-section="chat">
+      <div class="node-status-dot" id="status-dispatch"></div>
+      <div class="node-icon">&#128236;</div>
+      <div class="node-title">Alert Dispatcher</div>
+      <div class="node-sub">routes alerts to all channels</div>
+      <div class="node-file">notifications/__init__.py</div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- CONSUMER FLOW CALLOUTS                             -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div class="flow-callout" style="left:30px;top:810px;width:300px;">
+      <div class="flow-step">1</div>
+      <h3>Buy Any Camera</h3>
+      <p>Yoosee WiFi camera (&#165;25), TP-Link, or any IP camera with RTSP. Even your laptop webcam or phone works.</p>
+    </div>
+
   </div>
 </div>
 
@@ -862,7 +673,6 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   <div id="detail-icon" class="detail-icon"></div>
   <h2 id="detail-title">&mdash;</h2>
   <div class="detail-file" id="detail-file">&mdash;</div>
-  <div id="detail-camera-preview"><img id="detail-cam-img" alt="Live camera feed"></div>
   <div class="detail-desc" id="detail-desc">&mdash;</div>
   <div class="detail-section">SPECIFICATIONS</div>
   <ul class="detail-stats" id="detail-stats"></ul>
@@ -870,92 +680,155 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   <div class="detail-actions" id="detail-actions"></div>
 </div>
 
-<!-- Context menu -->
-<div id="ctx-menu">
-  <div class="ctx-item" data-action="inspect"><span class="ctx-icon">&#128065;</span> Inspect module <span class="ctx-key">Click</span></div>
-  <div class="ctx-item" data-action="highlight"><span class="ctx-icon">&#128161;</span> Highlight connections <span class="ctx-key">H</span></div>
-  <div class="ctx-item" data-action="isolate"><span class="ctx-icon">&#127919;</span> Isolate pipeline</div>
-  <div class="ctx-sep"></div>
-  <div class="ctx-item" data-action="reset-pos"><span class="ctx-icon">&#8634;</span> Reset position</div>
-  <div class="ctx-item" data-action="center"><span class="ctx-icon">&#9678;</span> Center on screen</div>
-</div>
-
-<!-- Belt info popup -->
-<div id="belt-info">
-  <div class="bi-title" id="bi-title"></div>
-  <div class="bi-row">From: <span class="bi-val" id="bi-from"></span></div>
-  <div class="bi-row">To: <span class="bi-val" id="bi-to"></span></div>
-  <div class="bi-row">Data: <span class="bi-val" id="bi-data"></span></div>
-  <div class="bi-row">Throughput: <span class="bi-val" id="bi-throughput"></span></div>
+<!-- Help overlay -->
+<div id="help-overlay">
+  <div id="help-box">
+    <button id="help-close" onclick="toggleHelp()">&times;</button>
+    <h2>&#128247; PHYSICAL-MCP PRODUCT ARCHITECTURE</h2>
+    <div style="font-size:12px;color:var(--dim);line-height:1.7;margin-bottom:16px;">
+      <strong style="color:var(--text);">How it works:</strong> Buy a camera &rarr; Relay bridges it to cloud &rarr; AI understands what it sees &rarr; Chat with it on Telegram/WhatsApp<br><br>
+      <strong style="color:var(--text);">No app. No terminal. Just message your camera.</strong>
+    </div>
+    <div style="margin-bottom:16px;">
+      <h3 style="font-size:12px;color:var(--accent);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Navigation</h3>
+      <div class="help-row"><span class="help-desc">Pan canvas</span><span class="help-keys"><span class="kb">Drag</span></span></div>
+      <div class="help-row"><span class="help-desc">Zoom in/out</span><span class="help-keys"><span class="kb">+</span> <span class="kb">-</span> or <span class="kb">Scroll</span></span></div>
+      <div class="help-row"><span class="help-desc">Reset view</span><span class="help-keys"><span class="kb">Home</span></span></div>
+      <div class="help-row"><span class="help-desc">Fit all</span><span class="help-keys"><span class="kb">F</span></span></div>
+      <div class="help-row"><span class="help-desc">Search</span><span class="help-keys"><span class="kb">Ctrl</span>+<span class="kb">K</span></span></div>
+      <div class="help-row"><span class="help-desc">Inspect node</span><span class="help-keys"><span class="kb">Click</span></span></div>
+      <div class="help-row"><span class="help-desc">This help</span><span class="help-keys"><span class="kb">?</span></span></div>
+    </div>
+  </div>
 </div>
 
 <script>
 const TOKEN = '{{AUTH_TOKEN}}';
 const BASE = window.location.origin;
 const H = TOKEN ? {'Authorization':'Bearer '+TOKEN} : {};
-const STORAGE_KEY = 'physical-mcp-factory-layout';
+const STORAGE_KEY = 'physical-mcp-factory-v2';
 
 // ═══════════════════════════════════════════════════════════
 // NODE METADATA
 // ═══════════════════════════════════════════════════════════
 const META = {
-  usb:{icon:'&#128247;',title:'USB Camera',file:'camera/usb.py (120 lines)',desc:'OpenCV-based USB camera with background capture thread. Grabs frames at ~2fps without blocking the async event loop.',stats:[['Capture','Background thread'],['FPS','~2'],['Warmup','5 frames'],['Timeout','15s']],hasCamera:true},
-  rtsp:{icon:'&#128225;',title:'RTSP Camera',file:'camera/rtsp.py (194 lines)',desc:'RTSP/HTTP stream with auto-reconnect and exponential backoff. Handles network drops gracefully.',stats:[['Protocol','RTSP + MJPEG'],['Reconnect','2s&rarr;30s'],['Latency','1 frame'],['Timeout','20s']],hasCamera:true},
-  'cam-factory':{icon:'&#127981;',title:'Camera Factory',file:'camera/factory.py',desc:'Creates camera instance based on config type. Validates and returns typed CameraSource.',stats:[['Types','usb, rtsp, http'],['Config','~/.physical-mcp/config.yaml']]},
-  buffer:{icon:'&#128230;',title:'FrameBuffer',file:'camera/buffer.py (59 lines)',desc:'Fixed-size async ring buffer. Supports time queries and even sampling. Wake event for MJPEG.',stats:[['Max frames','300'],['Lock','asyncio.Lock'],['Queries','latest, since, sampled'],['Wake','asyncio.Event']]},
-  detector:{icon:'&#128065;',title:'ChangeDetector',file:'perception/change_detector.py',desc:'pHash + pixel diff change detection. No ML, runs in <5ms. Three threshold levels.',stats:[['Speed','<5ms'],['Method','pHash + pixel diff'],['Minor','5'],['Major','25']]},
-  sampler:{icon:'&#9201;',title:'FrameSampler',file:'perception/frame_sampler.py',desc:'The COST GATE. Decides WHEN to call expensive LLM. Major=immediate, moderate=debounce 3s, no rules=zero calls.',stats:[['Debounce','3s'],['Cooldown','10s'],['Idle cost','$0.000/hr']]},
-  analyzer:{icon:'&#129504;',title:'FrameAnalyzer',file:'reasoning/analyzer.py (219 lines)',desc:'Encodes frame to base64, builds prompt, calls LLM, parses JSON. Zero retries (fail fast).',stats:[['Input','Frame + context'],['Output','JSON'],['Retries','0'],['Quality','60% JPEG']]},
-  providers:{icon:'&#128268;',title:'LLM Providers',file:'reasoning/providers/ (5 files)',desc:'Pluggable: Claude, Gemini, OpenAI-compatible. Multi-strategy JSON extraction.',stats:[['Anthropic','Messages API'],['Google','genai SDK'],['OpenAI','Any compatible'],['Repair','Multi-strategy']]},
-  scene:{icon:'&#127916;',title:'SceneState',file:'perception/scene_state.py',desc:'Rolling summary: change log (200 entries), objects, people count, context string.',stats:[['Fields','summary, objects, people'],['Log','200 max'],['Tracking','Update count']]},
-  engine:{icon:'&#9878;&#65039;',title:'RulesEngine',file:'rules/engine.py',desc:'Evaluates rules against LLM results. Manages cooldowns, generates AlertEvents.',stats:[['Method','Condition matching'],['Cooldown','Per-rule 60s'],['Output','AlertEvent']]},
-  store:{icon:'&#128190;',title:'RulesStore',file:'rules/store.py',desc:'YAML persistence. CRUD with atomic writes.',stats:[['Format','YAML'],['Path','~/.physical-mcp/rules.yaml']]},
-  templates:{icon:'&#128203;',title:'Templates',file:'rules/templates.py (193 lines)',desc:'9 presets: person, package, pet, parking, pantry, baby, workspace, weather, storefront.',stats:[['Count','9'],['Categories','Security, Home, Work, Retail']]},
-  dispatch:{icon:'&#128236;',title:'Dispatcher',file:'notifications/__init__.py (152 lines)',desc:'Routes AlertEvent to delivery channel. Desktop popup bonus with remote notifications.',stats:[['Channels','7'],['Routing','By notification.type'],['Desktop','Auto-bonus']]},
-  telegram:{icon:'&#128241;',title:'Telegram',file:'notifications/telegram.py',desc:'Photo+caption via Bot API with rate limiting.',stats:[['Method','sendPhoto'],['Auth','Bot token']]},
-  discord:{icon:'&#128172;',title:'Discord',file:'notifications/discord.py',desc:'Rich embed with image via webhooks.',stats:[['Method','Webhook POST'],['Format','Embed']]},
-  slack:{icon:'&#128188;',title:'Slack',file:'notifications/slack.py',desc:'Block Kit formatted text via webhooks.',stats:[['Method','Webhook POST'],['Format','Block Kit']]},
-  ntfy:{icon:'&#128276;',title:'ntfy',file:'notifications/ntfy.py',desc:'Push notification with image. Free, zero signup.',stats:[['Server','ntfy.sh'],['Auth','None']]},
-  desktop:{icon:'&#128421;',title:'Desktop',file:'notifications/desktop.py',desc:'Native OS toast. Rate-limited 10s.',stats:[['macOS','osascript'],['Interval','10s min']]},
-  webhook:{icon:'&#128279;',title:'Webhook',file:'notifications/webhook.py',desc:'Generic HTTP POST with JSON payload.',stats:[['Method','POST'],['Format','JSON']]},
-  openclaw:{icon:'&#129430;',title:'OpenClaw',file:'notifications/openclaw.py',desc:'Multi-channel via CLI. Two-stage: image then text fallback.',stats:[['CLI','openclaw message send'],['Fallback','Text-only']]},
-  loop:{icon:'&#9889;',title:'Perception Loop',file:'perception/loop.py (557 lines)',desc:'THE REACTOR CORE. One async task per camera. Orchestrates: capture&rarr;buffer&rarr;detect&rarr;sample&rarr;analyze&rarr;evaluate&rarr;dispatch.',stats:[['Pattern','1 task/camera'],['Backoff','5s&rarr;300s'],['Health','ok/degraded/offline'],['Idle cost','$0']]},
-  mcp:{icon:'&#128642;',title:'MCP Server',file:'server.py + __main__.py',desc:'FastMCP server. Tools: get_camera_frame, get_scene_analysis, watch_for, check_alerts, manage_memory.',stats:[['Port','8400'],['Transport','streamable-http'],['Clients','Claude, Cursor, VS Code']]},
-  api:{icon:'&#127760;',title:'Vision REST API',file:'vision_api.py',desc:'aiohttp with 18+ endpoints. Dashboard, MJPEG, scene, rules, cameras, factory.',stats:[['Port','8090'],['Endpoints','18+'],['Auth','Bearer (optional)'],['CORS','Open']]},
-  config:{icon:'&#9881;&#65039;',title:'Config',file:'config.py (203 lines)',desc:'YAML + env with Pydantic validation and ${VAR} interpolation.',stats:[['Format','YAML + env'],['Validation','Pydantic v2']]},
-  stats:{icon:'&#128202;',title:'StatsTracker',file:'stats.py',desc:'API call count, daily budget, hourly rate limit.',stats:[['Budget','Daily cap'],['Rate','Hourly window']]},
-  health:{icon:'&#127973;',title:'Health',file:'health.py',desc:'Per-camera: ok, degraded, offline. Tracks consecutive failures.',stats:[['States','ok/degraded/offline']]},
-  memory:{icon:'&#129504;',title:'Memory',file:'memory.py (167 lines)',desc:'Thread-safe persistent markdown. AI stores notes across sessions.',stats:[['Format','Markdown'],['Path','~/.physical-mcp/memory.md']]},
-  discover:{icon:'&#128269;',title:'Discovery',file:'camera/discover.py (366 lines)',desc:'Subnet port scan + ONVIF WS-Discovery multicast.',stats:[['Port','554 (RTSP)'],['ONVIF','WS-Discovery']]},
-  mdns:{icon:'&#128225;',title:'mDNS',file:'mdns.py',desc:'Publishes physical-mcp.local via Zeroconf.',stats:[['Protocol','Bonjour/Zeroconf']]}
+  yoosee:{icon:'&#128249;',title:'WiFi Camera (Yoosee)',file:'RTSP camera — no code needed',
+    desc:'Cheapest option: buy a Yoosee-based WiFi camera for ¥25-40 on Taobao. Enable RTSP in the Yoosee app. Standard URL: rtsp://admin:admin@IP:554/onvif1. Plug in, connect to WiFi, done.',
+    stats:[['Price','¥25-40'],['Protocol','RTSP'],['Resolution','1080p'],['WiFi','2.4GHz'],['Night vision','IR LEDs'],['Setup','Yoosee app → enable RTSP']]},
+  ipcam:{icon:'&#128225;',title:'IP Camera (ONVIF)',file:'camera/rtsp.py',
+    desc:'Any ONVIF-compatible IP camera. TP-Link, Mercury (水星), Dahua, Hikvision all work. RTSP URL varies by brand. Auto-discovered via ONVIF WS-Discovery.',
+    stats:[['Brands','TP-Link, Mercury, Dahua, Hikvision'],['Protocol','RTSP + ONVIF'],['Discovery','WS-Discovery multicast'],['Price','¥79-300+'],['Reconnect','Auto (2s→30s backoff)']]},
+  usb:{icon:'&#128247;',title:'USB / Laptop Camera',file:'camera/usb.py (120 lines)',
+    desc:'Built-in webcam or USB camera. OpenCV background capture at ~2fps. Zero cost if you already have a laptop. Great for testing.',
+    stats:[['Capture','Background thread'],['FPS','~2'],['Cost','Free (built-in)'],['Platforms','Mac/Win/Linux']]},
+  phone:{icon:'&#128241;',title:'Phone Camera',file:'DroidCam or IP Webcam app',
+    desc:'Turn your old phone into a camera. Install DroidCam (Android/iOS) or IP Webcam (Android). Streams MJPEG over HTTP on your local network.',
+    stats:[['Android','DroidCam / IP Webcam'],['iOS','DroidCam'],['Protocol','MJPEG over HTTP'],['Cost','Free app']]},
+  'cloud-cam':{icon:'&#9729;&#65039;',title:'Cloud Camera',file:'camera/cloud.py',
+    desc:'NEW: Camera type that receives pushed JPEG frames via HTTP POST. No RTSP pull needed. The relay agent pushes frames to this endpoint.',
+    stats:[['Method','HTTP POST'],['Auth','X-Camera-Token header'],['Format','JPEG'],['Max size','5MB per frame']]},
+  relay:{icon:'&#128259;',title:'Relay Agent',file:'relay/relay_agent.py',
+    desc:'The bridge between your camera and the cloud. Pulls RTSP video from camera on your local network, compresses frames to JPEG, POSTs them to the cloud server over HTTPS. Runs on any computer, Raspberry Pi, or phone.',
+    stats:[['Input','RTSP stream'],['Output','HTTPS POST (JPEG)'],['Interval','~2fps'],['Retry','Exponential backoff'],['Runs on','Any Python device']]},
+  provision:{icon:'&#128246;',title:'WiFi Provisioning',file:'relay/wifi_provision.py',
+    desc:'For dedicated relay hardware: creates WiFi AP with captive portal. User connects phone, enters WiFi credentials + 6-digit claim code. Like setting up a smart bulb.',
+    stats:[['Mode','AP + captive portal'],['Theme','DJI-style dark UI'],['Connects via','nmcli / wpa_supplicant'],['Registers','POST /push/register']]},
+  pair:{icon:'&#128279;',title:'Claim Code Pairing',file:'relay/pair.py',
+    desc:'Links a physical camera to a user account. Telegram bot generates a 6-digit code → user enters it on camera/relay → camera is paired to that Telegram chat.',
+    stats:[['Code format','6-digit alphanumeric'],['Generated by','Telegram /setup command'],['Entered on','Captive portal or CLI'],['Expires','10 minutes']]},
+  push:{icon:'&#128229;',title:'Push Endpoints',file:'vision_api.py',
+    desc:'NEW: HTTP endpoints for receiving frames from relay agents. POST /push/frame/{camera_id} accepts JPEG with X-Camera-Token auth. POST /push/register creates new cloud cameras via claim code.',
+    stats:[['POST /push/frame','Receive JPEG frame'],['POST /push/register','Claim code pairing'],['Auth','X-Camera-Token header'],['Size limit','5MB']]},
+  buffer:{icon:'&#128230;',title:'FrameBuffer',file:'camera/buffer.py (59 lines)',
+    desc:'Fixed-size async ring buffer. Stores recent frames for analysis. Supports time-range queries and even sampling.',
+    stats:[['Max frames','300'],['Lock','asyncio.Lock'],['Queries','latest, since, sampled']]},
+  loop:{icon:'&#9889;',title:'Perception Loop',file:'perception/loop.py (557 lines)',
+    desc:'THE REACTOR CORE. One async task per camera. Orchestrates the entire pipeline: capture → buffer → detect changes → sample → analyze with AI → evaluate rules → dispatch alerts.',
+    stats:[['Pattern','1 task per camera'],['Backoff','5s→300s on failure'],['Health','ok / degraded / offline'],['Idle cost','$0']]},
+  api:{icon:'&#127760;',title:'Vision REST API',file:'vision_api.py',
+    desc:'aiohttp web server with 18+ endpoints. Serves the dashboard, MJPEG stream, scene data, rules CRUD, camera management, push endpoints, and this factory view.',
+    stats:[['Port','8090'],['Endpoints','18+'],['Auth','Bearer token (optional)'],['CORS','Open for LAN']]},
+  mcp:{icon:'&#128642;',title:'MCP Server',file:'server.py + __main__.py',
+    desc:'FastMCP server for AI tools. Claude, Cursor, VS Code, Gemini connect here. Tools: get_camera_frame, get_scene_analysis, watch_for, check_alerts, manage_memory.',
+    stats:[['Port','8400'],['Transport','streamable-http'],['Clients','Claude, Cursor, VS Code, Gemini']]},
+  detector:{icon:'&#128065;',title:'ChangeDetector',file:'perception/change_detector.py',
+    desc:'Detects visual changes between frames using perceptual hashing + pixel difference. No ML needed, runs in <5ms. Prevents unnecessary LLM calls when nothing changes.',
+    stats:[['Speed','<5ms'],['Method','pHash + pixel diff'],['Levels','none / minor / moderate / major']]},
+  sampler:{icon:'&#9201;',title:'FrameSampler',file:'perception/frame_sampler.py',
+    desc:'The COST GATE. Decides WHEN to call the expensive LLM vision API. Major change = immediate. Moderate = debounce 3s. No rules = zero calls. Saves money.',
+    stats:[['Debounce','3s'],['Cooldown','10s'],['Idle cost','$0/hr']]},
+  analyzer:{icon:'&#129504;',title:'FrameAnalyzer',file:'reasoning/analyzer.py (219 lines)',
+    desc:'Encodes frame to base64 JPEG, builds a context prompt, calls the LLM vision API, parses structured JSON response. The "eyes" of the system.',
+    stats:[['Input','JPEG frame + context'],['Output','Structured JSON'],['Providers','Gemini, Claude, OpenAI'],['Quality','60% JPEG compression']]},
+  scene:{icon:'&#127916;',title:'SceneState',file:'perception/scene_state.py',
+    desc:'Rolling memory of what the camera sees. Tracks: summary text, objects present, people count, change log (last 200 events). Persists across analysis cycles.',
+    stats:[['Fields','summary, objects, people_count'],['Change log','200 entries max'],['Updated','After each LLM analysis']]},
+  engine:{icon:'&#9878;&#65039;',title:'RulesEngine',file:'rules/engine.py',
+    desc:'Evaluates watch rules against AI analysis results. Example: "alert me if a person is at the door" → checks LLM output → fires alert with confidence score.',
+    stats:[['Method','Condition matching on LLM output'],['Cooldown','60s per rule'],['Output','AlertEvent']]},
+  templates:{icon:'&#128203;',title:'Rule Templates',file:'rules/templates.py (193 lines)',
+    desc:'9 pre-built rule templates: person detection, package delivery, pet activity, parking, pantry inventory, baby monitor, workspace, weather, storefront.',
+    stats:[['Count','9 presets'],['Categories','Security, Home, Work, Retail'],['Custom','User-defined via /watch']]},
+  store:{icon:'&#128190;',title:'RulesStore',file:'rules/store.py',
+    desc:'YAML-based rule persistence. CRUD operations with atomic file writes.',
+    stats:[['Format','YAML'],['Path','~/.physical-mcp/rules.yaml']]},
+  tgbot:{icon:'&#128172;',title:'Telegram Bot',file:'bot/telegram_bot.py',
+    desc:'NEW: Bidirectional Telegram chat. Users message the bot to interact with their cameras. Commands: /snap (photo), /scene (describe), /watch (create rule), /rules (list), /setup (pair camera). Free text questions get AI answers about what the camera sees.',
+    stats:[['/snap','Take a photo right now'],['/scene','Describe what you see'],['/watch','Create alert rule'],['/setup','Pair camera (claim code)'],['Free text','Ask anything about the scene'],['Alerts','Auto-sent with photo']]},
+  whatsapp:{icon:'&#128242;',title:'WhatsApp',file:'OpenClaw channel (Baileys)',
+    desc:'Chat with your camera on WhatsApp via OpenClaw. Same commands as Telegram. Uses Baileys library for WhatsApp Web protocol.',
+    stats:[['Protocol','WhatsApp Web (Baileys)'],['Via','OpenClaw'],['Setup','Scan QR code once']]},
+  'discord-ch':{icon:'&#127918;',title:'Discord',file:'OpenClaw channel',
+    desc:'Chat with your camera on Discord via OpenClaw bot. Same commands as Telegram.',
+    stats:[['Via','OpenClaw bot'],['Setup','Add bot to server']]},
+  'slack-ch':{icon:'&#128188;',title:'Slack',file:'OpenClaw channel',
+    desc:'Chat with your camera on Slack via OpenClaw. Same commands as Telegram.',
+    stats:[['Via','OpenClaw (Socket Mode)'],['Setup','Install Slack app']]},
+  signal:{icon:'&#128274;',title:'Signal',file:'OpenClaw channel (signal-cli)',
+    desc:'Most private option. Chat with your camera on Signal via OpenClaw. End-to-end encrypted.',
+    stats:[['Protocol','Signal (signal-cli)'],['Via','OpenClaw'],['Privacy','E2E encrypted']]},
+  dispatch:{icon:'&#128236;',title:'Alert Dispatcher',file:'notifications/__init__.py',
+    desc:'Routes AlertEvents to the appropriate delivery channel (Telegram photo, Discord embed, Slack Block Kit, etc). Desktop popup added as bonus.',
+    stats:[['Channels','7+ (Telegram, Discord, Slack, ntfy, desktop, webhook, OpenClaw)'],['Routing','By notification.type']]}
 };
 
 // ═══════════════════════════════════════════════════════════
 // BELT CONNECTIONS [fromId, toId, label, description]
 // ═══════════════════════════════════════════════════════════
 const BELTS = [
-  ['n-usb','n-buffer','frames','Raw JPEG frames at ~2fps from USB camera'],
-  ['n-rtsp','n-buffer','frames','Raw frames from RTSP network stream'],
-  ['n-buffer','n-detector','raw','Latest frame from ring buffer for change analysis'],
-  ['n-detector','n-sampler','changes','Change level: none/minor/moderate/major'],
-  ['n-sampler','n-analyzer','selected','Frames that passed the cost gate for LLM analysis'],
+  // Cameras → Relay
+  ['n-yoosee','n-relay','RTSP','Yoosee camera streams RTSP video to relay agent'],
+  ['n-ipcam','n-relay','RTSP','IP camera streams RTSP to relay'],
+  ['n-phone','n-relay','MJPEG','Phone camera streams MJPEG to relay'],
+  // USB direct to cloud server (no relay needed for local)
+  ['n-usb','n-buffer','frames','USB camera feeds directly into buffer (local mode)'],
+  // Relay → Cloud
+  ['n-relay','n-push','HTTPS POST','Relay pushes JPEG frames to cloud over HTTPS'],
+  ['n-provision','n-pair','credentials','WiFi creds + claim code from captive portal'],
+  ['n-pair','n-push','register','Claim code creates cloud camera via POST /push/register'],
+  // Cloud internal
+  ['n-push','n-cloud-cam','JPEG','Push endpoint feeds frames into CloudCamera'],
+  ['n-cloud-cam','n-buffer','frames','Cloud camera provides frames to buffer'],
+  ['n-buffer','n-loop','frames','Buffer feeds frames to perception loop'],
+  ['n-loop','n-detector','frame','Loop sends frame for change detection'],
+  ['n-detector','n-sampler','change level','Change level: none/minor/moderate/major'],
+  ['n-sampler','n-analyzer','selected frame','Frames that pass the cost gate for LLM analysis'],
   ['n-analyzer','n-scene','JSON','Structured analysis: summary, objects, people, changes'],
-  ['n-analyzer','n-providers','prompt','Base64 image + context prompt to LLM provider'],
-  ['n-scene','n-engine','context','Scene state fed into rule condition evaluation'],
-  ['n-store','n-engine','rules','Loaded watch rules from YAML persistence'],
+  ['n-scene','n-engine','context','Scene state fed into rule evaluation'],
+  ['n-store','n-engine','rules','Watch rules loaded from YAML persistence'],
+  ['n-templates','n-store','presets','Template rules written to store'],
+  // Rules → Chat
   ['n-engine','n-dispatch','alerts','Triggered AlertEvents with confidence scores'],
-  ['n-dispatch','n-telegram','','Alert routed to Telegram channel'],
-  ['n-dispatch','n-discord','','Alert routed to Discord webhook'],
-  ['n-dispatch','n-slack','','Alert routed to Slack webhook'],
-  ['n-dispatch','n-ntfy','','Alert routed to ntfy push'],
-  ['n-dispatch','n-desktop','','Alert routed to desktop toast'],
-  ['n-dispatch','n-webhook','','Alert routed to generic webhook'],
-  ['n-dispatch','n-openclaw','','Alert routed to OpenClaw multi-channel'],
-  ['n-loop','n-buffer','orchestrate','Loop drives frame capture into buffer'],
-  ['n-loop','n-api','share state','Loop exposes live data to REST API'],
-  ['n-loop','n-mcp','share state','Loop exposes live data to MCP tools'],
-  ['n-config','n-loop','settings','Camera config, LLM provider, thresholds'],
-  ['n-health','n-loop','status','Health state feeds back into loop decisions'],
+  ['n-dispatch','n-tgbot','alert','Alert with photo sent to Telegram chat'],
+  ['n-dispatch','n-whatsapp','alert','Alert sent to WhatsApp'],
+  ['n-dispatch','n-discord-ch','alert','Alert sent to Discord'],
+  ['n-dispatch','n-slack-ch','alert','Alert sent to Slack'],
+  ['n-dispatch','n-signal','alert','Alert sent to Signal'],
+  // Telegram bot → scene (bidirectional chat)
+  ['n-tgbot','n-scene','query','User asks about scene via free text'],
+  // API/MCP connections
+  ['n-loop','n-api','state','Loop exposes live data to REST API'],
+  ['n-loop','n-mcp','state','Loop exposes live data to MCP tools'],
 ];
 
 // ═══════════════════════════════════════════════════════════
@@ -963,8 +836,6 @@ const BELTS = [
 // ═══════════════════════════════════════════════════════════
 let dragNode = null, dragOffX = 0, dragOffY = 0, hasDragged = false;
 const defaultPositions = {};
-
-// Save default positions on load
 document.querySelectorAll('.node').forEach(n => {
   defaultPositions[n.id] = { left: n.offsetLeft, top: n.offsetTop };
 });
@@ -976,74 +847,51 @@ function loadLayout() {
     const layout = JSON.parse(saved);
     Object.entries(layout).forEach(([id, pos]) => {
       const el = document.getElementById(id);
-      if (el) {
-        el.style.left = pos.left + 'px';
-        el.style.top = pos.top + 'px';
-      }
+      if (el) { el.style.left = pos.left + 'px'; el.style.top = pos.top + 'px'; }
     });
-  } catch(e) { /* ignore */ }
+  } catch(e) {}
 }
-
 function saveLayout() {
   const layout = {};
-  document.querySelectorAll('.node').forEach(n => {
-    layout[n.id] = { left: n.offsetLeft, top: n.offsetTop };
-  });
+  document.querySelectorAll('.node').forEach(n => { layout[n.id] = { left: n.offsetLeft, top: n.offsetTop }; });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
 }
-
 function resetLayout() {
   Object.entries(defaultPositions).forEach(([id, pos]) => {
     const el = document.getElementById(id);
-    if (el) {
-      el.style.left = pos.left + 'px';
-      el.style.top = pos.top + 'px';
-    }
+    if (el) { el.style.left = pos.left + 'px'; el.style.top = pos.top + 'px'; }
   });
   localStorage.removeItem(STORAGE_KEY);
-  drawBelts();
-  drawMinimapNodes();
-  showToast('info', 'Layout Reset', 'Node positions restored to defaults.');
+  drawBelts(); drawMinimapNodes();
+  showToast('info', 'Layout Reset', 'Positions restored.');
 }
 
 document.querySelectorAll('.node').forEach(n => {
   n.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
-    // Start drag after small movement threshold
     const startX = e.clientX, startY = e.clientY;
     hasDragged = false;
-
     function onMove(ev) {
       const dx = ev.clientX - startX, dy = ev.clientY - startY;
       if (!hasDragged && Math.abs(dx) + Math.abs(dy) < 5) return;
       if (!hasDragged) {
-        hasDragged = true;
-        dragNode = n;
-        n.classList.add('dragging');
+        hasDragged = true; dragNode = n; n.classList.add('dragging');
         dragOffX = startX / scale - n.offsetLeft - panX / scale;
         dragOffY = startY / scale - n.offsetTop - panY / scale;
       }
-      const newX = (ev.clientX / scale) - dragOffX - (panX / scale);
-      const newY = (ev.clientY / scale) - dragOffY - (panY / scale);
-      n.style.left = Math.round(newX) + 'px';
-      n.style.top = Math.round(newY) + 'px';
+      n.style.left = Math.round((ev.clientX / scale) - dragOffX - (panX / scale)) + 'px';
+      n.style.top = Math.round((ev.clientY / scale) - dragOffY - (panY / scale)) + 'px';
       drawBelts();
     }
     function onUp() {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      if (hasDragged) {
-        n.classList.remove('dragging');
-        dragNode = null;
-        saveLayout();
-        drawMinimapNodes();
-      }
+      if (hasDragged) { n.classList.remove('dragging'); dragNode = null; saveLayout(); drawMinimapNodes(); }
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   });
 });
-
 loadLayout();
 
 // ═══════════════════════════════════════════════════════════
@@ -1063,48 +911,42 @@ function drawBelts() {
   const svg = document.getElementById('belts');
   svg.innerHTML = '';
   beltPaths = [];
-
   BELTS.forEach(([fid, tid, label, desc], idx) => {
     const f = document.getElementById(fid);
     const t = document.getElementById(tid);
     if (!f || !t) return;
-    // Hide belt if either node is in a collapsed section
     if (f.classList.contains('section-hidden') || t.classList.contains('section-hidden')) return;
-
     const fx = f.offsetLeft + f.offsetWidth;
     const fy = f.offsetTop + f.offsetHeight/2;
     const tx = t.offsetLeft;
     const ty = t.offsetTop + t.offsetHeight/2;
-    const dx = tx - fx, dy = ty - fy;
-
+    const dx = tx - fx;
     let d;
-    if (Math.abs(dy) < 10) {
+    if (Math.abs(ty - fy) < 10) {
       d = `M${fx},${fy} L${tx},${ty}`;
     } else if (fx > tx) {
       const my = (fy+ty)/2;
-      d = `M${fx},${fy} L${fx+20},${fy} L${fx+20},${my} L${tx-20},${my} L${tx-20},${ty} L${tx},${ty}`;
+      d = `M${fx},${fy} L${fx+25},${fy} L${fx+25},${my} L${tx-25},${my} L${tx-25},${ty} L${tx},${ty}`;
     } else {
       const mx = fx + dx*0.4;
       d = `M${fx},${fy} C${mx},${fy} ${fx+dx*0.6},${ty} ${tx},${ty}`;
     }
-
     const path = document.createElementNS('http://www.w3.org/2000/svg','path');
     path.setAttribute('d', d);
     path.classList.add('belt-path','flowing');
     path.dataset.idx = idx;
     path.style.pointerEvents = 'stroke';
-    // Belt hover/click
-    path.addEventListener('mouseenter', e => { path.classList.add('belt-hover'); showBeltInfo(idx, e); });
-    path.addEventListener('mouseleave', () => { path.classList.remove('belt-hover'); hideBeltInfo(); });
+    path.addEventListener('mouseenter', () => path.classList.add('belt-hover'));
+    path.addEventListener('mouseleave', () => path.classList.remove('belt-hover'));
     path.addEventListener('click', e => { e.stopPropagation(); selectBelt(idx); });
     svg.appendChild(path);
     beltPaths.push(path);
-
+    // Junction dot
     const dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
     dot.setAttribute('cx', tx); dot.setAttribute('cy', ty); dot.setAttribute('r', '3.5');
     dot.classList.add('belt-junction');
     svg.appendChild(dot);
-
+    // Label
     if (label) {
       const pathLen = path.getTotalLength();
       const mid = path.getPointAtLength(pathLen * 0.5);
@@ -1142,55 +984,34 @@ function animateParticles() {
 }
 
 function spawnLoop() {
-  const activeBelts = [0,1,2,3,4,5,7,8,9];
   if (serverActive) {
+    // Spawn particles on main data flow belts
+    const activeBelts = [0,4,8,9,10,11,12,13,14,17,18];
     spawnParticle(activeBelts[Math.floor(Math.random()*activeBelts.length)]);
   }
   setTimeout(spawnLoop, 300 + Math.random()*700);
 }
 
 // ═══════════════════════════════════════════════════════════
-// BELT INFO POPUP + CLICK
+// BELT SELECTION & HIGHLIGHTING
 // ═══════════════════════════════════════════════════════════
-function showBeltInfo(idx, e) {
-  const belt = BELTS[idx];
-  if (!belt) return;
-  const popup = document.getElementById('belt-info');
-  const fromNode = document.getElementById(belt[0]);
-  const toNode = document.getElementById(belt[1]);
-  document.getElementById('bi-title').textContent = belt[2] ? `Belt: ${belt[2]}` : 'Connection';
-  document.getElementById('bi-from').textContent = fromNode?.querySelector('.node-title')?.textContent || belt[0];
-  document.getElementById('bi-to').textContent = toNode?.querySelector('.node-title')?.textContent || belt[1];
-  document.getElementById('bi-data').textContent = belt[3] || 'Data flow';
-  document.getElementById('bi-throughput').textContent = serverActive ? 'Active' : 'Idle';
-  popup.style.left = (e.clientX + 12) + 'px';
-  popup.style.top = (e.clientY - 10) + 'px';
-  popup.classList.add('show');
-}
-function hideBeltInfo() { document.getElementById('belt-info').classList.remove('show'); }
-
 let selectedBelt = -1;
 function selectBelt(idx) {
   beltPaths.forEach(p => p.classList.remove('belt-selected'));
   if (selectedBelt === idx) { selectedBelt = -1; clearHighlights(); return; }
   selectedBelt = idx;
   if (beltPaths[idx]) beltPaths[idx].classList.add('belt-selected');
-  // Highlight connected nodes
-  const belt = BELTS[idx];
   clearHighlights();
+  const belt = BELTS[idx];
   const fromEl = document.getElementById(belt[0]);
   const toEl = document.getElementById(belt[1]);
   if (fromEl) fromEl.classList.add('highlight');
   if (toEl) toEl.classList.add('highlight');
 }
 
-// ═══════════════════════════════════════════════════════════
-// DEPENDENCY HIGHLIGHTING
-// ═══════════════════════════════════════════════════════════
 function highlightConnections(nodeId) {
   clearHighlights();
-  const connected = new Set();
-  connected.add(nodeId);
+  const connected = new Set([nodeId]);
   BELTS.forEach(([from, to], idx) => {
     if (from === nodeId || to === nodeId) {
       connected.add(from); connected.add(to);
@@ -1205,33 +1026,25 @@ function highlightConnections(nodeId) {
 
 function isolatePipeline(nodeId) {
   clearHighlights();
-  // Trace full pipeline from this node
-  const visited = new Set();
-  const queue = [nodeId];
-  const activeBelts = new Set();
+  const visited = new Set(), queue = [nodeId], activeBeltsSet = new Set();
   while (queue.length) {
     const id = queue.shift();
     if (visited.has(id)) continue;
     visited.add(id);
     BELTS.forEach(([from, to], idx) => {
-      if (from === id && !visited.has(to)) { queue.push(to); activeBelts.add(idx); }
-      if (to === id && !visited.has(from)) { queue.push(from); activeBelts.add(idx); }
+      if (from === id && !visited.has(to)) { queue.push(to); activeBeltsSet.add(idx); }
+      if (to === id && !visited.has(from)) { queue.push(from); activeBeltsSet.add(idx); }
     });
   }
   document.querySelectorAll('.node').forEach(n => {
     if (!visited.has(n.id)) n.classList.add('dim-node');
     else n.classList.add('highlight');
   });
-  beltPaths.forEach((p, i) => {
-    if (!activeBelts.has(i)) p.style.opacity = '0.1';
-    else p.style.opacity = '1';
-  });
+  beltPaths.forEach((p, i) => { p.style.opacity = activeBeltsSet.has(i) ? '1' : '0.1'; });
 }
 
 function clearHighlights() {
-  document.querySelectorAll('.node').forEach(n => {
-    n.classList.remove('dim-node','highlight');
-  });
+  document.querySelectorAll('.node').forEach(n => n.classList.remove('dim-node','highlight'));
   beltPaths.forEach(p => { p.style.opacity = ''; p.classList.remove('belt-selected'); });
   selectedBelt = -1;
 }
@@ -1239,7 +1052,7 @@ function clearHighlights() {
 // ═══════════════════════════════════════════════════════════
 // PAN & ZOOM
 // ═══════════════════════════════════════════════════════════
-let scale = 0.65, panX = 80, panY = 50;
+let scale = 0.55, panX = 40, panY = 30;
 let dragging = false, dragStartX, dragStartY;
 const factory = document.getElementById('factory');
 const wrap = document.getElementById('canvas-wrap');
@@ -1252,7 +1065,7 @@ function applyTransform() {
 applyTransform();
 
 wrap.addEventListener('mousedown', e => {
-  if (e.target.closest('.node') || e.target.closest('#detail') || e.target.closest('#ctx-menu')) return;
+  if (e.target.closest('.node') || e.target.closest('#detail')) return;
   dragging = true; wrap.classList.add('grabbing');
   dragStartX = e.clientX - panX; dragStartY = e.clientY - panY;
 });
@@ -1267,28 +1080,26 @@ wrap.addEventListener('wheel', e => {
   const rect = wrap.getBoundingClientRect();
   const mx = e.clientX - rect.left, my = e.clientY - rect.top;
   const oldScale = scale;
-  scale = Math.max(0.25, Math.min(2.5, scale + (e.deltaY > 0 ? -0.05 : 0.05)));
+  scale = Math.max(0.2, Math.min(2.5, scale + (e.deltaY > 0 ? -0.05 : 0.05)));
   panX = mx - (mx - panX) * (scale / oldScale);
   panY = my - (my - panY) * (scale / oldScale);
   applyTransform();
 }, {passive:false});
 
 function zoomIn() { scale = Math.min(2.5, scale+0.1); applyTransform(); }
-function zoomOut() { scale = Math.max(0.25, scale-0.1); applyTransform(); }
-function resetView() { scale=0.65; panX=80; panY=50; applyTransform(); }
+function zoomOut() { scale = Math.max(0.2, scale-0.1); applyTransform(); }
+function resetView() { scale=0.55; panX=40; panY=30; applyTransform(); }
 function fitAll() {
   const vw = wrap.clientWidth, vh = wrap.clientHeight;
-  scale = Math.min(vw/2000, vh/900, 1.0);
-  panX = (vw - 2000*scale)/2; panY = (vh - 900*scale)/2;
+  scale = Math.min(vw/2600, vh/1000, 1.0);
+  panX = (vw - 2600*scale)/2; panY = (vh - 1000*scale)/2;
   applyTransform();
 }
 function centerOnNode(nodeId) {
   const el = document.getElementById(nodeId);
   if (!el) return;
-  const nx = el.offsetLeft + el.offsetWidth/2;
-  const ny = el.offsetTop + el.offsetHeight/2;
-  panX = wrap.clientWidth/2 - nx*scale;
-  panY = wrap.clientHeight/2 - ny*scale;
+  panX = wrap.clientWidth/2 - (el.offsetLeft + el.offsetWidth/2)*scale;
+  panY = wrap.clientHeight/2 - (el.offsetTop + el.offsetHeight/2)*scale;
   applyTransform();
 }
 
@@ -1303,124 +1114,76 @@ searchInput.addEventListener('input', () => {
   if (!q) { searchResults.classList.remove('show'); clearHighlights(); return; }
   const matches = [];
   Object.entries(META).forEach(([id, m]) => {
-    const text = `${m.title} ${m.file} ${m.desc}`.toLowerCase();
-    if (text.includes(q)) matches.push({id, ...m});
+    if (`${m.title} ${m.file} ${m.desc}`.toLowerCase().includes(q)) matches.push({id, ...m});
   });
-  if (matches.length === 0) { searchResults.classList.remove('show'); return; }
+  if (!matches.length) { searchResults.classList.remove('show'); return; }
   searchResults.innerHTML = matches.map(m =>
     `<div class="search-item" data-id="${m.id}"><span class="si-icon">${m.icon}</span><span class="si-title">${m.title}</span><span class="si-file">${m.file.split(' ')[0]}</span></div>`
   ).join('');
   searchResults.classList.add('show');
-  // Highlight matching nodes
   clearHighlights();
-  const matchIds = new Set(matches.map(m => {
-    const el = document.querySelector(`[data-id="${m.id}"]`);
-    return el ? el.id : null;
-  }).filter(Boolean));
+  const matchIds = new Set(matches.map(m => document.querySelector(`[data-id="${m.id}"]`)?.id).filter(Boolean));
   document.querySelectorAll('.node').forEach(n => {
-    if (!matchIds.has(n.id)) n.classList.add('dim-node');
-    else n.classList.add('highlight');
+    if (!matchIds.has(n.id)) n.classList.add('dim-node'); else n.classList.add('highlight');
   });
 });
-
-searchInput.addEventListener('blur', () => { setTimeout(() => searchResults.classList.remove('show'), 200); });
+searchInput.addEventListener('blur', () => setTimeout(() => searchResults.classList.remove('show'), 200));
 searchResults.addEventListener('click', e => {
   const item = e.target.closest('.search-item');
   if (!item) return;
-  const id = item.dataset.id;
-  const nodeEl = document.querySelector(`[data-id="${id}"]`);
-  if (nodeEl) { centerOnNode(nodeEl.id); openDetail(id); }
-  searchInput.value = '';
-  searchResults.classList.remove('show');
-  clearHighlights();
+  const nodeEl = document.querySelector(`[data-id="${item.dataset.id}"]`);
+  if (nodeEl) { centerOnNode(nodeEl.id); openDetail(item.dataset.id); }
+  searchInput.value = ''; searchResults.classList.remove('show'); clearHighlights();
 });
 
 // ═══════════════════════════════════════════════════════════
-// CONTEXT MENU
+// COLLAPSIBLE SECTIONS
 // ═══════════════════════════════════════════════════════════
-let ctxNodeId = null;
-document.querySelectorAll('.node').forEach(n => {
-  n.addEventListener('contextmenu', e => {
-    e.preventDefault();
-    ctxNodeId = n.id;
-    const menu = document.getElementById('ctx-menu');
-    menu.style.left = e.clientX + 'px'; menu.style.top = e.clientY + 'px';
-    menu.classList.add('show');
+const collapsedSections = new Set(JSON.parse(localStorage.getItem('factory-v2-collapsed') || '[]'));
+function toggleSection(sectionName) {
+  if (collapsedSections.has(sectionName)) collapsedSections.delete(sectionName);
+  else collapsedSections.add(sectionName);
+  localStorage.setItem('factory-v2-collapsed', JSON.stringify([...collapsedSections]));
+  applySectionState(); drawBelts(); drawMinimapNodes();
+}
+function applySectionState() {
+  document.querySelectorAll('.section-label').forEach(l => {
+    l.classList.toggle('collapsed', collapsedSections.has(l.dataset.section));
   });
-});
-document.addEventListener('click', () => {
-  document.getElementById('ctx-menu').classList.remove('show');
-});
-document.querySelectorAll('.ctx-item').forEach(item => {
-  item.addEventListener('click', () => {
-    const action = item.dataset.action;
-    if (!ctxNodeId) return;
-    if (action === 'inspect') openDetail(document.getElementById(ctxNodeId)?.dataset?.id);
-    if (action === 'highlight') highlightConnections(ctxNodeId);
-    if (action === 'isolate') isolatePipeline(ctxNodeId);
-    if (action === 'reset-pos') {
-      const def = defaultPositions[ctxNodeId];
-      const el = document.getElementById(ctxNodeId);
-      if (def && el) { el.style.left=def.left+'px'; el.style.top=def.top+'px'; drawBelts(); saveLayout(); drawMinimapNodes(); }
-    }
-    if (action === 'center') centerOnNode(ctxNodeId);
+  document.querySelectorAll('.node').forEach(n => {
+    const sec = n.dataset.section;
+    if (sec && collapsedSections.has(sec)) n.classList.add('section-hidden');
+    else n.classList.remove('section-hidden');
   });
-});
-
-// ═══════════════════════════════════════════════════════════
-// KEYBOARD SHORTCUTS
-// ═══════════════════════════════════════════════════════════
-window.addEventListener('keydown', e => {
-  // Don't trigger shortcuts when typing in inputs
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-    if (e.key === 'Escape') { e.target.blur(); if (e.target === searchInput) { searchInput.value=''; searchResults.classList.remove('show'); clearHighlights(); } }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); searchInput.focus(); }
-    return;
-  }
-  if (e.key === 'Escape') { closeDetail(); clearHighlights(); closeHelp(); document.getElementById('alert-timeline').classList.remove('open'); }
-  if (e.key === '+' || e.key === '=') { zoomIn(); e.preventDefault(); }
-  if (e.key === '-' || e.key === '_') { zoomOut(); e.preventDefault(); }
-  if (e.key === 'Home') { resetView(); e.preventDefault(); }
-  if (e.key === 'f' || e.key === 'F') { fitAll(); e.preventDefault(); }
-  if (e.key === 'r' || e.key === 'R') { resetLayout(); e.preventDefault(); }
-  if (e.key === '?') { toggleHelp(); e.preventDefault(); }
-  if (e.key === 't' || e.key === 'T') { toggleTimeline(); e.preventDefault(); }
-  if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); searchInput.focus(); }
-  if (e.key === 'h' || e.key === 'H') {
-    if (activeNodeId) {
-      const el = document.querySelector(`[data-id="${activeNodeId}"]`);
-      if (el) highlightConnections(el.id);
-    }
-  }
-});
+}
+document.querySelectorAll('.section-label').forEach(l => l.addEventListener('click', () => toggleSection(l.dataset.section)));
+applySectionState();
 
 // ═══════════════════════════════════════════════════════════
 // MINI-MAP
 // ═══════════════════════════════════════════════════════════
 function updateMinimap() {
-  const mmW=200, mmH=120, fW=2000, fH=900;
-  const scaleX=mmW/fW, scaleY=mmH/fH;
+  const mmW=200, mmH=120, fW=2600, fH=1000;
   const vp = document.getElementById('minimap-vp');
   const vw = wrap.clientWidth/scale, vh = wrap.clientHeight/scale;
   const ox = -panX/scale, oy = -panY/scale;
-  vp.style.left=(ox*scaleX)+'px'; vp.style.top=(oy*scaleY)+'px';
-  vp.style.width=Math.min(vw*scaleX,mmW)+'px'; vp.style.height=Math.min(vh*scaleY,mmH)+'px';
+  vp.style.left=(ox*mmW/fW)+'px'; vp.style.top=(oy*mmH/fH)+'px';
+  vp.style.width=Math.min(vw*mmW/fW,mmW)+'px'; vp.style.height=Math.min(vh*mmH/fH,mmH)+'px';
 }
 function drawMinimapNodes() {
   const canvas = document.getElementById('minimap-canvas');
   const ctx = canvas.getContext('2d');
   canvas.width=200; canvas.height=120;
-  const fW=2000, fH=900, sx=200/fW, sy=120/fH;
+  const fW=2600, fH=1000, sx=200/fW, sy=120/fH;
   ctx.fillStyle='#0d1117'; ctx.fillRect(0,0,200,120);
-  document.querySelectorAll('.node').forEach(n => {
-    const x=n.offsetLeft*sx, y=n.offsetTop*sy, w=n.offsetWidth*sx, h=n.offsetHeight*sy;
-    ctx.fillStyle = n.classList.contains('active') ? '#3fb950' : n.classList.contains('error') ? '#f85149' : '#30363d';
-    ctx.fillRect(x,y,Math.max(w,3),Math.max(h,2));
+  document.querySelectorAll('.node:not(.section-hidden)').forEach(n => {
+    ctx.fillStyle = n.classList.contains('active') ? '#3fb950' : n.classList.contains('consumer') ? '#bc8cff' : n.classList.contains('chat-node') ? '#3fb950' : '#30363d';
+    ctx.fillRect(n.offsetLeft*sx, n.offsetTop*sy, Math.max(n.offsetWidth*sx,3), Math.max(n.offsetHeight*sy,2));
   });
   ctx.strokeStyle='#e9456044'; ctx.lineWidth=0.5;
-  BELTS.forEach(([fid,tid])=>{
+  BELTS.forEach(([fid,tid]) => {
     const f=document.getElementById(fid), t=document.getElementById(tid);
-    if(!f||!t)return;
+    if(!f||!t) return;
     ctx.beginPath();
     ctx.moveTo((f.offsetLeft+f.offsetWidth)*sx,(f.offsetTop+f.offsetHeight/2)*sy);
     ctx.lineTo(t.offsetLeft*sx,(t.offsetTop+t.offsetHeight/2)*sy);
@@ -1429,8 +1192,8 @@ function drawMinimapNodes() {
 }
 document.getElementById('minimap').addEventListener('click', e => {
   const rect=e.currentTarget.getBoundingClientRect();
-  const fx=(e.clientX-rect.left)/200*2000, fy=(e.clientY-rect.top)/120*900;
-  panX=wrap.clientWidth/2-fx*scale; panY=wrap.clientHeight/2-fy*scale;
+  panX=wrap.clientWidth/2-(e.clientX-rect.left)/200*2600*scale;
+  panY=wrap.clientHeight/2-(e.clientY-rect.top)/120*1000*scale;
   applyTransform();
 });
 
@@ -1445,77 +1208,36 @@ function openDetail(id) {
   document.getElementById('detail-title').textContent = m.title;
   document.getElementById('detail-file').textContent = m.file;
   document.getElementById('detail-desc').innerHTML = m.desc;
-  const ul = document.getElementById('detail-stats');
-  ul.innerHTML = m.stats.map(([k,v])=>`<li>${k}<span class="val">${v}</span></li>`).join('');
-  document.getElementById('detail-live').innerHTML = '';
-
-  // Camera preview
-  const camPreview = document.getElementById('detail-camera-preview');
-  if (m.hasCamera) {
-    camPreview.style.display = 'block';
-    document.getElementById('detail-cam-img').src = BASE+'/frame?t='+Date.now();
-  } else {
-    camPreview.style.display = 'none';
-  }
-
-  // Connection graph — upstream/downstream
+  document.getElementById('detail-stats').innerHTML = m.stats.map(([k,v])=>`<li>${k}<span class="val">${v}</span></li>`).join('');
+  // Connections
   const nodeEl = document.querySelector(`[data-id="${id}"]`);
   const nodeHtmlId = nodeEl?.id || '';
   const upstream = [], downstream = [];
   BELTS.forEach(([from, to, lbl, desc]) => {
-    if (to === nodeHtmlId) {
-      const fromEl = document.getElementById(from);
-      const fromTitle = fromEl?.querySelector('.node-title')?.textContent || from;
-      upstream.push({id: from, title: fromTitle, label: lbl, desc: desc});
-    }
-    if (from === nodeHtmlId) {
-      const toEl = document.getElementById(to);
-      const toTitle = toEl?.querySelector('.node-title')?.textContent || to;
-      downstream.push({id: to, title: toTitle, label: lbl, desc: desc});
-    }
+    if (to === nodeHtmlId) upstream.push({id:from, title:document.getElementById(from)?.querySelector('.node-title')?.textContent||from, label:lbl});
+    if (from === nodeHtmlId) downstream.push({id:to, title:document.getElementById(to)?.querySelector('.node-title')?.textContent||to, label:lbl});
   });
-
   let connHtml = '';
-  if (upstream.length > 0) {
+  if (upstream.length) {
     connHtml += '<div class="detail-section">UPSTREAM INPUTS</div>';
-    connHtml += upstream.map(c =>
-      `<div class="live-item" style="cursor:pointer;" onclick="openDetail(document.getElementById('${c.id}')?.dataset?.id)">` +
-      `<span class="lk">&#8592; ${c.title}</span>` +
-      `<span class="lv" style="color:var(--dim);font-size:10px;">${c.label || 'data'}</span></div>`
-    ).join('');
+    connHtml += upstream.map(c => `<div class="live-item" onclick="openDetail(document.getElementById('${c.id}')?.dataset?.id)"><span class="lk">&#8592; ${c.title}</span><span class="lv">${c.label||'data'}</span></div>`).join('');
   }
-  if (downstream.length > 0) {
+  if (downstream.length) {
     connHtml += '<div class="detail-section">DOWNSTREAM OUTPUTS</div>';
-    connHtml += downstream.map(c =>
-      `<div class="live-item" style="cursor:pointer;" onclick="openDetail(document.getElementById('${c.id}')?.dataset?.id)">` +
-      `<span class="lk">${c.title} &#8594;</span>` +
-      `<span class="lv" style="color:var(--dim);font-size:10px;">${c.label || c.desc?.slice(0,30) || 'data'}</span></div>`
-    ).join('');
+    connHtml += downstream.map(c => `<div class="live-item" onclick="openDetail(document.getElementById('${c.id}')?.dataset?.id)"><span class="lk">${c.title} &#8594;</span><span class="lv">${c.label||'data'}</span></div>`).join('');
   }
   document.getElementById('detail-live').innerHTML = connHtml;
-
-  // Action buttons
+  // Actions
   const actions = document.getElementById('detail-actions');
   actions.innerHTML = '';
-  const highlightBtn = document.createElement('button');
-  highlightBtn.className='detail-btn'; highlightBtn.textContent='Highlight Connections';
-  highlightBtn.onclick = () => { const el=document.querySelector(`[data-id="${id}"]`); if(el) highlightConnections(el.id); };
-  actions.appendChild(highlightBtn);
-
-  const isolateBtn = document.createElement('button');
-  isolateBtn.className='detail-btn'; isolateBtn.textContent='Isolate Pipeline';
-  isolateBtn.onclick = () => { const el=document.querySelector(`[data-id="${id}"]`); if(el) isolatePipeline(el.id); };
-  actions.appendChild(isolateBtn);
-
-  const centerBtn = document.createElement('button');
-  centerBtn.className='detail-btn'; centerBtn.textContent='Center';
-  centerBtn.onclick = () => { const el=document.querySelector(`[data-id="${id}"]`); if(el) centerOnNode(el.id); };
-  actions.appendChild(centerBtn);
-
-  // Select node visually
+  ['Highlight Connections','Isolate Pipeline','Center'].forEach((label,i) => {
+    const btn = document.createElement('button');
+    btn.className='detail-btn'; btn.textContent=label;
+    btn.onclick = () => { const el=document.querySelector(`[data-id="${id}"]`); if(!el) return; if(i===0) highlightConnections(el.id); if(i===1) isolatePipeline(el.id); if(i===2) centerOnNode(el.id); };
+    actions.appendChild(btn);
+  });
   document.querySelectorAll('.node').forEach(n => n.classList.remove('selected'));
-  const el = document.querySelector(`[data-id="${id}"]`);
-  if (el) el.classList.add('selected');
+  if (nodeEl) nodeEl.classList.add('selected');
   document.getElementById('detail').classList.add('open');
 }
 function closeDetail() {
@@ -1523,142 +1245,98 @@ function closeDetail() {
   document.querySelectorAll('.node').forEach(n => n.classList.remove('selected'));
   activeNodeId = null;
 }
-
-// Node click (only if not dragged)
 document.querySelectorAll('.node').forEach(n => {
-  n.addEventListener('click', e => {
-    if (hasDragged) return;
-    e.stopPropagation();
-    openDetail(n.dataset.id);
-  });
+  n.addEventListener('click', e => { if (hasDragged) return; e.stopPropagation(); openDetail(n.dataset.id); });
 });
-
-// Click canvas to deselect
-wrap.addEventListener('click', e => {
-  if (!e.target.closest('.node') && !e.target.closest('path')) clearHighlights();
-});
+wrap.addEventListener('click', e => { if (!e.target.closest('.node') && !e.target.closest('path')) clearHighlights(); });
 
 // ═══════════════════════════════════════════════════════════
-// TOAST NOTIFICATIONS
+// TOAST + HELP + KEYBOARD
 // ═══════════════════════════════════════════════════════════
 function showToast(type, title, msg, duration=4000) {
-  const container = document.getElementById('toast-container');
-  const icons = {alert:'&#9888;&#65039;', info:'&#8505;&#65039;', success:'&#9989;'};
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.innerHTML = `<span class="toast-icon">${icons[type]||''}</span><div class="toast-body"><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div><button class="toast-close" onclick="this.parentElement.remove()">&times;</button>`;
-  container.appendChild(toast);
-  setTimeout(() => { toast.style.animation='toast-out 0.3s ease forwards'; setTimeout(()=>toast.remove(),300); }, duration);
+  const c = document.getElementById('toast-container');
+  const icons = {alert:'&#9888;&#65039;',info:'&#8505;&#65039;',success:'&#9989;'};
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span class="toast-icon">${icons[type]||''}</span><div class="toast-body"><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div><button class="toast-close" onclick="this.parentElement.remove()">&times;</button>`;
+  c.appendChild(t);
+  setTimeout(() => { t.style.animation='toast-out 0.3s ease forwards'; setTimeout(()=>t.remove(),300); }, duration);
 }
+function clearFeed() { document.getElementById('feed-items').innerHTML = '<div class="feed-item"><span class="feed-text" style="color:var(--dim);">Cleared</span></div>'; }
+function toggleHelp() { document.getElementById('help-overlay').classList.toggle('show'); }
 
-// ═══════════════════════════════════════════════════════════
-// SCENE FEED
-// ═══════════════════════════════════════════════════════════
-function clearFeed() {
-  document.getElementById('feed-items').innerHTML = '<div class="feed-item"><span class="feed-text" style="color:var(--dim);">Feed cleared</span></div>';
-}
-
-// ═══════════════════════════════════════════════════════════
-// LIVE CAMERA PREVIEW
-// ═══════════════════════════════════════════════════════════
-function updateCameraPreview() {
-  const img = document.getElementById('cam-img-usb');
-  if (img && serverActive) {
-    img.src = BASE + '/frame?t=' + Date.now();
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') {
+    if (e.key === 'Escape') { e.target.blur(); searchInput.value=''; searchResults.classList.remove('show'); clearHighlights(); }
+    if ((e.ctrlKey||e.metaKey) && e.key==='k') { e.preventDefault(); searchInput.focus(); }
+    return;
   }
-  // Also update detail panel camera
-  if (activeNodeId && META[activeNodeId]?.hasCamera) {
-    const dImg = document.getElementById('detail-cam-img');
-    if (dImg) dImg.src = BASE + '/frame?t=' + Date.now();
+  if (e.key === 'Escape') { closeDetail(); clearHighlights(); document.getElementById('help-overlay').classList.remove('show'); }
+  if (e.key === '+' || e.key === '=') { zoomIn(); e.preventDefault(); }
+  if (e.key === '-' || e.key === '_') { zoomOut(); e.preventDefault(); }
+  if (e.key === 'Home') { resetView(); e.preventDefault(); }
+  if (e.key === 'f' || e.key === 'F') { fitAll(); e.preventDefault(); }
+  if (e.key === 'r' || e.key === 'R') { resetLayout(); e.preventDefault(); }
+  if (e.key === '?') { toggleHelp(); e.preventDefault(); }
+  if ((e.ctrlKey||e.metaKey) && e.key==='k') { e.preventDefault(); searchInput.focus(); }
+  if ((e.key === 'h' || e.key === 'H') && activeNodeId) {
+    const el = document.querySelector(`[data-id="${activeNodeId}"]`);
+    if (el) highlightConnections(el.id);
   }
-}
+});
 
 // ═══════════════════════════════════════════════════════════
 // LIVE DATA POLLING
 // ═══════════════════════════════════════════════════════════
-let lastScene = '', apiCallCount = 0, lastAlertCount = 0;
-const COST_PER_CALL = 0.001; // Estimated $0.001 per LLM call
+let lastScene = '', lastAlertCount = 0;
 
 async function api(path) {
-  try { const r = await fetch(BASE+path, {headers:H}); if(!r.ok)return null; return await r.json(); } catch(e) { return null; }
+  try { const r = await fetch(BASE+path, {headers:H}); if(!r.ok) return null; return await r.json(); } catch(e) { return null; }
+}
+
+function setStatus(id, state) {
+  const el = document.getElementById(id);
+  if (el) el.className = 'node-status-dot ' + state;
 }
 
 async function refresh() {
-  const t0 = Date.now();
-  let hadError = false;
   const [health, rules, alerts, scene] = await Promise.all([
     api('/health'), api('/rules'), api('/alerts'), api('/scene')
   ]);
-  const latency = Date.now() - t0;
-  if (!health && !rules && !alerts && !scene) hadError = true;
-  updatePerfPanel(latency, hadError);
 
   if (health) {
-    const camIds = Object.keys(health); const cams = camIds.length;
+    const camIds = Object.keys(health);
+    const cams = camIds.length;
     document.getElementById('hud-cams').textContent = cams;
     serverActive = cams > 0;
     const dot = document.getElementById('hud-health-dot');
+    dot.className = cams > 0 ? 'hud-dot' : 'hud-dot off';
     if (cams > 0) {
-      dot.className = 'hud-dot';
-      document.getElementById('n-usb').classList.add('active');
-      document.getElementById('loop-badge').textContent = 'RUNNING';
-      document.getElementById('loop-badge').className = 'node-badge pulse';
-      document.getElementById('tp-buffer').textContent = '~2';
-      document.getElementById('tp-detector').textContent = '~2';
-      let anyDegraded = false;
-      camIds.forEach(cid => { if (health[cid]?.status==='degraded') anyDegraded=true; });
-      if (anyDegraded) dot.className = 'hud-dot warn';
-    } else {
-      dot.className = 'hud-dot off';
-      document.getElementById('n-usb').classList.remove('active');
-      document.getElementById('loop-badge').textContent = 'IDLE';
-      document.getElementById('loop-badge').className = 'node-badge warn';
+      setStatus('status-loop', 'online');
+      setStatus('status-api', 'online');
+      document.getElementById('n-loop').querySelector('.node-badge').textContent = 'RUNNING';
+      // Check if any cloud cameras
+      camIds.forEach(cid => {
+        if (cid.startsWith('cloud:')) { setStatus('status-push', 'online'); document.getElementById('n-push')?.classList.add('active'); }
+        else { setStatus('status-usb', 'online'); document.getElementById('n-usb')?.classList.add('active'); }
+      });
     }
   }
 
   if (rules) {
-    const ruleList = Array.isArray(rules) ? rules : (rules.rules||[]);
-    document.getElementById('hud-rules').textContent = ruleList.length;
-    const eng = document.getElementById('n-engine');
-    if (ruleList.length > 0) {
-      eng.classList.add('active');
-      setStatus('status-engine', 'online');
-      let badge = eng.querySelector('.node-badge');
-      if (!badge) { badge=document.createElement('div'); badge.className='node-badge'; eng.appendChild(badge); }
-      badge.textContent = ruleList.length;
-      pushNodeSpark('engine', ruleList.filter(r => r.enabled !== false).length);
-    } else {
-      setStatus('status-engine', 'idle');
-      pushNodeSpark('engine', 0);
-    }
-    if (activeNodeId === 'engine') {
-      const liveDiv = document.getElementById('detail-live');
-      // Preserve connections + add live rules
-      const existingConn = liveDiv.innerHTML;
-      const rulesSection = '<div class="detail-section">LIVE RULES</div>' +
-        ruleList.map(r => `<div class="live-item"><span class="lk">${r.name||r.id||'?'}</span><span class="lv">${r.enabled!==false?'ON':'OFF'}</span></div>`).join('');
-      if (!existingConn.includes('LIVE RULES')) liveDiv.innerHTML += rulesSection;
-      else {
-        // Update just the rules section
-        const before = existingConn.split('<div class="detail-section">LIVE RULES</div>')[0];
-        liveDiv.innerHTML = before + rulesSection;
-      }
-    }
+    const list = Array.isArray(rules) ? rules : (rules.rules||[]);
+    document.getElementById('hud-rules').textContent = list.length;
+    if (list.length > 0) { setStatus('status-engine', 'online'); document.getElementById('n-engine')?.classList.add('active'); }
   }
 
   if (alerts) {
     const list = Array.isArray(alerts) ? alerts : (alerts.alerts||[]);
     document.getElementById('hud-alerts').textContent = list.length;
-    document.getElementById('tp-dispatch').textContent = list.length;
-    if (list.length > 0) document.getElementById('n-dispatch').classList.add('active');
-    pushNodeSpark('dispatch', list.length > lastAlertCount ? (list.length - lastAlertCount) : 0);
-    // Toast + timeline for new alerts
     if (list.length > lastAlertCount) {
-      const newAlerts = list.slice(0, list.length - lastAlertCount);
-      newAlerts.forEach(a => {
+      list.slice(0, list.length - lastAlertCount).forEach(a => {
         showToast('alert', a.rule_name || 'Alert', a.reasoning || 'Rule triggered', 6000);
-        addTimelineAlert(a);
-        [10,11,12,13,14,15,16].forEach(i => { if(Math.random()>0.5) spawnParticle(i); });
+        // Spawn particles on alert path
+        [17,18,19,20,21].forEach(i => { if(Math.random()>0.4) spawnParticle(i); });
       });
     }
     lastAlertCount = list.length;
@@ -1668,468 +1346,38 @@ async function refresh() {
     let sceneText = '';
     if (typeof scene === 'object' && !Array.isArray(scene)) {
       const keys = Object.keys(scene);
-      if (keys.length > 0) {
-        const first = scene[keys[0]];
-        sceneText = first?.summary || first?.scene_summary || '';
-      }
+      if (keys.length) { const first = scene[keys[0]]; sceneText = first?.summary || first?.scene_summary || ''; }
     }
     if (sceneText && sceneText !== lastScene) {
       lastScene = sceneText;
-      apiCallCount++;
-      document.getElementById('cost-calls').textContent = apiCallCount;
-      document.getElementById('cost-usd').textContent = '$' + (apiCallCount * COST_PER_CALL).toFixed(3);
-      const pct = Math.min(100, (apiCallCount * COST_PER_CALL / 1.0) * 100);
-      document.getElementById('cost-fill').style.width = pct + '%';
-      document.getElementById('tp-analyzer').textContent = apiCallCount;
-
+      setStatus('status-analyzer', 'processing');
+      setTimeout(() => setStatus('status-analyzer', 'online'), 2000);
       const feed = document.getElementById('feed-items');
-      const now = new Date().toLocaleTimeString();
       const item = document.createElement('div');
       item.className = 'feed-item';
-      item.innerHTML = `<span class="feed-time">${now}</span> <span class="feed-text">${sceneText.slice(0,120)}</span>`;
+      item.innerHTML = `<span class="feed-time">${new Date().toLocaleTimeString()}</span> <span class="feed-text">${sceneText.slice(0,120)}</span>`;
       feed.insertBefore(item, feed.firstChild);
-      while (feed.children.length > 25) feed.removeChild(feed.lastChild);
-
-      document.getElementById('n-analyzer').classList.add('active');
-      setStatus('status-analyzer', 'processing');
-      setTimeout(() => { document.getElementById('n-analyzer').classList.remove('active'); setStatus('status-analyzer', 'online'); }, 2000);
-      pushNodeSpark('analyzer', 1);
-      pushNodeSpark('buffer', 2);
-      [0,2,3,4,5,7].forEach((b,i) => setTimeout(()=>spawnParticle(b), i*150));
+      while (feed.children.length > 20) feed.removeChild(feed.lastChild);
+      // Spawn particles on analysis path
+      [9,10,11,12,13].forEach((b,i) => setTimeout(()=>spawnParticle(b), i*150));
     }
-    if (scene && Object.keys(scene).length > 0) document.getElementById('n-scene').classList.add('active');
   }
 
-  document.getElementById('n-api').classList.add('active');
-  document.getElementById('n-mcp').classList.add('active');
   document.getElementById('hud-fps').textContent = serverActive ? '~2' : '0';
-
-  // Update global sparkline
-  updateSparkline(scene && lastScene !== '');
-  // Update status dots
-  updateStatusDots();
-
-  // Push idle sparkline data when no new scene
-  if (!scene || lastScene === '') {
-    pushNodeSpark('analyzer', 0);
-    pushNodeSpark('buffer', serverActive ? 1 : 0);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════
-// COLLAPSIBLE SECTIONS
-// ═══════════════════════════════════════════════════════════
-const collapsedSections = new Set(JSON.parse(localStorage.getItem('factory-collapsed') || '[]'));
-
-function toggleSection(sectionName) {
-  if (collapsedSections.has(sectionName)) {
-    collapsedSections.delete(sectionName);
-  } else {
-    collapsedSections.add(sectionName);
-  }
-  localStorage.setItem('factory-collapsed', JSON.stringify([...collapsedSections]));
-  applySectionState();
-  drawBelts();
-  drawMinimapNodes();
-}
-
-function applySectionState() {
-  document.querySelectorAll('.section-label').forEach(label => {
-    const sec = label.dataset.section;
-    if (collapsedSections.has(sec)) {
-      label.classList.add('collapsed');
-    } else {
-      label.classList.remove('collapsed');
-    }
-  });
-  document.querySelectorAll('.node').forEach(n => {
-    const sec = n.dataset.section;
-    if (sec && collapsedSections.has(sec)) {
-      n.classList.add('section-hidden');
-    } else {
-      n.classList.remove('section-hidden');
-    }
-  });
-}
-
-document.querySelectorAll('.section-label').forEach(label => {
-  label.addEventListener('click', () => toggleSection(label.dataset.section));
-});
-
-applySectionState();
-
-// ═══════════════════════════════════════════════════════════
-// HELP OVERLAY
-// ═══════════════════════════════════════════════════════════
-function toggleHelp() {
-  const el = document.getElementById('help-overlay');
-  el.classList.toggle('show');
-}
-function closeHelp() {
-  document.getElementById('help-overlay').classList.remove('show');
-}
-
-// ═══════════════════════════════════════════════════════════
-// EXPORT PNG (True Canvas-based)
-// ═══════════════════════════════════════════════════════════
-async function exportPNG() {
-  showToast('info', 'Exporting...', 'Rendering factory blueprint to PNG...');
-  try {
-    let minX=Infinity, minY=Infinity, maxX=0, maxY=0;
-    document.querySelectorAll('.node:not(.section-hidden)').forEach(n => {
-      minX = Math.min(minX, n.offsetLeft);
-      minY = Math.min(minY, n.offsetTop);
-      maxX = Math.max(maxX, n.offsetLeft + n.offsetWidth);
-      maxY = Math.max(maxY, n.offsetTop + n.offsetHeight);
-    });
-    const pad = 80;
-    const w = maxX - minX + pad*2;
-    const h = maxY - minY + pad*2 + 60;
-    const dpr = 2; // hi-dpi for sharp export
-
-    const canvas = document.createElement('canvas');
-    canvas.width = w * dpr; canvas.height = h * dpr;
-    const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
-
-    // Background
-    ctx.fillStyle = '#0d1117';
-    ctx.fillRect(0, 0, w, h);
-
-    // Grid
-    ctx.strokeStyle = '#1b223044';
-    ctx.lineWidth = 0.5;
-    for (let x = 0; x < w; x += 48) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
-    for (let y = 0; y < h; y += 48) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
-
-    // Title
-    ctx.font = 'bold 18px "SF Mono","Fira Code",monospace';
-    ctx.fillStyle = '#e94560';
-    ctx.fillText('PHYSICAL-MCP FACTORY BLUEPRINT', pad, 36);
-    ctx.font = '12px "SF Mono","Fira Code",monospace';
-    ctx.fillStyle = '#8b949e';
-    ctx.fillText(`v1.2.0 · 52 modules · 506 tests · Exported ${new Date().toLocaleString()}`, pad, 54);
-
-    const offX = pad - minX;
-    const offY = pad + 60 - minY;
-
-    // Draw belts
-    BELTS.forEach(([fid, tid, label]) => {
-      const f = document.getElementById(fid);
-      const t = document.getElementById(tid);
-      if (!f || !t || f.classList.contains('section-hidden') || t.classList.contains('section-hidden')) return;
-      const fx = f.offsetLeft + f.offsetWidth + offX;
-      const fy = f.offsetTop + f.offsetHeight/2 + offY;
-      const tx = t.offsetLeft + offX;
-      const ty = t.offsetTop + t.offsetHeight/2 + offY;
-      ctx.strokeStyle = '#e9456088';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([8, 6]);
-      ctx.beginPath();
-      if (Math.abs(ty - fy) < 10) {
-        ctx.moveTo(fx, fy); ctx.lineTo(tx, ty);
-      } else {
-        const mx = fx + (tx-fx)*0.4;
-        ctx.moveTo(fx, fy); ctx.bezierCurveTo(mx, fy, fx+(tx-fx)*0.6, ty, tx, ty);
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
-      // Junction dot
-      ctx.fillStyle = '#e94560';
-      ctx.beginPath(); ctx.arc(tx, ty, 3, 0, Math.PI*2); ctx.fill();
-      // Label
-      if (label) {
-        const lx = (fx+tx)/2, ly = (fy+ty)/2;
-        ctx.font = '9px monospace'; ctx.fillStyle='#8b949e'; ctx.textAlign='center';
-        ctx.fillText(label, lx, ly - 4); ctx.textAlign='left';
-      }
-    });
-
-    // Draw nodes
-    document.querySelectorAll('.node:not(.section-hidden)').forEach(n => {
-      const x = n.offsetLeft + offX;
-      const y = n.offsetTop + offY;
-      const nw = n.offsetWidth;
-      const nh = n.offsetHeight;
-      const isActive = n.classList.contains('active');
-      const isError = n.classList.contains('error');
-      // Card background
-      ctx.fillStyle = n.id === 'n-loop' ? '#1a1020' : '#161b22';
-      ctx.strokeStyle = isActive ? '#3fb950' : isError ? '#f85149' : n.id==='n-loop' ? '#e94560' : '#30363d';
-      ctx.lineWidth = 2;
-      roundRect(ctx, x, y, nw, nh, 10);
-      ctx.fill(); ctx.stroke();
-      // Status dot
-      if (isActive) {
-        ctx.fillStyle = '#3fb950';
-        ctx.beginPath(); ctx.arc(x+12, y+14, 4, 0, Math.PI*2); ctx.fill();
-      }
-      // Text
-      const title = n.querySelector('.node-title')?.textContent || '';
-      const sub = n.querySelector('.node-sub')?.textContent || '';
-      const file = n.querySelector('.node-file')?.textContent || '';
-      ctx.font = 'bold 13px monospace'; ctx.fillStyle='#e6edf3';
-      ctx.fillText(title, x+18, y+42);
-      ctx.font = '10px monospace'; ctx.fillStyle='#8b949e';
-      ctx.fillText(sub, x+18, y+58);
-      ctx.font = 'italic 9px monospace'; ctx.fillStyle='#484f58';
-      ctx.fillText(file, x+18, y+72);
-      // Badge
-      const badge = n.querySelector('.node-badge');
-      if (badge) {
-        const bt = badge.textContent;
-        ctx.fillStyle = badge.classList.contains('warn') ? '#d29922' : badge.classList.contains('err') ? '#f85149' : '#3fb950';
-        const bw = bt.length * 6 + 16;
-        roundRect(ctx, x+nw-bw-4, y-8, bw, 18, 9); ctx.fill();
-        ctx.font = 'bold 9px monospace'; ctx.fillStyle='#000'; ctx.textAlign='center';
-        ctx.fillText(bt, x+nw-bw/2-4, y+5); ctx.textAlign='left';
-      }
-    });
-
-    // Section labels
-    document.querySelectorAll('.section-label:not(.collapsed)').forEach(label => {
-      const x = parseInt(label.style.left) + offX;
-      const y = parseInt(label.style.top) + offY;
-      ctx.font = 'bold 11px monospace';
-      ctx.fillStyle = '#e9456088';
-      ctx.fillText(label.textContent.trim(), x, y);
-    });
-
-    // Watermark
-    ctx.font = '10px monospace'; ctx.fillStyle='#30363d'; ctx.textAlign='right';
-    ctx.fillText('physical-mcp.dev · github.com/hqbotics/physical-mcp', w-20, h-16);
-    ctx.textAlign='left';
-
-    // Download as PNG
-    canvas.toBlob(blob => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `factory-blueprint-${new Date().toISOString().slice(0,10)}.png`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast('success', 'Exported!', 'Factory blueprint saved as PNG (2x resolution)');
-    }, 'image/png');
-  } catch(e) {
-    showToast('alert', 'Export failed', e.message);
-  }
-}
-
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x+r, y);
-  ctx.lineTo(x+w-r, y); ctx.quadraticCurveTo(x+w, y, x+w, y+r);
-  ctx.lineTo(x+w, y+h-r); ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
-  ctx.lineTo(x+r, y+h); ctx.quadraticCurveTo(x, y+h, x, y+h-r);
-  ctx.lineTo(x, y+r); ctx.quadraticCurveTo(x, y, x+r, y);
-  ctx.closePath();
-}
-
-// ═══════════════════════════════════════════════════════════
-// ACTIVITY SPARKLINE (global)
-// ═══════════════════════════════════════════════════════════
-const activityHistory = new Array(60).fill(0);
-let activityIdx = 0;
-
-function updateSparkline(hadNewScene) {
-  activityHistory[activityIdx % 60] = hadNewScene ? 1 : 0;
-  activityIdx++;
-  const bar = document.getElementById('activity-bar');
-  bar.innerHTML = '';
-  for (let i = 0; i < 60; i++) {
-    const idx = (activityIdx - 60 + i + 600) % 60;
-    const val = activityHistory[idx];
-    const div = document.createElement('div');
-    div.className = 'spark-bar' + (i >= 55 ? ' recent' : '');
-    div.style.height = val ? '20px' : '2px';
-    bar.appendChild(div);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════
-// NODE INLINE SPARKLINES
-// ═══════════════════════════════════════════════════════════
-const nodeSparkData = {
-  buffer: new Array(20).fill(0),
-  analyzer: new Array(20).fill(0),
-  engine: new Array(20).fill(0),
-  dispatch: new Array(20).fill(0),
-};
-
-function pushNodeSpark(nodeKey, value) {
-  if (!nodeSparkData[nodeKey]) return;
-  nodeSparkData[nodeKey].push(value);
-  if (nodeSparkData[nodeKey].length > 20) nodeSparkData[nodeKey].shift();
-  renderNodeSpark(nodeKey);
-}
-
-function renderNodeSpark(nodeKey) {
-  const el = document.getElementById('spark-' + nodeKey);
-  if (!el) return;
-  const data = nodeSparkData[nodeKey];
-  const max = Math.max(1, ...data);
-  el.innerHTML = data.map((v, i) => {
-    const h = Math.max(1, (v / max) * 16);
-    const hot = i >= data.length - 3 && v > 0;
-    return `<div class="node-spark-bar${hot ? ' hot' : ''}" style="height:${h}px"></div>`;
-  }).join('');
-}
-
-// ═══════════════════════════════════════════════════════════
-// ALERT TIMELINE
-// ═══════════════════════════════════════════════════════════
-const timelineAlerts = [];
-
-function toggleTimeline() {
-  document.getElementById('alert-timeline').classList.toggle('open');
-}
-
-function clearTimeline() {
-  timelineAlerts.length = 0;
-  renderTimeline();
-}
-
-function addTimelineAlert(alert) {
-  timelineAlerts.unshift({
-    time: new Date(),
-    rule: alert.rule_name || 'Unknown',
-    msg: alert.reasoning || 'Rule triggered',
-    confidence: alert.confidence || 0,
-    severity: (alert.confidence || 0) > 0.8 ? 'critical' : (alert.confidence || 0) > 0.5 ? 'warning' : 'info'
-  });
-  if (timelineAlerts.length > 100) timelineAlerts.pop();
-  renderTimeline();
-}
-
-function renderTimeline() {
-  const body = document.getElementById('alert-timeline-body');
-  document.getElementById('at-count').textContent = timelineAlerts.length;
-  if (timelineAlerts.length === 0) {
-    body.innerHTML = '<div class="at-empty">No alerts yet. Create watch rules to start receiving alerts.</div>';
-    return;
-  }
-  body.innerHTML = timelineAlerts.map(a => {
-    const time = a.time.toLocaleTimeString();
-    return `<div class="at-item">
-      <div class="at-dot ${a.severity}"></div>
-      <span class="at-time">${time}</span>
-      <span class="at-rule">${a.rule}</span>
-      <span class="at-msg">${a.msg.slice(0, 80)}</span>
-      <span class="at-confidence">${Math.round((a.confidence||0)*100)}%</span>
-    </div>`;
-  }).join('');
-}
-
-// ═══════════════════════════════════════════════════════════
-// NODE FILTER
-// ═══════════════════════════════════════════════════════════
-let currentFilter = 'all';
-
-function filterNodes(filter, btn) {
-  currentFilter = filter;
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-
-  document.querySelectorAll('.node').forEach(n => {
-    if (n.classList.contains('section-hidden')) return; // don't override section collapse
-    const isActive = n.classList.contains('active');
-    const isError = n.classList.contains('error');
-    if (filter === 'all') {
-      n.style.opacity = ''; n.style.pointerEvents = '';
-    } else if (filter === 'active') {
-      n.style.opacity = isActive ? '' : '0.2';
-      n.style.pointerEvents = isActive ? '' : 'none';
-    } else if (filter === 'idle') {
-      n.style.opacity = !isActive && !isError ? '' : '0.2';
-      n.style.pointerEvents = !isActive && !isError ? '' : 'none';
-    } else if (filter === 'error') {
-      n.style.opacity = isError ? '' : '0.2';
-      n.style.pointerEvents = isError ? '' : 'none';
-    }
-  });
-}
-
-// ═══════════════════════════════════════════════════════════
-// STATUS DOT UPDATES
-// ═══════════════════════════════════════════════════════════
-function updateStatusDots() {
-  // API & MCP always online if server responds
   setStatus('status-api', 'online');
   setStatus('status-mcp', 'online');
-
-  // Camera + loop based on server health
-  if (serverActive) {
-    setStatus('status-usb', 'online');
-    setStatus('status-loop', 'processing');
-    setStatus('status-buffer', 'online');
-  } else {
-    setStatus('status-usb', 'idle');
-    setStatus('status-loop', 'idle');
-    setStatus('status-buffer', 'idle');
-  }
-}
-
-function setStatus(id, state) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.className = 'node-status-dot ' + state;
 }
 
 // ═══════════════════════════════════════════════════════════
-// PERFORMANCE TRACKING
-// ═══════════════════════════════════════════════════════════
-const perfStart = Date.now();
-let pollCount = 0, errorCount = 0;
-const latencyHistory = new Array(30).fill(0);
-let latencyIdx = 0;
-
-function updatePerfPanel(latency, hadError) {
-  pollCount++;
-  if (hadError) errorCount++;
-  latencyHistory[latencyIdx % 30] = latency;
-  latencyIdx++;
-
-  const uptime = Math.floor((Date.now() - perfStart) / 1000);
-  const hrs = Math.floor(uptime/3600);
-  const mins = Math.floor((uptime%3600)/60);
-  const secs = uptime % 60;
-  document.getElementById('perf-uptime').textContent =
-    hrs > 0 ? `${hrs}h ${mins}m` : mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-  document.getElementById('perf-polls').textContent = pollCount;
-
-  const avgLat = latencyHistory.reduce((a,b)=>a+b,0) / Math.min(latencyIdx, 30);
-  const latEl = document.getElementById('perf-latency');
-  latEl.textContent = Math.round(avgLat) + 'ms';
-  latEl.className = 'perf-val' + (avgLat > 1000 ? ' bad' : avgLat > 500 ? ' warn' : '');
-
-  const errEl = document.getElementById('perf-errors');
-  errEl.textContent = errorCount;
-  errEl.className = 'perf-val' + (errorCount > 5 ? ' bad' : errorCount > 0 ? ' warn' : '');
-
-  // Latency chart
-  const chart = document.getElementById('perf-chart');
-  const maxLat = Math.max(100, ...latencyHistory);
-  chart.innerHTML = latencyHistory.map((l, i) => {
-    const h = Math.max(1, (l / maxLat) * 36);
-    return `<div class="perf-bar" style="height:${h}px;opacity:${i >= latencyIdx%30-3 ? 1 : 0.5}"></div>`;
-  }).join('');
-}
-
-// ═══════════════════════════════════════════════════════════
-// INITIALIZE
+// INIT
 // ═══════════════════════════════════════════════════════════
 drawBelts();
 drawMinimapNodes();
-// Initialize node sparklines
-Object.keys(nodeSparkData).forEach(k => renderNodeSpark(k));
+animateParticles();
+spawnLoop();
 refresh();
 setInterval(refresh, 3000);
-setInterval(updateCameraPreview, 2000);
-requestAnimationFrame(animateParticles);
-spawnLoop();
-updateSparkline(false);
-updatePerfPanel(0, false);
-window.addEventListener('resize', () => { drawBelts(); drawMinimapNodes(); applyTransform(); });
+setInterval(drawMinimapNodes, 5000);
 </script>
 </body>
 </html>

@@ -122,6 +122,35 @@ class FrameAnalyzer:
             logger.error("Scene analysis failed: %s", e)
             return {"summary": f"Analysis error: {e}", "objects": [], "people_count": 0}
 
+    async def answer_question(
+        self,
+        frame: Frame | list[Frame],
+        previous_state: SceneState,
+        question: str,
+        config: PhysicalMCPConfig,
+    ) -> str:
+        """Answer a free-text question about what the camera sees.
+
+        Returns a natural language answer string.
+        Uses analyze_scene with the question parameter to get a contextual response.
+        """
+        if not self._provider:
+            return "No vision provider configured. Set one up with 'physical-mcp setup --advanced'."
+
+        try:
+            result = await self.analyze_scene(
+                frame, previous_state, config, question=question
+            )
+            summary = result.get("summary", "")
+            if summary and not summary.startswith("Analysis error:"):
+                return summary
+            return f"I can see the scene but couldn't answer specifically. Current scene: {previous_state.summary or 'no data yet'}"
+        except Exception as e:
+            logger.error("answer_question failed: %s", e)
+            if previous_state.summary:
+                return f"Couldn't analyze right now, but last I saw: {previous_state.summary}"
+            return f"Sorry, I couldn't analyze the scene right now: {e}"
+
     async def analyze_and_evaluate(
         self,
         frame: Frame | list[Frame],

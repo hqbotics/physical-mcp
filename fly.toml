@@ -1,26 +1,55 @@
-# fly.toml — physical-mcp cloud deployment
+# fly.toml — Physical MCP cloud deployment
 # https://fly.io/docs/reference/configuration/
+#
+# Deploy:
+#   fly launch --name physical-mcp --region hkg
+#   fly secrets set TELEGRAM_BOT_TOKEN=... REASONING_API_KEY=... VISION_API_AUTH_TOKEN=...
+#   fly deploy
+#
+# The cloud server receives pushed frames from relay agents,
+# runs AI analysis, and dispatches alerts via Telegram bot.
 
 app = 'physical-mcp'
-primary_region = 'sin'
+primary_region = 'hkg'  # Hong Kong — closest to Shenzhen
 
 [build]
 
 [http_service]
   internal_port = 8090
   force_https = true
-  auto_stop_machines = 'stop'
+  auto_stop_machines = false
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
   processes = ['app']
+
+  [http_service.concurrency]
+    type = 'connections'
+    hard_limit = 100
+    soft_limit = 80
+
+  [[http_service.checks]]
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/health'
 
 [env]
   PHYSICAL_MCP_HEADLESS = "1"
-  REASONING_PROVIDER = "openai-compatible"
-  REASONING_MODEL = "google/gemini-2.0-flash-001"
-  REASONING_BASE_URL = "https://openrouter.ai/api/v1"
+  PHYSICAL_MCP_HOST = "0.0.0.0"
+  PHYSICAL_MCP_PORT = "8400"
+  VISION_API_HOST = "0.0.0.0"
+  VISION_API_PORT = "8090"
+  CLOUD_MODE = "1"
+  REASONING_PROVIDER = "google"
+  REASONING_MODEL = "gemini-2.0-flash"
+
+# Secrets (set via `fly secrets set`):
+# TELEGRAM_BOT_TOKEN - Telegram bot token from @BotFather
+# REASONING_API_KEY  - Google Gemini API key
+# VISION_API_AUTH_TOKEN - Bearer token for Vision API auth
 
 [[vm]]
-  memory = '1gb'
+  memory = '512mb'
   cpu_kind = 'shared'
   cpus = 1

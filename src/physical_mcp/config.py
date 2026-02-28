@@ -117,6 +117,7 @@ def _config_from_env() -> PhysicalMCPConfig:
     Falls back to sane defaults when env vars are not set.
     """
     # Camera: CAMERA_URL overrides the default USB camera with an RTSP source
+    # CLOUD_MODE=1 means cameras are registered via POST /push/register
     camera_url = os.environ.get("CAMERA_URL", "")
     if camera_url:
         cameras = [

@@ -1,0 +1,4 @@
+# Physical MCP Relay Agent — minimal dependencies
+# For LuckFox Pico Mini (RV1106) or any small Linux board
+opencv-python-headless>=4.8
+requests>=2.28

@@ -109,8 +109,10 @@ def main(
 
         config = load_config(config_path)
         if config.server.transport == "stdio":
-            # Claude Desktop handles starting the server itself
+            # Developer mode: Claude Desktop handles starting the server itself
+            click.echo("Run 'physical-mcp' from your MCP client to start.")
             return
+        # Consumer mode: fall through to start the server immediately
 
     from .config import load_config
     from .server import create_server
@@ -426,6 +428,25 @@ def main(
             except Exception as e:
                 click.echo(f"Warning: Vision API failed to start: {e}", err=True)
 
+            # Start Telegram bot if configured
+            telegram_bot = None
+            if config.notifications.telegram_bot_token:
+                try:
+                    from .bot.telegram_bot import TelegramBot
+
+                    api_port = config.vision_api.port
+                    base_url = f"http://127.0.0.1:{api_port}"
+                    telegram_bot = TelegramBot(
+                        token=config.notifications.telegram_bot_token,
+                        state=vision_state,
+                        base_url=base_url,
+                    )
+                    await telegram_bot.start()
+                    vision_state["telegram_bot"] = telegram_bot
+                    click.echo("Telegram bot: started")
+                except Exception as e:
+                    click.echo(f"Warning: Telegram bot failed to start: {e}", err=True)
+
             # Run MCP server (blocks until shutdown)
             starlette_app = mcp_server.streamable_http_app()
             uvi_config = uvicorn.Config(
@@ -457,6 +478,10 @@ def main(
                 except Exception:
                     pass
                 await notifier.close()
+
+                # Stop Telegram bot
+                if telegram_bot:
+                    await telegram_bot.stop()
 
                 # Close mDNS
                 if mdns_publisher:
@@ -507,6 +532,17 @@ def setup(config_path: str | None, advanced: bool) -> None:
     click.echo("Physical MCP Setup")
     click.echo("=" * 40)
 
+    # ── 0. Consumer vs Developer mode ────────────────────
+    click.echo("\nHow will you use Physical MCP?")
+    click.echo(
+        "  1. Consumer — chat with your camera via Telegram/WhatsApp (RECOMMENDED)"
+    )
+    click.echo("     Starts a web dashboard + Telegram bot. No coding needed.")
+    click.echo("  2. Developer — connect to Claude Desktop, Cursor, or VS Code")
+    click.echo("     Runs as an MCP server for AI coding assistants.")
+    mode_choice = click.prompt("Choice", type=int, default=1)
+    consumer_mode = mode_choice == 1
+
     # ── 1. Detect cameras ────────────────────────────────
     click.echo("\nDetecting cameras...")
     detected = USBCamera.enumerate_cameras()
@@ -527,24 +563,75 @@ def setup(config_path: str | None, advanced: bool) -> None:
             )
     else:
         click.echo("No USB cameras detected.")
+        if consumer_mode:
+            click.echo("  You can connect an IP camera later via the Telegram bot.")
 
     if not camera_configs:
-        click.echo("No cameras configured. You can add them manually later.")
         camera_configs.append(CameraConfig(id="usb:0", device_index=0))
 
-    # ── 2. Auto-detect AI apps (simple) or provider (advanced) ─
+    # ── 2. Vision provider setup ─────────────────────────
     provider = ""
     api_key = ""
     model = ""
     base_url = ""
     ntfy_topic = ""
+    telegram_bot_token = ""
+    telegram_chat_id = ""
 
     import secrets
 
     vision_api_token = secrets.token_urlsafe(32)
 
-    if advanced:
-        # Full provider selection
+    if consumer_mode:
+        # Consumer mode: need a vision provider for scene analysis
+        click.echo("\n" + "-" * 40)
+        click.echo("Vision AI (analyzes what your camera sees)")
+        click.echo("-" * 40)
+        click.echo("\n  1. Google Gemini (FREE — 15 req/min, recommended)")
+        click.echo("  2. OpenAI-compatible (Kimi, DeepSeek, Groq, etc.)")
+        click.echo("  3. Skip — set up later")
+        provider_choice = click.prompt("Choice", type=int, default=1)
+
+        if provider_choice == 1:
+            provider = "google"
+            click.echo("\n  Get a free API key at: https://aistudio.google.com/apikey")
+            api_key = click.prompt("  Google API key", hide_input=True)
+            model = "gemini-2.0-flash"
+            click.echo(f"  Using: {model} (fast, free tier)")
+        elif provider_choice == 2:
+            provider = "openai-compatible"
+            click.echo("\n  Common base URLs:")
+            click.echo("    Kimi:     https://api.moonshot.cn/v1")
+            click.echo("    DeepSeek: https://api.deepseek.com")
+            click.echo("    Groq:     https://api.groq.com/openai/v1")
+            base_url = click.prompt("  API base URL")
+            api_key = click.prompt("  API key", hide_input=True)
+            model = click.prompt("  Model name")
+
+        # Telegram bot setup (consumer mode)
+        click.echo("\n" + "-" * 40)
+        click.echo("Telegram Bot (chat with your camera)")
+        click.echo("-" * 40)
+        click.echo("\n  To create a Telegram bot:")
+        click.echo("  1. Open Telegram, search for @BotFather")
+        click.echo("  2. Send /newbot, follow the prompts")
+        click.echo("  3. Copy the bot token (looks like 123456:ABC-DEF...)")
+        setup_telegram = click.confirm("\n  Set up Telegram bot now?", default=True)
+        if setup_telegram:
+            telegram_bot_token = click.prompt("  Bot token")
+            click.echo("\n  To get your chat ID:")
+            click.echo("  1. Send any message to your new bot")
+            click.echo("  2. Visit: https://api.telegram.org/bot<TOKEN>/getUpdates")
+            click.echo("  3. Find your chat id in the response")
+            telegram_chat_id = click.prompt(
+                "  Your chat ID (or press Enter to skip, bot will auto-detect)",
+                default="",
+            )
+        else:
+            click.echo("  You can set this up later in ~/.physical-mcp/config.yaml")
+
+    elif advanced:
+        # Developer advanced mode: full provider selection
         click.echo("\nSelect your vision model provider:")
         click.echo(
             "  1. None — let Claude Desktop / ChatGPT do the reasoning (RECOMMENDED)"
@@ -614,8 +701,6 @@ def setup(config_path: str | None, advanced: bool) -> None:
             default=False,
         )
         if setup_ntfy:
-            import secrets
-
             suggested_topic = f"physical-mcp-{secrets.token_hex(4)}"
             click.echo("\n  ntfy.sh sends push notifications to your phone.")
             click.echo(
@@ -627,11 +712,15 @@ def setup(config_path: str | None, advanced: bool) -> None:
                 f"\n  Subscribe to '{ntfy_topic}' in the ntfy app to receive alerts."
             )
 
-    transport_mode = "stdio"
+    # Consumer mode uses HTTP, developer mode uses stdio
+    transport_mode = "streamable-http" if consumer_mode else "stdio"
 
     # ── 3. Save config ───────────────────────────────────
     config = PhysicalMCPConfig(
-        server=ServerConfig(transport=transport_mode),
+        server=ServerConfig(
+            transport=transport_mode,
+            host="0.0.0.0" if consumer_mode else "127.0.0.1",
+        ),
         cameras=camera_configs,
         reasoning=ReasoningConfig(
             provider=provider,
@@ -642,6 +731,8 @@ def setup(config_path: str | None, advanced: bool) -> None:
         notifications=NotificationsConfig(
             desktop_enabled=True,
             ntfy_topic=ntfy_topic,
+            telegram_bot_token=telegram_bot_token,
+            telegram_chat_id=telegram_chat_id,
         ),
         vision_api=VisionAPIConfig(
             auth_token=vision_api_token,
@@ -658,16 +749,28 @@ def setup(config_path: str | None, advanced: bool) -> None:
     )
     click.echo(f"Vision API auth token generated: {masked_token}")
 
-    if not advanced:
+    if not advanced and not consumer_mode:
         click.echo(
             "Run 'physical-mcp setup --advanced' for provider & notification options."
         )
 
     # ── 4. Show results ──────────────────────────────────
     click.echo("\n" + "=" * 40)
-    click.echo("Setup complete! Add this to your MCP client config:")
-    click.echo('  "physical-mcp": {"command": "uv", "args": ["run", "physical-mcp"]}')
-    click.echo("\nTip: Run 'physical-mcp install' to start the server on login.")
+    if consumer_mode:
+        click.echo("Setup complete! Run 'physical-mcp' to start.\n")
+        click.echo("What happens next:")
+        click.echo("  - Web dashboard opens on your local network")
+        if telegram_bot_token:
+            click.echo("  - Telegram bot starts — send /snap to get a photo")
+            click.echo("  - Send /watch someone at the door to set up alerts")
+        click.echo("  - Your camera analyzes scenes with AI automatically")
+        click.echo(f"\nDashboard: http://localhost:8090/dashboard?token={masked_token}")
+    else:
+        click.echo("Setup complete! Add this to your MCP client config:")
+        click.echo(
+            '  "physical-mcp": {"command": "uv", "args": ["run", "physical-mcp"]}'
+        )
+        click.echo("\nTip: Run 'physical-mcp install' to start the server on login.")
     click.echo("")
 
 

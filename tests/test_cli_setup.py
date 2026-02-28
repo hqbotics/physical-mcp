@@ -22,7 +22,10 @@ class TestSetupCommand:
             lambda: [],
         )
 
-        result = runner.invoke(main, ["setup", "--config", str(config_path)])
+        # Choose developer mode (2) to skip consumer questions
+        result = runner.invoke(
+            main, ["setup", "--config", str(config_path)], input="2\n"
+        )
 
         assert result.exit_code == 0
         assert config_path.exists()
@@ -47,8 +50,30 @@ class TestSetupCommand:
             lambda _: "tok_abcdefghijklmnopqrstuvwxyz_0123456789",
         )
 
-        result = runner.invoke(main, ["setup", "--config", str(config_path)])
+        # Choose developer mode (2) to skip consumer questions
+        result = runner.invoke(
+            main, ["setup", "--config", str(config_path)], input="2\n"
+        )
 
         assert result.exit_code == 0
         assert "Vision API auth token generated: tok_ab...6789" in result.output
         assert "tok_abcdefghijklmnopqrstuvwxyz_0123456789" not in result.output
+
+    def test_setup_consumer_mode_sets_http_transport(self, monkeypatch, tmp_path: Path):
+        runner = CliRunner()
+        config_path = tmp_path / "config.yaml"
+
+        monkeypatch.setattr(
+            "physical_mcp.camera.usb.USBCamera.enumerate_cameras",
+            lambda: [],
+        )
+
+        # Consumer mode (1), skip provider (3), skip telegram (n)
+        result = runner.invoke(
+            main, ["setup", "--config", str(config_path)], input="1\n3\nn\n"
+        )
+
+        assert result.exit_code == 0
+        cfg = load_config(config_path)
+        assert cfg.server.transport == "streamable-http"
+        assert cfg.server.host == "0.0.0.0"

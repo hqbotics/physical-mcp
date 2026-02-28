@@ -24,7 +24,12 @@ ENV PHYSICAL_MCP_HEADLESS=1 \
     REASONING_PROVIDER="" \
     REASONING_API_KEY="" \
     REASONING_MODEL="" \
-    REASONING_BASE_URL=""
+    REASONING_BASE_URL="" \
+    # Cloud mode: cameras register via POST /push/register
+    CLOUD_MODE="" \
+    # Telegram bot for consumer chat interface
+    TELEGRAM_BOT_TOKEN="" \
+    TELEGRAM_CHAT_ID=""
 
 # Expose Vision API (8090) + MCP server (8400)
 EXPOSE 8090 8400

@@ -3,12 +3,14 @@
 Supported backends:
 - usb: Local USB/webcam via OpenCV
 - rtsp: RTSP/HTTP IP camera stream via OpenCV + ffmpeg
+- cloud: Receives pushed JPEG frames via HTTP POST from a relay agent
 """
 
 from __future__ import annotations
 
 from ..config import CameraConfig
 from .base import CameraSource
+from .cloud import CloudCamera
 from .rtsp import RTSPCamera
 from .usb import USBCamera
 
@@ -28,6 +30,11 @@ def create_camera(config: CameraConfig) -> CameraSource:
             width=config.width,
             height=config.height,
         )
+    if config.type == "cloud":
+        return CloudCamera(
+            camera_id=config.id,
+            auth_token=config.auth_token,
+        )
     raise ValueError(
-        f"Unknown camera type: {config.type!r}. Supported: usb, rtsp, http"
+        f"Unknown camera type: {config.type!r}. Supported: usb, rtsp, http, cloud"
     )

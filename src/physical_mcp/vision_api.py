@@ -163,6 +163,8 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
                     "PUT /rules/{rule_id}/toggle": "Toggle rule on/off",
                     "GET /templates": "List rule templates (?category=security)",
                     "POST /templates/{id}/create": "Create rule from template",
+                    "POST /push/frame/{camera_id}": "Push JPEG frame from relay agent",
+                    "POST /push/register": "Register relay via claim code",
                     "GET /discover": "Scan local network for RTSP cameras",
                 },
             }
@@ -734,7 +736,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         for cam_id in scene_states:
             config = camera_configs.get(cam_id, {})
             scene = scene_states.get(cam_id)
-            health = _normalize_camera_health(camera_health.get(cam_id, {}), cam_id)
+            health = _normalize_camera_health(cam_id, camera_health.get(cam_id, {}))
 
             scene_data = None
             if scene:
@@ -759,6 +761,8 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
                     "name": cam_name,
                     "type": "usb"
                     if cam_id.startswith("usb")
+                    else "cloud"
+                    if cam_id.startswith("cloud")
                     else "rtsp"
                     if cam_id.startswith("rtsp")
                     else "http"
@@ -771,11 +775,201 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
 
         return web.json_response(cameras)
 
+    # ── Push endpoints (cloud relay) ──────────────────────
+
+    @routes.post("/push/frame/{camera_id}")
+    async def push_frame(request: web.Request) -> web.Response:
+        """Accept a pushed JPEG frame from a relay agent.
+
+        The relay agent (e.g. LuckFox inside a WOSEE camera) captures
+        RTSP locally, compresses to JPEG, and POSTs here.
+
+        Headers:
+            X-Camera-Token: per-camera auth token
+            Content-Type: image/jpeg
+
+        Body: raw JPEG bytes
+        """
+        from .camera.cloud import CloudCamera
+
+        camera_id = request.match_info["camera_id"]
+        cameras = state.get("cameras", {})
+        cam = cameras.get(camera_id)
+
+        if cam is None:
+            return _json_error(
+                404,
+                "camera_not_found",
+                f"Camera '{camera_id}' not found. Register it first via POST /cameras or POST /push/register.",
+                camera_id=camera_id,
+            )
+
+        if not isinstance(cam, CloudCamera):
+            return _json_error(
+                400,
+                "not_cloud_camera",
+                f"Camera '{camera_id}' is not a cloud camera (type: {type(cam).__name__})",
+                camera_id=camera_id,
+            )
+
+        # Verify per-camera token
+        token = request.headers.get("X-Camera-Token", "")
+        if not cam.verify_token(token):
+            return _json_error(403, "forbidden", "Invalid camera token")
+
+        # Read JPEG body
+        jpeg_bytes = await request.read()
+        if not jpeg_bytes:
+            return _json_error(400, "empty_body", "No JPEG data in request body")
+
+        # Size guard: reject absurdly large frames (> 5MB)
+        if len(jpeg_bytes) > 5 * 1024 * 1024:
+            return _json_error(
+                413,
+                "frame_too_large",
+                f"Frame size {len(jpeg_bytes)} exceeds 5MB limit",
+            )
+
+        try:
+            frame = cam.push_frame(jpeg_bytes)
+        except ValueError as e:
+            return _json_error(400, "invalid_frame", str(e))
+
+        # Also push into the FrameBuffer so perception loop can pick it up
+        buf = state.get("frame_buffers", {}).get(camera_id)
+        if buf:
+            await buf.push(frame)
+
+        # Update health
+        from datetime import datetime, timezone
+
+        health = state.get("camera_health", {}).get(camera_id)
+        if health:
+            health["last_frame_at"] = datetime.now(timezone.utc).isoformat()
+            health["last_success_at"] = health["last_frame_at"]
+            health["consecutive_errors"] = 0
+            health["status"] = "running"
+
+        return web.json_response(
+            {
+                "ok": True,
+                "camera_id": camera_id,
+                "sequence": frame.sequence_number,
+                "resolution": list(frame.resolution),
+                "size_bytes": len(jpeg_bytes),
+            }
+        )
+
+    @routes.post("/push/register")
+    async def push_register(request: web.Request) -> web.Response:
+        """Register a relay agent using a 6-digit claim code.
+
+        Called by the relay during WiFi provisioning after the user
+        enters the claim code from the Telegram bot.
+
+        Body: {"claim_code": "AB3K7X"}
+        Returns: {"camera_id": "...", "camera_token": "...", "push_url": "..."}
+        """
+        from .camera.cloud import CloudCamera
+        from .camera.buffer import FrameBuffer
+        from .perception.scene_state import SceneState
+
+        try:
+            body = await request.json()
+        except Exception:
+            return _json_error(400, "invalid_json", "Request body must be JSON")
+
+        claim_code = body.get("claim_code", "").strip().upper()
+        if not claim_code:
+            return _json_error(400, "missing_code", "'claim_code' is required")
+
+        # Look up the claim code in pending claims
+        pending = state.get("_pending_claims", {})
+        claim = pending.get(claim_code)
+        if claim is None:
+            return _json_error(
+                404,
+                "invalid_code",
+                f"Claim code '{claim_code}' not found or expired",
+            )
+
+        # Generate camera credentials
+        import secrets
+
+        camera_id = claim.get("camera_id", f"cloud:{secrets.token_hex(4)}")
+        camera_token = secrets.token_urlsafe(32)
+        camera_name = claim.get("camera_name", f"Camera {camera_id}")
+
+        # Create and register the cloud camera
+        cloud_cam = CloudCamera(camera_id=camera_id, auth_token=camera_token)
+        await cloud_cam.open()
+
+        cameras_dict = state.setdefault("cameras", {})
+        cameras_dict[camera_id] = cloud_cam
+
+        from .config import CameraConfig
+
+        cam_config = CameraConfig(
+            id=camera_id,
+            name=camera_name,
+            type="cloud",
+            auth_token=camera_token,
+        )
+        state.setdefault("camera_configs", {})[camera_id] = cam_config
+
+        config = state.get("config")
+        state.setdefault("frame_buffers", {})[camera_id] = FrameBuffer(
+            max_frames=config.perception.buffer_size if config else 300
+        )
+        state.setdefault("scene_states", {})[camera_id] = SceneState()
+        state.setdefault("camera_health", {})[camera_id] = {
+            "camera_id": camera_id,
+            "camera_name": camera_name,
+            "consecutive_errors": 0,
+            "backoff_until": None,
+            "last_success_at": None,
+            "last_error": "",
+            "last_frame_at": None,
+            "status": "waiting_for_frames",
+        }
+
+        # Remove used claim code
+        del pending[claim_code]
+
+        # Update claim with camera info (for bot to notify user)
+        claim["camera_id"] = camera_id
+        claim["registered"] = True
+
+        # Store in completed claims for the bot to pick up
+        completed = state.setdefault("_completed_claims", {})
+        completed[claim_code] = claim
+
+        # Start perception loops if rules exist
+        ensure_loops = state.get("_ensure_perception_loops")
+        engine = state.get("rules_engine")
+        if ensure_loops and engine and engine.get_active_rules():
+            asyncio.ensure_future(ensure_loops())
+
+        # Build push URL
+        push_url = f"/push/frame/{camera_id}"
+
+        return web.json_response(
+            {
+                "camera_id": camera_id,
+                "camera_name": camera_name,
+                "camera_token": camera_token,
+                "push_url": push_url,
+                "push_interval_seconds": 1.0,
+                "message": "Camera registered. Start pushing frames.",
+            },
+            status=201,
+        )
+
     @routes.post("/cameras")
     async def add_camera(request: web.Request) -> web.Response:
         """Register and open a new camera at runtime.
 
-        Body: {"type": "rtsp", "url": "rtsp://...", "name": "Kitchen", "id": "kitchen"}
+        Body: {"type": "rtsp"|"http"|"cloud", "url": "rtsp://...", "name": "Kitchen", "id": "kitchen"}
         Opens the camera, adds it to state, and starts the perception loop if available.
         """
         from .camera.factory import create_camera
@@ -790,11 +984,15 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
 
         cam_url = body.get("url", "")
         cam_type = body.get("type", "")
-        if not cam_url or cam_type not in ("rtsp", "http"):
+
+        # Cloud cameras don't need a URL
+        if cam_type == "cloud":
+            cam_url = cam_url or ""
+        elif not cam_url or cam_type not in ("rtsp", "http"):
             return _json_error(
                 400,
                 "invalid_camera",
-                "Required: 'url' and 'type' (rtsp or http)",
+                "Required: 'url' and 'type' (rtsp, http, or cloud)",
             )
 
         cam_id = body.get("id", f"cam:{len(state.get('cameras', {}))}")
@@ -922,10 +1120,13 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         """Optional bearer token authentication."""
         if not auth_token:
             return await handler(request)
-        # Skip auth for CORS preflight and health checks
+        # Skip auth for CORS preflight, health checks, and push endpoints
+        # (push endpoints use their own per-camera X-Camera-Token auth)
         if request.method == "OPTIONS":
             return await handler(request)
         if request.path == "/health" or request.path.startswith("/health/"):
+            return await handler(request)
+        if request.path.startswith("/push/"):
             return await handler(request)
         # Check Authorization header
         auth_header = request.headers.get("Authorization", "")
