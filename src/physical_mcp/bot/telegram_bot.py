@@ -186,11 +186,59 @@ class TelegramBot:
                     chat_id, "Unknown command. Send /help for available commands."
                 )
             else:
-                # Free text — ask about the scene
-                await self._cmd_ask(chat_id, text)
+                # Detect watch-rule intent from natural language
+                lower = text.lower()
+                if self._is_watch_intent(lower):
+                    # Extract the condition from natural language
+                    condition = self._extract_watch_condition(text)
+                    await self._cmd_watch(chat_id, f"/watch {condition}", msg)
+                else:
+                    # Free text — ask about the scene
+                    await self._cmd_ask(chat_id, text)
         except Exception as e:
             logger.error(f"Error handling message from {chat_id}: {e}")
             await self._send(chat_id, f"Sorry, something went wrong: {e}")
+
+    # ── Natural language intent detection ───────────────────
+
+    _WATCH_PREFIXES = (
+        "tell me when",
+        "tell me if",
+        "let me know when",
+        "let me know if",
+        "alert me when",
+        "alert me if",
+        "notify me when",
+        "notify me if",
+        "watch for",
+        "watch when",
+        "warn me when",
+        "warn me if",
+        "ping me when",
+        "ping me if",
+        "message me when",
+        "message me if",
+    )
+
+    def _is_watch_intent(self, text_lower: str) -> bool:
+        """Check if free text looks like a watch-rule request."""
+        return any(text_lower.startswith(p) for p in self._WATCH_PREFIXES)
+
+    def _extract_watch_condition(self, text: str) -> str:
+        """Extract the watch condition from natural language.
+
+        'tell me when someone drinks water' → 'someone drinks water'
+        """
+        lower = text.lower()
+        for prefix in self._WATCH_PREFIXES:
+            if lower.startswith(prefix):
+                condition = text[len(prefix) :].strip()
+                # Remove leading articles/filler
+                for filler in ("there is ", "there's ", "i ", "you see "):
+                    if condition.lower().startswith(filler):
+                        condition = condition[len(filler) :]
+                return condition or text
+        return text
 
     # ── Command handlers ──────────────────────────────────
 

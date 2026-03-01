@@ -41,13 +41,18 @@ primary_region = 'hkg'  # Hong Kong — closest to Shenzhen
   VISION_API_HOST = "0.0.0.0"
   VISION_API_PORT = "8090"
   CLOUD_MODE = "1"
-  REASONING_PROVIDER = "google"
-  REASONING_MODEL = "gemini-2.0-flash"
+  CLOUD_CAMERA_ID = "yoosee"
+  CLOUD_CAMERA_NAME = "Yoosee Camera"
+  # REASONING_PROVIDER, REASONING_MODEL, REASONING_BASE_URL set via secrets
+  # (secrets override env vars on Fly.io)
 
 # Secrets (set via `fly secrets set`):
-# TELEGRAM_BOT_TOKEN - Telegram bot token from @BotFather
-# REASONING_API_KEY  - Google Gemini API key
-# VISION_API_AUTH_TOKEN - Bearer token for Vision API auth
+# TELEGRAM_BOT_TOKEN    - Telegram bot token from @BotFather
+# REASONING_API_KEY     - Vision provider API key
+# REASONING_PROVIDER    - e.g. "openai-compatible" or "google"
+# REASONING_MODEL       - e.g. "google/gemini-2.0-flash-001"
+# REASONING_BASE_URL    - e.g. "https://openrouter.ai/api/v1"
+# VISION_API_AUTH_TOKEN  - Bearer token for Vision API auth
 
 [[vm]]
   memory = '512mb'

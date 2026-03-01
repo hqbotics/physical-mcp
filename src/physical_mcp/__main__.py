@@ -142,6 +142,7 @@ def main(
             from .vision_api import create_vision_routes
             from .camera.factory import create_camera
             from .camera.buffer import FrameBuffer
+            from .config import CameraConfig
             from .perception.scene_state import SceneState
             from .rules.engine import RulesEngine
             from .alert_queue import AlertQueue
@@ -230,6 +231,38 @@ def main(
                     click.echo(f"Camera {cid} ({cam_config.name or cid}): opened")
                 except Exception as e:
                     click.echo(f"Camera {cid}: failed to open ({e})", err=True)
+
+            # In cloud mode with no cameras, auto-create a cloud camera
+            # so relay agents can immediately push frames after deploy.
+            if opened == 0 and os.environ.get("CLOUD_MODE") == "1":
+                from .camera.cloud import CloudCamera
+
+                cloud_id = os.environ.get("CLOUD_CAMERA_ID", "cloud")
+                cloud_name = os.environ.get("CLOUD_CAMERA_NAME", "Cloud Camera")
+                cloud_cam = CloudCamera(camera_id=cloud_id)
+                await cloud_cam.open()
+                vision_state["cameras"][cloud_id] = cloud_cam
+                vision_state["camera_configs"][cloud_id] = CameraConfig(
+                    id=cloud_id, name=cloud_name, type="cloud"
+                )
+                vision_state["frame_buffers"][cloud_id] = FrameBuffer(
+                    max_frames=config.perception.buffer_size
+                )
+                vision_state["scene_states"][cloud_id] = SceneState()
+                vision_state["camera_health"][cloud_id] = {
+                    "camera_id": cloud_id,
+                    "camera_name": cloud_name,
+                    "consecutive_errors": 0,
+                    "backoff_until": None,
+                    "last_success_at": None,
+                    "last_error": "",
+                    "last_frame_at": None,
+                    "status": "waiting",
+                }
+                opened += 1
+                _logger.info(
+                    f"Cloud camera '{cloud_name}' ({cloud_id}) auto-registered"
+                )
 
             if opened == 0:
                 click.echo(
