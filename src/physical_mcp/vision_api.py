@@ -944,6 +944,11 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
         completed = state.setdefault("_completed_claims", {})
         completed[claim_code] = claim
 
+        # Start capture/analysis loop for the new camera
+        start_loop = state.get("_start_camera_loop")
+        if start_loop:
+            start_loop(camera_id)
+
         # Start perception loops if rules exist
         ensure_loops = state.get("_ensure_perception_loops")
         engine = state.get("rules_engine")
@@ -1035,6 +1040,11 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             "last_frame_at": None,
             "status": "running",
         }
+
+        # Start capture/analysis loop for the new camera
+        start_loop = state.get("_start_camera_loop")
+        if start_loop:
+            start_loop(cam_id)
 
         # Start perception loop for the new camera if rules exist
         engine = state.get("rules_engine")

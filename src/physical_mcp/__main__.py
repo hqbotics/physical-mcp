@@ -301,31 +301,64 @@ def main(
             # Analysis interval — how often to call the LLM (seconds)
             analysis_interval = max(config.perception.sampling.cooldown_seconds, 10.0)
 
-            # Start background frame capture + analysis loop for each camera
+            # ── Reusable capture/analysis loop for any camera ──
             capture_tasks = []
-            for cid, camera in vision_state["cameras"].items():
-                buf = vision_state["frame_buffers"][cid]
-                scene_st = vision_state["scene_states"][cid]
-                fps = config.perception.capture_fps or 2
 
-                async def _capture_loop(
-                    cam=camera,
-                    fb=buf,
-                    cam_id=cid,
-                    scene=scene_st,
-                    interval=1.0 / fps,
-                ):
+            def _start_camera_loop(cam_id: str) -> None:
+                """Start a background capture + analysis loop for a camera.
+
+                Works for all camera types (USB, RTSP, cloud).
+                For cloud cameras, grab_frame() returns the latest pushed frame;
+                frames are pushed via POST /push/frame rather than grabbed.
+                """
+                cam = vision_state["cameras"].get(cam_id)
+                fb = vision_state["frame_buffers"].get(cam_id)
+                scene = vision_state["scene_states"].get(cam_id)
+                if not cam or not fb or not scene:
+                    _logger.warning(
+                        f"Cannot start loop for {cam_id}: missing camera/buffer/scene"
+                    )
+                    return
+
+                # Don't start duplicate loops
+                existing = vision_state.get("_capture_tasks", {}).get(cam_id)
+                if existing and not existing.done():
+                    return
+
+                fps = config.perception.capture_fps or 2
+                interval = 1.0 / fps
+
+                # Cloud cameras don't need fast polling — they get frames pushed
+                from .camera.cloud import CloudCamera
+
+                is_cloud = isinstance(cam, CloudCamera)
+                if is_cloud:
+                    interval = 3.0  # Check for new frames every 3s
+
+                async def _capture_loop() -> None:
                     """Grab frames, push to buffer, and periodically analyze."""
                     from datetime import datetime, timezone
                     import time as _time
 
                     last_analysis = 0.0
                     frame_count = 0
+                    last_seq = -1  # Track sequence to skip duplicate frames
 
                     while not _shutdown_event.is_set():
                         try:
                             frame = await cam.grab_frame()
-                            await fb.push(frame)
+
+                            # For cloud cameras, skip if we've already seen this frame
+                            if is_cloud and frame.sequence_number == last_seq:
+                                await asyncio.sleep(interval)
+                                continue
+                            last_seq = frame.sequence_number
+
+                            # For non-cloud cameras, push to buffer (cloud push
+                            # endpoint already does this)
+                            if not is_cloud:
+                                await fb.push(frame)
+
                             frame_count += 1
                             health = vision_state["camera_health"].get(cam_id)
                             if health:
@@ -347,7 +380,7 @@ def main(
                         if (
                             analyzer.has_provider
                             and (now - last_analysis) >= analysis_interval
-                            and frame_count > 1  # skip first frame
+                            and frame_count > 0
                         ):
                             try:
                                 scene_data = await analyzer.analyze_scene(
@@ -367,22 +400,33 @@ def main(
                                         people_count=scene_data.get("people_count", 0),
                                         change_desc="server-side analysis",
                                     )
-                                    click.echo(f"[{cam_id}] Scene: {summary[:80]}")
+                                    _logger.info(f"[{cam_id}] Scene: {summary[:80]}")
                                 else:
-                                    click.echo(
-                                        f"[{cam_id}] Analysis returned no data, keeping previous scene",
-                                        err=True,
+                                    _logger.warning(
+                                        f"[{cam_id}] Analysis returned no data, keeping previous scene"
                                     )
                                 last_analysis = now
                             except Exception as e:
-                                click.echo(f"[{cam_id}] Analysis error: {e}", err=True)
+                                _logger.error(f"[{cam_id}] Analysis error: {e}")
                                 # Backoff on API errors
                                 last_analysis = now
 
                         await asyncio.sleep(interval)
 
                 task = asyncio.create_task(_capture_loop())
+                vision_state.setdefault("_capture_tasks", {})[cam_id] = task
                 capture_tasks.append(task)
+                _logger.info(
+                    f"Capture/analysis loop started for {cam_id}"
+                    f" ({'cloud' if is_cloud else 'local'} mode)"
+                )
+
+            # Store so POST /cameras and POST /push/register can use it
+            vision_state["_start_camera_loop"] = _start_camera_loop
+
+            # Start loops for all cameras that exist at startup
+            for cid in list(vision_state["cameras"].keys()):
+                _start_camera_loop(cid)
 
             # Start Vision API
             vision_runner = None
