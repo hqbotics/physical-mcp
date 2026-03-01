@@ -58,11 +58,30 @@ class RTSPCamera(CameraSource):
         self._thread: threading.Thread | None = None
         self._sequence = 0
         self._consecutive_failures = 0
+        self._use_ffmpeg_subprocess = False
 
     async def open(self) -> None:
         self._cap = self._create_capture()
-        if not self._cap.isOpened():
+        if not self._use_ffmpeg_subprocess and not self._cap.isOpened():
             raise CameraConnectionError(f"Cannot open stream: {self._safe_url}")
+        # For ffmpeg subprocess mode, verify we can grab at least one frame.
+        # Retry a few times — the camera may briefly reject connections after
+        # the OpenCV probes above left stale RTSP sessions.
+        if self._use_ffmpeg_subprocess:
+            test_frame = None
+            for attempt in range(3):
+                test_frame = self._ffmpeg_grab_frame()
+                if test_frame is not None:
+                    break
+                logger.info(
+                    f"[{self._camera_id}] ffmpeg test grab attempt "
+                    f"{attempt + 1}/3 failed, retrying in 2s..."
+                )
+                await asyncio.sleep(2)
+            if test_frame is None:
+                raise CameraConnectionError(
+                    f"Cannot open stream via ffmpeg: {self._safe_url}"
+                )
         self._running = True
         self._thread = threading.Thread(target=self._capture_loop, daemon=True)
         self._thread.start()
@@ -77,20 +96,109 @@ class RTSPCamera(CameraSource):
         )
 
     def _create_capture(self) -> cv2.VideoCapture:
-        """Create a new VideoCapture with optimized settings for network streams."""
-        cap = cv2.VideoCapture(self._url, cv2.CAP_FFMPEG)
-        # Reduce buffering for lower latency
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        # Request resolution (camera may ignore if stream is fixed)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
-        return cap
+        """Create a new VideoCapture with optimized settings for network streams.
+
+        Tries TCP transport first (more reliable on most networks), then falls
+        back to UDP if the camera rejects TCP (e.g. "Nonmatching transport").
+        """
+        import os
+
+        for transport in ("tcp", "udp"):
+            # timeout is in microseconds — 5s per attempt instead of 30s default
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                f"rtsp_transport;{transport}|stimeout;5000000|timeout;5000000"
+            )
+            cap = cv2.VideoCapture(self._url, cv2.CAP_FFMPEG)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
+            if cap.isOpened():
+                logger.info(f"[{self._camera_id}] Connected via {transport.upper()}")
+                return cap
+            cap.release()
+            logger.info(
+                f"[{self._camera_id}] {transport.upper()} transport failed, "
+                f"{'trying UDP...' if transport == 'tcp' else 'trying ffmpeg subprocess...'}"
+            )
+
+        # Both TCP and UDP failed with OpenCV — fall back to ffmpeg subprocess.
+        # This is more reliable because OpenCV's built-in ffmpeg sometimes
+        # ignores OPENCV_FFMPEG_CAPTURE_OPTIONS.
+        logger.info(f"[{self._camera_id}] OpenCV RTSP failed, using ffmpeg subprocess")
+        self._use_ffmpeg_subprocess = True
+        # Return a dummy capture that won't be used — _capture_loop checks
+        # _use_ffmpeg_subprocess and calls _ffmpeg_grab_frame instead.
+        return _DummyCapture()
+
+    def _ffmpeg_grab_frame(self) -> "cv2.typing.MatLike | None":
+        """Grab a single frame using ffmpeg subprocess (UDP transport).
+
+        More reliable than OpenCV's built-in RTSP for cameras that reject
+        TCP transport (like Yoosee).  Returns a decoded numpy image or None.
+        """
+        import subprocess
+
+        import numpy as np
+
+        try:
+            result = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-rtsp_transport",
+                    "udp",
+                    "-i",
+                    self._url,
+                    "-frames:v",
+                    "1",
+                    "-f",
+                    "image2pipe",
+                    "-vcodec",
+                    "mjpeg",
+                    "-q:v",
+                    "5",
+                    "pipe:1",
+                ],
+                capture_output=True,
+                timeout=30,
+            )
+            if result.returncode != 0 or not result.stdout:
+                return None
+            jpg_data = np.frombuffer(result.stdout, dtype=np.uint8)
+            img = cv2.imdecode(jpg_data, cv2.IMREAD_COLOR)
+            return img
+        except Exception as e:
+            logger.debug(f"[{self._camera_id}] ffmpeg grab failed: {e}")
+            return None
 
     def _capture_loop(self) -> None:
         """Background thread: grab frames, auto-reconnect on failure."""
         retry_delay = _INITIAL_RETRY_DELAY
 
         while self._running:
+            # ffmpeg subprocess mode — grab one frame at a time
+            if self._use_ffmpeg_subprocess:
+                img = self._ffmpeg_grab_frame()
+                if img is not None:
+                    self._consecutive_failures = 0
+                    retry_delay = _INITIAL_RETRY_DELAY
+                    self._sequence += 1
+                    frame = Frame(
+                        image=img,
+                        timestamp=datetime.now(),
+                        source_id=self.source_id,
+                        sequence_number=self._sequence,
+                        resolution=(img.shape[1], img.shape[0]),
+                    )
+                    with self._lock:
+                        self._latest_frame = frame
+                else:
+                    self._consecutive_failures += 1
+                    time.sleep(retry_delay)
+                # Pace to ~1 fps for subprocess mode (each call is ~0.5-1s)
+                time.sleep(0.5)
+                continue
+
             if self._cap is None or not self._cap.isOpened():
                 self._reconnect(retry_delay)
                 retry_delay = min(retry_delay * 2, _MAX_RETRY_DELAY)
@@ -171,6 +279,8 @@ class RTSPCamera(CameraSource):
         self._release_capture()
 
     def is_open(self) -> bool:
+        if self._use_ffmpeg_subprocess:
+            return self._running
         return self._running and self._cap is not None and self._cap.isOpened()
 
     @property
@@ -190,3 +300,19 @@ class RTSPCamera(CameraSource):
                     user = creds.split(":", 1)[0]
                     return f"{proto}://{user}:***@{host}"
         return self._url
+
+
+class _DummyCapture:
+    """Placeholder for when ffmpeg subprocess mode is used instead of OpenCV."""
+
+    def isOpened(self) -> bool:  # noqa: N802
+        return True
+
+    def release(self) -> None:
+        pass
+
+    def read(self) -> tuple[bool, None]:
+        return False, None
+
+    def set(self, prop: int, val: float) -> bool:
+        return True
