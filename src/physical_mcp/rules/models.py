@@ -30,7 +30,7 @@ class WatchRule(BaseModel):
     priority: RulePriority = RulePriority.MEDIUM
     enabled: bool = True
     notification: NotificationTarget = Field(default_factory=NotificationTarget)
-    cooldown_seconds: int = 60
+    cooldown_seconds: int = 30
     custom_message: str | None = None  # User-defined notification text
     owner_id: str = ""  # "slack:U12345", "discord:987654321" — empty = visible to all
     owner_name: str = ""  # "Mom", "Alice" — human-readable owner label
@@ -51,6 +51,7 @@ class AlertEvent(BaseModel):
     evaluation: RuleEvaluation
     scene_summary: str
     frame_base64: str | None = None
+    eval_id: int = 0  # Links to EvalLog evaluation row for feedback
 
 
 class PendingAlert(BaseModel):

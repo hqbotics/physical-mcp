@@ -831,7 +831,7 @@ def create_vision_routes(state: dict[str, Any]) -> web.Application:
             )
 
         try:
-            frame = cam.push_frame(jpeg_bytes)
+            frame = await cam.push_frame_async(jpeg_bytes)
         except ValueError as e:
             return _json_error(400, "invalid_frame", str(e))
 

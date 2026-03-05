@@ -29,8 +29,8 @@ primary_region = 'hkg'  # Hong Kong — closest to Shenzhen
 
   [[http_service.checks]]
     interval = '15s'
-    timeout = '5s'
-    grace_period = '10s'
+    timeout = '10s'
+    grace_period = '30s'
     method = 'GET'
     path = '/health'
 
@@ -41,8 +41,20 @@ primary_region = 'hkg'  # Hong Kong — closest to Shenzhen
   VISION_API_HOST = "0.0.0.0"
   VISION_API_PORT = "8090"
   CLOUD_MODE = "1"
+  TELEGRAM_POLL_ENABLED = "true"
   CLOUD_CAMERA_ID = "yoosee"
   CLOUD_CAMERA_NAME = "Yoosee Camera"
+  # Cloud-optimized perception: fast detection for 1fps push cameras
+  # Heartbeat 15s + cooldown 10s = ~240 analyses/hr (within budget)
+  SAMPLING_HEARTBEAT_INTERVAL = "15"
+  SAMPLING_DEBOUNCE_SECONDS = "0.5"
+  SAMPLING_COOLDOWN_SECONDS = "10"
+  # Higher budget to avoid going blind mid-hour
+  MAX_ANALYSES_PER_HOUR = "600"
+  CHANGE_MINOR_THRESHOLD = "3"
+  CHANGE_MODERATE_THRESHOLD = "8"
+  CHANGE_MAJOR_THRESHOLD = "20"
+  SCENE_ONLY_INTERVAL = "10"
   # REASONING_PROVIDER, REASONING_MODEL, REASONING_BASE_URL set via secrets
   # (secrets override env vars on Fly.io)
 
@@ -54,7 +66,11 @@ primary_region = 'hkg'  # Hong Kong — closest to Shenzhen
 # REASONING_BASE_URL    - e.g. "https://openrouter.ai/api/v1"
 # VISION_API_AUTH_TOKEN  - Bearer token for Vision API auth
 
+[mounts]
+  source = "physical_mcp_data"
+  destination = "/root/.physical-mcp"
+
 [[vm]]
-  memory = '512mb'
+  memory = '2gb'
   cpu_kind = 'shared'
   cpus = 1

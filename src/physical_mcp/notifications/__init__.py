@@ -61,13 +61,20 @@ class NotificationDispatcher:
         )
 
     async def dispatch(self, alert: AlertEvent) -> None:
-        """Send notification based on rule's notification target."""
+        """Send notification based on rule's notification target.
+
+        Falls back to server-configured default_type when rule uses "local"
+        and a non-local default is set (e.g., telegram on cloud deployment).
+        """
         target = alert.rule.notification
+        effective_type = target.type
+        if effective_type == "local" and self._config.default_type != "local":
+            effective_type = self._config.default_type
         logger.info(
-            f"Dispatching notification: type={target.type}, "
+            f"Dispatching notification: type={effective_type}, "
             f"rule={alert.rule.name}, desktop_enabled={self._desktop is not None}"
         )
-        if target.type == "desktop":
+        if effective_type == "desktop":
             if self._desktop:
                 title = f"[{alert.rule.priority.value.upper()}] {alert.rule.name}"
                 body = alert.rule.custom_message or alert.evaluation.reasoning
@@ -76,43 +83,40 @@ class NotificationDispatcher:
                 logger.warning(
                     "Desktop notification requested but desktop_enabled=False"
                 )
-        elif target.type == "ntfy":
+        elif effective_type == "ntfy":
             topic = target.channel or self._config.ntfy_topic
             await self._ntfy.notify(alert, topic)
-            # Desktop bonus alongside ntfy (local machine gets popup too)
             if self._desktop:
                 body = alert.rule.custom_message or alert.evaluation.reasoning
                 self._desktop.notify(alert.rule.name, body)
-        elif target.type == "telegram":
+        elif effective_type == "telegram":
             chat_id = target.target or self._config.telegram_chat_id
             await self._telegram.notify(alert, chat_id=chat_id)
             if self._desktop:
                 body = alert.rule.custom_message or alert.evaluation.reasoning
                 self._desktop.notify(alert.rule.name, body)
-        elif target.type == "discord":
+        elif effective_type == "discord":
             url = target.url or self._config.discord_webhook_url
             await self._discord.notify(alert, webhook_url=url)
             if self._desktop:
                 body = alert.rule.custom_message or alert.evaluation.reasoning
                 self._desktop.notify(alert.rule.name, body)
-        elif target.type == "slack":
+        elif effective_type == "slack":
             url = target.url or self._config.slack_webhook_url
             await self._slack.notify(alert, webhook_url=url)
             if self._desktop:
                 body = alert.rule.custom_message or alert.evaluation.reasoning
                 self._desktop.notify(alert.rule.name, body)
-        elif target.type == "webhook":
+        elif effective_type == "webhook":
             url = target.url or self._config.webhook_url
             await self._webhook.notify(alert, url=url)
-        elif target.type == "openclaw":
-            # Fan out to multiple channels (comma-separated)
+        elif effective_type == "openclaw":
             channels = (target.channel or self._config.openclaw_channel).split(",")
             targets = (target.target or self._config.openclaw_target).split(",")
             for ch, dest in zip(channels, targets):
                 await self._openclaw.notify(
                     alert, channel=ch.strip(), target=dest.strip()
                 )
-            # Desktop bonus alongside openclaw (local machine gets popup too)
             if self._desktop:
                 body = alert.rule.custom_message or alert.evaluation.reasoning
                 self._desktop.notify(alert.rule.name, body)

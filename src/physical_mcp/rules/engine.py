@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from ..perception.scene_state import SceneState
 from .models import AlertEvent, RuleEvaluation, WatchRule
+
+if TYPE_CHECKING:
+    from ..eval_log import EvalLog
 
 logger = logging.getLogger("physical-mcp")
 
@@ -14,8 +19,9 @@ logger = logging.getLogger("physical-mcp")
 class RulesEngine:
     """Evaluates watch rules against LLM analysis results."""
 
-    def __init__(self) -> None:
+    def __init__(self, eval_log: EvalLog | None = None) -> None:
         self._rules: dict[str, WatchRule] = {}
+        self._eval_log = eval_log
 
     def add_rule(self, rule: WatchRule) -> None:
         self._rules[rule.id] = rule
@@ -27,45 +33,96 @@ class RulesEngine:
         self._rules = {r.id: r for r in rules}
 
     def get_active_rules(self) -> list[WatchRule]:
-        """Get rules that are enabled and not in cooldown."""
-        now = datetime.now()
-        active = []
-        for rule in self._rules.values():
-            if not rule.enabled:
-                continue
-            if rule.last_triggered:
-                elapsed = (now - rule.last_triggered).total_seconds()
-                if elapsed < rule.cooldown_seconds:
-                    continue
-            active.append(rule)
-        return active
+        """Get all enabled rules (cooldown is enforced at alert dispatch, not here).
+
+        Previously this filtered out cooled-down rules, which prevented the LLM
+        from even seeing them.  Now we always send enabled rules to the LLM and
+        only gate on cooldown when deciding whether to actually fire an alert.
+        """
+        return [r for r in self._rules.values() if r.enabled]
 
     def process_evaluations(
         self,
         evaluations: list[RuleEvaluation],
         scene_state: SceneState,
         frame_base64: str | None = None,
+        camera_id: str = "",
+        frame_thumbnail_bytes: bytes | None = None,
     ) -> list[AlertEvent]:
-        """Process LLM evaluations and generate alerts for triggered rules."""
+        """Process LLM evaluations and generate alerts for triggered rules.
+
+        Args:
+            frame_thumbnail_bytes: Optional small JPEG of the current frame
+                for storage in the eval log.  When a user later provides
+                feedback, this thumbnail is copied into the few-shot
+                ``example_frames`` table for visual learning.
+
+        Returns list of AlertEvent objects for triggered rules.
+        """
         now = datetime.now()
         alerts = []
+        self._last_eval_ids: dict[str, int] = {}
+
+        global_threshold = float(os.environ.get("RULE_CONFIDENCE_THRESHOLD", "0.3"))
+
         for ev in evaluations:
-            # Log ALL evaluations for debugging
             rule = self._rules.get(ev.rule_id)
             rule_name = rule.name if rule else "unknown"
+            rule_condition = rule.condition if rule else ""
+
+            # --- Log to EvalLog (every eval, triggered or not) ---
+            # Store frame thumbnail only for triggered evaluations
+            # (to keep storage manageable)
+            _thumb = frame_thumbnail_bytes if ev.triggered else None
+            eval_id = 0
+            if self._eval_log:
+                try:
+                    eval_id = self._eval_log.log_evaluation(
+                        rule_id=ev.rule_id,
+                        rule_name=rule_name,
+                        condition=rule_condition,
+                        camera_id=camera_id,
+                        triggered=ev.triggered,
+                        confidence=ev.confidence,
+                        reasoning=ev.reasoning,
+                        scene_summary=scene_state.summary,
+                        frame_thumbnail=_thumb,
+                    )
+                    self._last_eval_ids[ev.rule_id] = eval_id
+                except Exception as e:
+                    logger.warning(f"EvalLog write failed: {e}")
+
             logger.info(
-                f"📊 EVAL: {rule_name} — triggered={ev.triggered}, "
+                f"\U0001f4ca EVAL: {rule_name} \u2014 triggered={ev.triggered}, "
                 f"confidence={ev.confidence:.2f}, reason={ev.reasoning[:100]}"
             )
-            if not ev.triggered or ev.confidence < 0.75:
+
+            # --- Per-rule threshold (from self-tuning) or global ---
+            _threshold = global_threshold
+            if self._eval_log:
+                try:
+                    stats = self._eval_log.get_rule_stats(ev.rule_id)
+                    if stats and stats.get("confidence_threshold"):
+                        _threshold = stats["confidence_threshold"]
+                except Exception:
+                    pass
+
+            if not ev.triggered or ev.confidence < _threshold:
+                if ev.triggered and ev.confidence < _threshold:
+                    logger.info(
+                        f"  \u2192 DROPPED (confidence {ev.confidence:.2f} < {_threshold} threshold)"
+                    )
                 continue
-            rule = self._rules.get(ev.rule_id)
             if rule is None or not rule.enabled:
                 continue
-            # Double-check cooldown
+            # Cooldown gate: only suppress alert dispatch, not LLM evaluation
             if rule.last_triggered:
                 elapsed = (now - rule.last_triggered).total_seconds()
                 if elapsed < rule.cooldown_seconds:
+                    logger.info(
+                        f"  \u2192 COOLDOWN: {rule.name} triggered but in cooldown "
+                        f"({elapsed:.0f}s / {rule.cooldown_seconds}s)"
+                    )
                     continue
             rule.last_triggered = now
             alerts.append(
@@ -74,9 +131,14 @@ class RulesEngine:
                     evaluation=ev,
                     scene_summary=scene_state.summary,
                     frame_base64=frame_base64,
+                    eval_id=eval_id,
                 )
             )
         return alerts
+
+    def get_last_eval_ids(self) -> dict[str, int]:
+        """Return eval_log IDs from the most recent process_evaluations call."""
+        return getattr(self, "_last_eval_ids", {})
 
     def process_client_evaluations(
         self,

@@ -297,7 +297,10 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
         # This prevents the crash loop where Claude Desktop reconnects to MCP
         # and immediately gets flooded with camera frames + perception data.
 
-        rules_engine = RulesEngine()
+        from .eval_log import EvalLog
+
+        eval_log = EvalLog()
+        rules_engine = RulesEngine(eval_log=eval_log)
         rules_store = RulesStore(config.rules_file)
         rules_engine.load_rules(rules_store.load())
 
@@ -358,6 +361,7 @@ def create_server(config: PhysicalMCPConfig) -> FastMCP:
                 "_loop_tasks": {},
                 "rules_engine": rules_engine,
                 "rules_store": rules_store,
+                "eval_log": eval_log,
                 "analyzer": analyzer,
                 "stats": stats,
                 "config": config,

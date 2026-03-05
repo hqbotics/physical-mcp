@@ -145,11 +145,102 @@ class TelegramBot:
                     msg = update.get("message")
                     if msg:
                         asyncio.create_task(self._handle_message(msg))
+                    cb = update.get("callback_query")
+                    if cb:
+                        asyncio.create_task(self._handle_callback_query(cb))
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.warning(f"Telegram poll error: {e}")
                 await asyncio.sleep(5)  # Back off on errors
+
+    # ── Callback query handler (feedback buttons) ─────────
+
+    async def _handle_callback_query(self, cb: dict) -> None:
+        """Handle inline keyboard button presses (👍/👎/😤 feedback)."""
+        cb_id = cb.get("id", "")
+        data = cb.get("data", "")
+        chat_id = cb.get("message", {}).get("chat", {}).get("id")
+        message_id = cb.get("message", {}).get("message_id")
+
+        if not data.startswith("fb:"):
+            await self._api("answerCallbackQuery", callback_query_id=cb_id)
+            return
+
+        # Parse fb:{eval_id}:{feedback_type}
+        parts = data.split(":")
+        if len(parts) != 3:
+            await self._api(
+                "answerCallbackQuery",
+                callback_query_id=cb_id,
+                text="Invalid feedback data",
+            )
+            return
+
+        try:
+            eval_id = int(parts[1])
+            feedback_type = parts[2]  # correct, wrong, missed
+        except (ValueError, IndexError):
+            await self._api(
+                "answerCallbackQuery",
+                callback_query_id=cb_id,
+                text="Invalid feedback data",
+            )
+            return
+
+        if feedback_type not in ("correct", "wrong", "missed"):
+            await self._api(
+                "answerCallbackQuery",
+                callback_query_id=cb_id,
+                text="Unknown feedback type",
+            )
+            return
+
+        # Record feedback in EvalLog
+        eval_log = self._state.get("eval_log")
+        if eval_log:
+            try:
+                eval_log.record_feedback(
+                    eval_id=eval_id,
+                    feedback=feedback_type,
+                    telegram_message_id=message_id,
+                    chat_id=str(chat_id) if chat_id else "",
+                )
+                emoji = {
+                    "correct": "\u2705",
+                    "wrong": "\u274c",
+                    "missed": "\U0001f50d",
+                }.get(feedback_type, "\u2705")
+                await self._api(
+                    "answerCallbackQuery",
+                    callback_query_id=cb_id,
+                    text=f"{emoji} Feedback recorded — thank you!",
+                )
+            except Exception as e:
+                logger.warning(f"Failed to record feedback: {e}")
+                await self._api(
+                    "answerCallbackQuery",
+                    callback_query_id=cb_id,
+                    text="Failed to record feedback",
+                )
+        else:
+            await self._api(
+                "answerCallbackQuery",
+                callback_query_id=cb_id,
+                text="\u2705 Feedback noted (eval log not available)",
+            )
+
+        # Remove inline keyboard from the message
+        if chat_id and message_id:
+            try:
+                await self._api(
+                    "editMessageReplyMarkup",
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup={"inline_keyboard": []},
+                )
+            except Exception:
+                pass  # Best-effort — message might be too old
 
     # ── Message handler ───────────────────────────────────
 
@@ -181,6 +272,10 @@ class TelegramBot:
                 await self._cmd_rules(chat_id)
             elif cmd in ("/stop", "/delete", "/remove"):
                 await self._cmd_stop(chat_id, text)
+            elif cmd == "/accuracy":
+                await self._cmd_accuracy(chat_id)
+            elif cmd == "/analyze":
+                await self._cmd_analyze(chat_id)
             elif cmd.startswith("/"):
                 await self._send(
                     chat_id, "Unknown command. Send /help for available commands."
@@ -271,6 +366,8 @@ class TelegramBot:
             "/watch <condition> — Create alert rule\n"
             "/rules — List your watch rules\n"
             "/stop <rule\\_id> — Delete a rule\n"
+            "/accuracy — Show rule accuracy stats\n"
+            "/analyze — Run self-analysis to tune rules\n"
             "/help — Show this message\n\n"
             "Or just type a question about what the camera sees!",
         )
@@ -521,6 +618,120 @@ class TelegramBot:
             chat_id,
             f"🗑 Rule `{rule_id}` deleted.\nWas watching for: _{target.condition}_",
         )
+
+    async def _cmd_accuracy(self, chat_id: int) -> None:
+        """Show per-rule accuracy stats from the eval log."""
+        eval_log = self._state.get("eval_log")
+        if not eval_log:
+            await self._send(chat_id, "Evaluation log not available.")
+            return
+
+        all_stats = eval_log.get_all_rule_stats()
+        if not all_stats:
+            await self._send(
+                chat_id,
+                "\U0001f4ca *No accuracy data yet.*\n\n"
+                "Stats accumulate as you use \U0001f44d/\U0001f44e buttons on alerts.",
+            )
+            return
+
+        engine = self._state.get("rules_engine")
+        rules_map = {}
+        if engine:
+            for r in engine.list_rules():
+                rules_map[r.id] = r.condition
+
+        lines = ["\U0001f4ca *Rule Accuracy Report*\n"]
+        for s in all_stats:
+            rid = s["rule_id"]
+            condition = rules_map.get(rid, rid)
+            tp = s.get("true_positives", 0)
+            fp = s.get("false_positives", 0)
+            fn = s.get("false_negatives", 0)
+            acc = s.get("accuracy")
+            threshold = s.get("confidence_threshold", 0.3)
+            hint = s.get("prompt_hint", "")
+
+            total_feedback = tp + fp + fn
+            acc_str = f"{acc:.0%}" if acc is not None else "N/A"
+
+            lines.append(f"\U0001f441 *{condition[:40]}*")
+            lines.append(
+                f"  \u2705 {tp} correct | \u274c {fp} wrong | \U0001f50d {fn} missed"
+            )
+            lines.append(f"  Accuracy: {acc_str} | Threshold: {threshold:.2f}")
+            if hint:
+                lines.append(f"  Hint: _{hint}_")
+            if total_feedback == 0:
+                lines.append("  _No feedback yet — use buttons on alerts_")
+            lines.append("")
+
+        await self._send(chat_id, "\n".join(lines))
+
+    async def _cmd_analyze(self, chat_id: int) -> None:
+        """Run self-analysis on all rules to tune thresholds."""
+        analyzer_obj = self._state.get("self_analyzer")
+        if not analyzer_obj:
+            await self._send(
+                chat_id,
+                "Self-analyzer not available.\n"
+                "Make sure a vision provider is configured.",
+            )
+            return
+
+        engine = self._state.get("rules_engine")
+        if not engine:
+            await self._send(chat_id, "Rules engine not available.")
+            return
+
+        rule_ids = [r.id for r in engine.list_rules()]
+        if not rule_ids:
+            await self._send(chat_id, "No rules to analyze.")
+            return
+
+        await self._send(chat_id, "\U0001f9e0 Running self-analysis... please wait.")
+
+        try:
+            results = await analyzer_obj.analyze_all_rules(rule_ids)
+        except Exception as e:
+            await self._send(chat_id, f"Self-analysis failed: {e}")
+            return
+
+        lines = ["\U0001f9e0 *Self-Analysis Complete*\n"]
+        for r in results:
+            rid = r.get("rule_id", "?")
+            # Find rule name
+            rule_name = rid
+            for rule in engine.list_rules():
+                if rule.id == rid:
+                    rule_name = rule.condition[:40]
+                    break
+
+            if r.get("skipped"):
+                lines.append(f"*{rule_name}:*")
+                lines.append(f"  Skipped — {r.get('reason', 'unknown')}")
+                lines.append("")
+                continue
+
+            if r.get("error"):
+                lines.append(f"*{rule_name}:*")
+                lines.append(f"  Error — {r['error'][:80]}")
+                lines.append("")
+                continue
+
+            lines.append(f"*{rule_name}:*")
+            tc = r.get("threshold_change", "")
+            if tc:
+                lines.append(f"  Threshold: {tc}")
+            hc = r.get("hint_change", "")
+            if hc:
+                lines.append(f"  Hint: {hc}")
+            reasoning = r.get("reasoning", "")
+            if reasoning:
+                lines.append(f"  _{reasoning[:120]}_")
+            lines.append("")
+
+        await self._send(chat_id, "\n".join(lines))
 
     async def _cmd_ask(self, chat_id: int, text: str) -> None:
         """Handle free-text questions about the scene."""

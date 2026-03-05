@@ -62,6 +62,26 @@ class TelegramNotifier:
             f"_Confidence:_ {alert.evaluation.confidence:.0%}"
         )
 
+    def _build_feedback_keyboard(self, eval_id: int) -> list[list[dict]] | None:
+        """Build inline keyboard with feedback buttons for an alert.
+
+        Returns None if eval_id is 0 (no eval log linkage).
+        Callback data format: ``fb:{eval_id}:{feedback}``
+        Telegram limits callback_data to 64 bytes — this fits easily.
+        """
+        if not eval_id:
+            return None
+        return [
+            [
+                {
+                    "text": "\U0001f44d Correct",
+                    "callback_data": f"fb:{eval_id}:correct",
+                },
+                {"text": "\U0001f44e Wrong", "callback_data": f"fb:{eval_id}:wrong"},
+                {"text": "\U0001f624 Missed", "callback_data": f"fb:{eval_id}:missed"},
+            ]
+        ]
+
     async def notify(self, alert: AlertEvent, chat_id: str = "") -> bool:
         """Send alert to Telegram.  Returns True on success."""
         target_chat = chat_id or self._default_chat_id
@@ -70,6 +90,8 @@ class TelegramNotifier:
 
         message = self._format_message(alert)
         session = self._get_session()
+        eval_id = getattr(alert, "eval_id", 0)
+        keyboard = self._build_feedback_keyboard(eval_id)
 
         try:
             if alert.frame_base64:
@@ -80,6 +102,13 @@ class TelegramNotifier:
                 form.add_field("chat_id", target_chat)
                 form.add_field("caption", message)
                 form.add_field("parse_mode", "Markdown")
+                if keyboard:
+                    import json
+
+                    form.add_field(
+                        "reply_markup",
+                        json.dumps({"inline_keyboard": keyboard}),
+                    )
                 form.add_field(
                     "photo",
                     image_bytes,
@@ -96,11 +125,13 @@ class TelegramNotifier:
             else:
                 # sendMessage — text only
                 url = f"{self._api_base}/bot{self._bot_token}/sendMessage"
-                payload = {
+                payload: dict = {
                     "chat_id": target_chat,
                     "text": message,
                     "parse_mode": "Markdown",
                 }
+                if keyboard:
+                    payload["reply_markup"] = {"inline_keyboard": keyboard}
                 async with session.post(url, json=payload) as resp:
                     ok = resp.status < 400
                     if not ok:

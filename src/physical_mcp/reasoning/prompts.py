@@ -5,12 +5,28 @@ from __future__ import annotations
 from ..perception.scene_state import SceneState
 from ..rules.models import WatchRule
 
-_STRICT_EVAL = """Evaluate STRICTLY. Only trigger a rule if you see clear, unambiguous visual evidence.
-- For gesture rules (waving, pointing): raised hands/arms must be clearly visible
-- For action rules (drinking, eating, etc.): the person must be ACTIVELY performing the action, not just near an object
-- A water bottle visible near someone does NOT mean they are drinking
-- Confidence 0.9+ = certain, 0.7-0.9 = likely, below 0.7 = do not trigger
-- When in doubt, set triggered=false. Missing an event is better than a false alert."""
+_RULE_EVAL_GUIDANCE = """CRITICAL evaluation guidelines — READ CAREFULLY:
+
+BIAS TOWARD TRIGGERING: You are a proactive alert system. Users WANT to be notified.
+Missing a real event is MUCH WORSE than a false alarm. When in doubt, TRIGGER.
+
+Action detection at 1fps (you will NOT see smooth motion):
+- Drinking: person near a bottle/cup/glass = TRIGGERED. You will NOT see them swallow.
+  If a person is within arm's reach of a drink AND their hand/body is oriented toward it, trigger.
+- Eating: person near food with hands near mouth = TRIGGERED.
+- Gestures: raised hands/arms in approximate position = TRIGGERED.
+- Presence: if the rule says "when a person..." and you see a person, strongly consider triggering.
+
+Confidence scoring:
+- 0.9+ = certain match
+- 0.7-0.9 = strong match (trigger)
+- 0.5-0.7 = probable match (trigger)
+- 0.3-0.5 = possible match (trigger with lower confidence)
+- below 0.3 = unlikely
+
+Set triggered=true for ANYTHING 0.3 or above.
+FALSE NEGATIVES (missing real events) are unacceptable — users will lose trust.
+FALSE POSITIVES (extra alerts) are tolerable — users can adjust rules."""
 
 
 def _frame_preamble(frame_count: int) -> str:
@@ -52,10 +68,24 @@ Respond in JSON only:
 }}"""
 
 
-def build_rule_eval_prompt(scene_state: SceneState, rules: list[WatchRule]) -> str:
+def _format_rule_json(rule: WatchRule, hint: str = "", indent: str = "  ") -> str:
+    """Format a single rule as JSON, including optional hint from self-tuning."""
+    parts = f'{indent}{{"id": "{rule.id}", "condition": "{rule.condition}"'
+    if hint:
+        parts += f', "hint": "{hint}"'
+    parts += "}"
+    return parts
+
+
+def build_rule_eval_prompt(
+    scene_state: SceneState,
+    rules: list[WatchRule],
+    rule_hints: dict[str, str] | None = None,
+) -> str:
     """Build the rule evaluation prompt."""
+    hints = rule_hints or {}
     rules_text = "\n".join(
-        f'  {{"id": "{r.id}", "condition": "{r.condition}"}}' for r in rules
+        _format_rule_json(r, hints.get(r.id, ""), indent="  ") for r in rules
     )
 
     context = ""
@@ -83,19 +113,22 @@ Respond in JSON only:
   ]
 }}
 
-{_STRICT_EVAL}"""
+{_RULE_EVAL_GUIDANCE}"""
 
 
 def build_combined_prompt(
     previous_state: SceneState,
     rules: list[WatchRule],
     frame_count: int = 1,
+    rule_hints: dict[str, str] | None = None,
 ) -> str:
     """Build a single prompt that does scene analysis + rule evaluation together.
 
     This halves latency by making ONE LLM call instead of two sequential calls.
     When frame_count > 1, adds temporal context instructions so the LLM knows
     to look for actions across the frame sequence.
+
+    rule_hints: optional dict mapping rule_id → short hint string from self-tuning.
     """
     context = ""
     if previous_state.summary:
@@ -104,8 +137,9 @@ def build_combined_prompt(
 
 """
 
+    hints = rule_hints or {}
     rules_text = "\n".join(
-        f'    {{"id": "{r.id}", "condition": "{r.condition}"}}' for r in rules
+        _format_rule_json(r, hints.get(r.id, ""), indent="    ") for r in rules
     )
 
     preamble = _frame_preamble(frame_count)
@@ -138,4 +172,4 @@ Respond in JSON only:
   ]
 }}
 
-{_STRICT_EVAL}"""
+{_RULE_EVAL_GUIDANCE}"""

@@ -46,8 +46,8 @@ def _is_api_error(e: Exception) -> bool:
     )
 
 
-def _encode_frames(frames: list[Frame], config: PhysicalMCPConfig) -> list[str]:
-    """Encode a list of frames to base64 thumbnails."""
+def _encode_frames_sync(frames: list[Frame], config: PhysicalMCPConfig) -> list[str]:
+    """Encode a list of frames to base64 thumbnails (CPU-bound, sync)."""
     return [
         f.to_thumbnail(
             max_dim=config.reasoning.max_thumbnail_dim,
@@ -55,6 +55,45 @@ def _encode_frames(frames: list[Frame], config: PhysicalMCPConfig) -> list[str]:
         )
         for f in frames
     ]
+
+
+async def _encode_frames(frames: list[Frame], config: PhysicalMCPConfig) -> list[str]:
+    """Encode frames in a thread pool to avoid blocking the event loop."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _encode_frames_sync, frames, config)
+
+
+_LABEL_DESCRIPTIONS = {
+    "true_positive": "CORRECT DETECTION — this IS the condition happening",
+    "false_positive": "FALSE ALARM — this is NOT the condition (was wrongly triggered)",
+    "false_negative": "MISSED DETECTION — the condition IS happening but was missed",
+}
+
+
+def _build_few_shot_prefix(examples: list[dict]) -> str:
+    """Build a text prefix describing few-shot reference images.
+
+    The example images are prepended to the images list separately;
+    this function just creates the text labels that correspond to them.
+    """
+    if not examples:
+        return ""
+
+    lines = [
+        "REFERENCE EXAMPLES from this camera (use to calibrate your detection):",
+        "The first image(s) below are labeled reference examples. "
+        "The LAST image(s) are the CURRENT frame(s) to evaluate.",
+        "",
+    ]
+    for i, ex in enumerate(examples):
+        label_desc = _LABEL_DESCRIPTIONS.get(ex["label"], ex["label"])
+        lines.append(f"Reference image {i + 1}: {label_desc}")
+        if ex.get("reasoning"):
+            lines.append(f"  Context: {ex['reasoning']}")
+    lines.append("")
+    lines.append("Now analyze the CURRENT frame(s) below:")
+    lines.append("")
+    return "\n".join(lines)
 
 
 class FrameAnalyzer:
@@ -102,7 +141,7 @@ class FrameAnalyzer:
 
         frames = frame if isinstance(frame, list) else [frame]
         prompt = build_analysis_prompt(previous_state, question)
-        images_b64 = _encode_frames(frames, config)
+        images_b64 = await _encode_frames(frames, config)
         timeout = getattr(config.reasoning, "llm_timeout_seconds", LLM_CALL_TIMEOUT)
 
         try:
@@ -157,11 +196,21 @@ class FrameAnalyzer:
         scene_state: SceneState,
         rules: list[WatchRule],
         config: PhysicalMCPConfig,
+        rule_hints: dict[str, str] | None = None,
+        few_shot_examples: list[dict] | None = None,
     ) -> dict:
         """Combined scene analysis + rule evaluation in ONE LLM call.
 
         Accepts a single Frame or list of Frames for multi-frame temporal analysis.
         Returns {"scene": {...}, "evaluations": [RuleEvaluation, ...]}.
+
+        rule_hints: optional dict mapping rule_id → short hint string from
+            self-tuning (e.g. ``{"r_abc": "Phone near face ≠ drinking"}``).
+
+        few_shot_examples: optional list of dicts from
+            ``EvalLog.get_few_shot_examples()`` containing confirmed TP/FP
+            frames to include as visual reference for the LLM.
+            Each dict has: label, thumbnail_b64, reasoning.
 
         Raises on API/rate-limit errors so the perception loop can backoff.
         """
@@ -174,8 +223,20 @@ class FrameAnalyzer:
             scene_data = await self.analyze_scene(frames, scene_state, config)
             return {"scene": scene_data, "evaluations": []}
 
-        prompt = build_combined_prompt(scene_state, rules, frame_count=len(frames))
-        images_b64 = _encode_frames(frames, config)
+        prompt = build_combined_prompt(
+            scene_state, rules, frame_count=len(frames), rule_hints=rule_hints
+        )
+        images_b64 = await _encode_frames(frames, config)
+
+        # Prepend few-shot reference examples (visual learning)
+        if few_shot_examples:
+            example_prefix = _build_few_shot_prefix(few_shot_examples)
+            if example_prefix:
+                prompt = example_prefix + "\n\n" + prompt
+                # Add example images BEFORE the current frame(s)
+                example_images = [ex["thumbnail_b64"] for ex in few_shot_examples]
+                images_b64 = example_images + images_b64
+
         timeout = getattr(config.reasoning, "llm_timeout_seconds", LLM_CALL_TIMEOUT)
 
         try:
@@ -229,7 +290,7 @@ class FrameAnalyzer:
 
         frames = frame if isinstance(frame, list) else [frame]
         prompt = build_rule_eval_prompt(scene_state, rules)
-        images_b64 = _encode_frames(frames, config)
+        images_b64 = await _encode_frames(frames, config)
         timeout = getattr(config.reasoning, "llm_timeout_seconds", LLM_CALL_TIMEOUT)
 
         try:

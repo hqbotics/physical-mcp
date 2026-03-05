@@ -111,9 +111,36 @@ class CloudCamera(CameraSource):
         return frame
 
     async def push_frame_async(self, jpeg_bytes: bytes) -> Frame:
-        """Async wrapper around push_frame for use in async handlers."""
+        """Async wrapper — decodes JPEG in thread, signals event on event loop."""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.push_frame, jpeg_bytes)
+        # Decode JPEG in thread (CPU-intensive), but DON'T signal event there.
+        # asyncio.Event.set() is NOT thread-safe — must run on event loop.
+        frame = await loop.run_in_executor(None, self._decode_frame, jpeg_bytes)
+        self._latest_frame = frame
+        self._new_frame_event.set()
+        return frame
+
+    def _decode_frame(self, jpeg_bytes: bytes) -> Frame:
+        """Decode JPEG bytes into a Frame (CPU-bound, safe for threads)."""
+        if not self._opened:
+            raise ValueError(f"Cloud camera {self._camera_id} is not open")
+
+        arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+        image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError("Invalid JPEG data — could not decode frame")
+
+        self._sequence += 1
+        self._total_pushed += 1
+        self._last_push_time = time.monotonic()
+
+        return Frame(
+            image=image,
+            timestamp=datetime.now(),
+            source_id=self._camera_id,
+            sequence_number=self._sequence,
+            resolution=(image.shape[1], image.shape[0]),
+        )
 
     async def grab_frame(self) -> Frame:
         """Return the latest pushed frame.

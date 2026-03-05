@@ -47,7 +47,7 @@ class OpenAICompatProvider(VisionProvider):
                             "type": "image_url",
                             "image_url": {
                                 "url": f"data:image/jpeg;base64,{image_b64}",
-                                "detail": "low",
+                                "detail": "auto",
                             },
                         },
                         {"type": "text", "text": prompt},

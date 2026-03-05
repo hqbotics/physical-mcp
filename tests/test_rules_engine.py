@@ -69,23 +69,23 @@ class TestRulesEngine:
         engine = RulesEngine()
         engine.add_rule(_make_rule("r1"))
         scene = SceneState()
-        alerts = engine.process_evaluations([_make_eval(confidence=0.5)], scene)
+        alerts = engine.process_evaluations([_make_eval(confidence=0.2)], scene)
         assert len(alerts) == 0
 
     def test_borderline_confidence_no_alert(self):
-        """Confidence below 0.75 threshold should not fire."""
+        """Confidence below 0.3 threshold should not fire."""
         engine = RulesEngine()
         engine.add_rule(_make_rule("r1"))
         scene = SceneState()
-        alerts = engine.process_evaluations([_make_eval(confidence=0.74)], scene)
+        alerts = engine.process_evaluations([_make_eval(confidence=0.29)], scene)
         assert len(alerts) == 0
 
     def test_at_threshold_confidence_fires(self):
-        """Confidence at exactly 0.75 should fire."""
+        """Confidence at exactly 0.3 should fire."""
         engine = RulesEngine()
         engine.add_rule(_make_rule("r1"))
         scene = SceneState()
-        alerts = engine.process_evaluations([_make_eval(confidence=0.75)], scene)
+        alerts = engine.process_evaluations([_make_eval(confidence=0.3)], scene)
         assert len(alerts) == 1
 
     def test_not_triggered_no_alert(self):

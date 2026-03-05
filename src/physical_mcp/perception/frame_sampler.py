@@ -76,6 +76,15 @@ class FrameSampler:
         if since_last < self._cooldown:
             return False, result
 
+        # ── Heartbeat: periodic analysis regardless of change level ──
+        # Must be BEFORE debounce/level checks so it fires even when
+        # change detection sees MINOR/NONE (e.g., subtle gestures at 1fps).
+        if self._heartbeat > 0 and since_last >= self._heartbeat:
+            self._last_analysis = now
+            self._pending_moderate = False
+            self._pending_minor = False
+            return True, result
+
         # ── Pending debounce checks (fire even if current frame is calm) ──
         # This is critical for brief actions: a sip creates a MODERATE spike
         # for 1-2 frames, then drops to NONE. Without this, the debounce
@@ -119,11 +128,5 @@ class FrameSampler:
                 self._pending_minor = True
                 self._minor_timestamp = now
             return False, result
-
-        # NONE: no change detected — only heartbeat can trigger
-        # Heartbeat: periodic check (only with active rules, disabled when 0)
-        if self._heartbeat > 0 and since_last >= self._heartbeat:
-            self._last_analysis = now
-            return True, result
 
         return False, result

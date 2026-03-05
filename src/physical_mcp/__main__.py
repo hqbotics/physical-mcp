@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -93,8 +94,6 @@ def main(
 
     _configure_logging()
 
-    import os
-
     headless = headless or os.environ.get("PHYSICAL_MCP_HEADLESS") == "1"
 
     # Auto-setup: if no config exists, run the setup wizard first
@@ -173,7 +172,10 @@ def main(
             from .stats import StatsTracker
             from .memory import MemoryStore
 
-            rules_engine = RulesEngine()
+            from .eval_log import EvalLog
+
+            eval_log = EvalLog()
+            rules_engine = RulesEngine(eval_log=eval_log)
             rules_store = RulesStore(config.rules_file)
             rules_engine.load_rules(rules_store.load())
             notifier = NotificationDispatcher(config.notifications)
@@ -187,6 +189,7 @@ def main(
                 "config": config,
                 "rules_engine": rules_engine,
                 "rules_store": rules_store,
+                "eval_log": eval_log,
                 "scene_state": SceneState(),
                 "alert_queue": AlertQueue(),
                 "cameras": {},
@@ -284,6 +287,12 @@ def main(
             else:
                 click.echo("Vision provider: none (scene analysis disabled)")
 
+            # Set up self-analyzer for accuracy tuning
+            from .self_analysis import SelfAnalyzer
+
+            self_analyzer = SelfAnalyzer(eval_log, analyzer)
+            vision_state["self_analyzer"] = self_analyzer
+
             # ── Perception loop launcher (shared with REST API) ──
             async def _ensure_perception_loops() -> None:
                 """Start a full perception loop for every open camera."""
@@ -327,22 +336,29 @@ def main(
 
             vision_state["_ensure_perception_loops"] = _ensure_perception_loops
 
-            # Auto-start perception loops if rules exist from previous session
-            if rules_engine.list_rules() and vision_state["cameras"]:
+            # Always start perception loops for all cameras.
+            # The perception loop handles scene analysis + rule evaluation.
+            # Even without rules, it provides scene descriptions for
+            # /scene, /snap, and "what do you see?" queries.
+            if vision_state["cameras"]:
                 asyncio.ensure_future(_ensure_perception_loops())
 
-            # Analysis interval — how often to call the LLM (seconds)
-            analysis_interval = max(config.perception.sampling.cooldown_seconds, 10.0)
-
-            # ── Reusable capture/analysis loop for any camera ──
+            # ── Reusable capture loop for any camera ──
+            # NOTE: This loop ONLY captures frames and tracks health.
+            # All scene analysis + rule evaluation is done by the
+            # perception loop (_ensure_perception_loops) to avoid
+            # duplicate API calls.
             capture_tasks = []
 
             def _start_camera_loop(cam_id: str) -> None:
-                """Start a background capture + analysis loop for a camera.
+                """Start a background capture loop for a camera.
 
-                Works for all camera types (USB, RTSP, cloud).
-                For cloud cameras, grab_frame() returns the latest pushed frame;
-                frames are pushed via POST /push/frame rather than grabbed.
+                For non-cloud cameras: grabs frames and pushes to buffer.
+                For cloud cameras: health monitoring only (frames arrive
+                via POST /push/frame which pushes to buffer directly).
+
+                Scene analysis is NOT done here — the perception loop
+                handles all LLM calls to avoid double API usage.
                 """
                 cam = vision_state["cameras"].get(cam_id)
                 fb = vision_state["frame_buffers"].get(cam_id)
@@ -366,15 +382,12 @@ def main(
 
                 is_cloud = isinstance(cam, CloudCamera)
                 if is_cloud:
-                    interval = 3.0  # Check for new frames every 3s
+                    interval = 5.0  # Health check interval for cloud cameras
 
                 async def _capture_loop() -> None:
-                    """Grab frames, push to buffer, and periodically analyze."""
+                    """Grab frames and push to buffer. No analysis here."""
                     from datetime import datetime, timezone
-                    import time as _time
 
-                    last_analysis = 0.0
-                    frame_count = 0
                     last_seq = -1  # Track sequence to skip duplicate frames
 
                     while not _shutdown_event.is_set():
@@ -392,7 +405,6 @@ def main(
                             if not is_cloud:
                                 await fb.push(frame)
 
-                            frame_count += 1
                             health = vision_state["camera_health"].get(cam_id)
                             if health:
                                 health["last_frame_at"] = datetime.now(
@@ -400,49 +412,12 @@ def main(
                                 ).isoformat()
                                 health["last_success_at"] = health["last_frame_at"]
                                 health["consecutive_errors"] = 0
+                                health["status"] = "running"
                         except Exception as e:
                             health = vision_state["camera_health"].get(cam_id)
                             if health:
                                 health["consecutive_errors"] += 1
                                 health["last_error"] = str(e)
-                            await asyncio.sleep(interval)
-                            continue
-
-                        # Periodic server-side scene analysis
-                        now = _time.monotonic()
-                        if (
-                            analyzer.has_provider
-                            and (now - last_analysis) >= analysis_interval
-                            and frame_count > 0
-                        ):
-                            try:
-                                scene_data = await analyzer.analyze_scene(
-                                    frame, scene, config
-                                )
-                                # Only update scene if we got a real summary
-                                # (not an error placeholder)
-                                summary = scene_data.get("summary", "")
-                                if (
-                                    summary
-                                    and not summary.startswith("Analysis error:")
-                                    and not summary.lstrip().startswith("```")
-                                ):
-                                    scene.update(
-                                        summary=summary,
-                                        objects=scene_data.get("objects", []),
-                                        people_count=scene_data.get("people_count", 0),
-                                        change_desc="server-side analysis",
-                                    )
-                                    _logger.info(f"[{cam_id}] Scene: {summary[:80]}")
-                                else:
-                                    _logger.warning(
-                                        f"[{cam_id}] Analysis returned no data, keeping previous scene"
-                                    )
-                                last_analysis = now
-                            except Exception as e:
-                                _logger.error(f"[{cam_id}] Analysis error: {e}")
-                                # Backoff on API errors
-                                last_analysis = now
 
                         await asyncio.sleep(interval)
 
@@ -450,14 +425,14 @@ def main(
                 vision_state.setdefault("_capture_tasks", {})[cam_id] = task
                 capture_tasks.append(task)
                 _logger.info(
-                    f"Capture/analysis loop started for {cam_id}"
+                    f"Capture loop started for {cam_id}"
                     f" ({'cloud' if is_cloud else 'local'} mode)"
                 )
 
             # Store so POST /cameras and POST /push/register can use it
             vision_state["_start_camera_loop"] = _start_camera_loop
 
-            # Start loops for all cameras that exist at startup
+            # Start capture loops for all cameras that exist at startup
             for cid in list(vision_state["cameras"].keys()):
                 _start_camera_loop(cid)
 
@@ -506,8 +481,13 @@ def main(
                 click.echo(f"Warning: Vision API failed to start: {e}", err=True)
 
             # Start Telegram bot if configured
+            # TELEGRAM_POLL_ENABLED=false disables command polling (send-only mode)
+            # for cloud deployments where OpenClaw handles incoming messages.
             telegram_bot = None
-            if config.notifications.telegram_bot_token:
+            poll_enabled = (
+                os.environ.get("TELEGRAM_POLL_ENABLED", "true").lower() != "false"
+            )
+            if config.notifications.telegram_bot_token and poll_enabled:
                 try:
                     from .bot.telegram_bot import TelegramBot
 
@@ -523,6 +503,37 @@ def main(
                     click.echo("Telegram bot: started")
                 except Exception as e:
                     click.echo(f"Warning: Telegram bot failed to start: {e}", err=True)
+
+            # ── Daily self-analysis + eval log pruning ──
+            async def _daily_maintenance() -> None:
+                """Run self-analysis and prune old evals every 24h."""
+                while not _shutdown_event.is_set():
+                    # Wait ~24 hours (check shutdown every 60s)
+                    for _ in range(24 * 60):
+                        if _shutdown_event.is_set():
+                            return
+                        await asyncio.sleep(60)
+
+                    _logger.info("Running daily maintenance (self-analysis + prune)")
+                    try:
+                        eval_log.prune(keep_days=7)
+                    except Exception as e:
+                        _logger.warning(f"EvalLog prune failed: {e}")
+
+                    try:
+                        engine = vision_state.get("rules_engine")
+                        sa = vision_state.get("self_analyzer")
+                        if engine and sa:
+                            rule_ids = [r.id for r in engine.list_rules()]
+                            if rule_ids:
+                                results = await sa.analyze_all_rules(rule_ids)
+                                for r in results:
+                                    _logger.info(f"Self-analysis: {r}")
+                    except Exception as e:
+                        _logger.warning(f"Self-analysis failed: {e}")
+
+            asyncio.create_task(_daily_maintenance())
+            _logger.info("Daily maintenance task scheduled (self-analysis + prune)")
 
             # Run MCP server (blocks until shutdown)
             starlette_app = mcp_server.streamable_http_app()

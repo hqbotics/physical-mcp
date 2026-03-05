@@ -62,7 +62,7 @@ class TestClientEvaluations:
         assert len(alerts) == 0
 
     def test_low_confidence_does_not_trigger(self):
-        """Triggered but low confidence (< 0.7) — no alert."""
+        """Triggered but low confidence (< 0.3) — no alert."""
         engine = RulesEngine()
         engine.add_rule(_make_rule("r_1"))
         scene = SceneState()
@@ -71,7 +71,7 @@ class TestClientEvaluations:
             {
                 "rule_id": "r_1",
                 "triggered": True,
-                "confidence": 0.5,
+                "confidence": 0.2,
                 "reasoning": "Maybe someone, not sure",
             }
         ]

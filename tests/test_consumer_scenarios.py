@@ -102,11 +102,11 @@ class TestSilenceBetweenTriggers:
             assert len(alerts) == 0
 
     def test_low_confidence_no_alert(self):
-        """LLM returns 0.5 confidence -> no notification sent."""
+        """LLM returns 0.2 confidence -> no notification sent."""
         engine = RulesEngine()
         engine.add_rule(_make_rule("r1"))
         scene = SceneState()
-        alerts = engine.process_evaluations([_make_eval(confidence=0.5)], scene)
+        alerts = engine.process_evaluations([_make_eval(confidence=0.2)], scene)
         assert len(alerts) == 0
 
 

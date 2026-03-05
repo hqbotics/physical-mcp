@@ -32,8 +32,8 @@ class SamplingConfig(BaseModel):
     heartbeat_interval: float = (
         0.0  # 0 = disabled (only analyze on change). Set >0 for periodic checks.
     )
-    debounce_seconds: float = 3.0
-    cooldown_seconds: float = 10.0  # Min 10s between LLM calls
+    debounce_seconds: float = 1.5  # MODERATE change debounce before LLM call
+    cooldown_seconds: float = 5.0  # Min 5s between LLM calls
 
 
 class PerceptionConfig(BaseModel):
@@ -50,14 +50,14 @@ class ReasoningConfig(BaseModel):
     api_key: str = ""
     model: str = ""
     base_url: str = ""  # For openai-compatible providers
-    image_quality: int = 60
-    max_thumbnail_dim: int = 640
+    image_quality: int = 80
+    max_thumbnail_dim: int = 1024
     llm_timeout_seconds: float = 15.0  # Max time for a single LLM API call
 
 
 class CostControlConfig(BaseModel):
     daily_budget_usd: float = 0.0  # 0 = unlimited
-    max_analyses_per_hour: int = 120
+    max_analyses_per_hour: int = 600  # Enough for 15s heartbeat + 10s cooldown
 
 
 class ServerConfig(BaseModel):
@@ -131,13 +131,57 @@ def _config_from_env() -> PhysicalMCPConfig:
     else:
         cameras = []  # No camera pre-configured; add via POST /cameras at runtime
 
+    # Cloud-mode defaults: tighter sampling for 1fps push cameras
+    is_cloud = os.environ.get("CLOUD_MODE", "") == "1"
+    default_heartbeat = "5" if is_cloud else "0"
+    default_debounce = "0.5" if is_cloud else "1.5"
+    default_cooldown = "3" if is_cloud else "5"
+    default_minor = "3" if is_cloud else "5"
+    default_moderate = "8" if is_cloud else "12"
+    default_major = "20" if is_cloud else "25"
+
+    default_buffer = "30" if is_cloud else "300"
+
     return PhysicalMCPConfig(
         cameras=cameras,
+        perception=PerceptionConfig(
+            buffer_size=int(os.environ.get("FRAME_BUFFER_SIZE", default_buffer)),
+            capture_fps=int(os.environ.get("PERCEPTION_FPS", "2")),
+            change_detection=ChangeDetectionConfig(
+                minor_threshold=int(
+                    os.environ.get("CHANGE_MINOR_THRESHOLD", default_minor)
+                ),
+                moderate_threshold=int(
+                    os.environ.get("CHANGE_MODERATE_THRESHOLD", default_moderate)
+                ),
+                major_threshold=int(
+                    os.environ.get("CHANGE_MAJOR_THRESHOLD", default_major)
+                ),
+            ),
+            sampling=SamplingConfig(
+                heartbeat_interval=float(
+                    os.environ.get("SAMPLING_HEARTBEAT_INTERVAL", default_heartbeat)
+                ),
+                debounce_seconds=float(
+                    os.environ.get("SAMPLING_DEBOUNCE_SECONDS", default_debounce)
+                ),
+                cooldown_seconds=float(
+                    os.environ.get("SAMPLING_COOLDOWN_SECONDS", default_cooldown)
+                ),
+            ),
+        ),
+        cost_control=CostControlConfig(
+            max_analyses_per_hour=int(os.environ.get("MAX_ANALYSES_PER_HOUR", "600")),
+        ),
         reasoning=ReasoningConfig(
             provider=os.environ.get("REASONING_PROVIDER", ""),
             api_key=os.environ.get("REASONING_API_KEY", ""),
             model=os.environ.get("REASONING_MODEL", ""),
             base_url=os.environ.get("REASONING_BASE_URL", ""),
+            image_quality=int(os.environ.get("REASONING_IMAGE_QUALITY", "80")),
+            max_thumbnail_dim=int(
+                os.environ.get("REASONING_MAX_THUMBNAIL_DIM", "1024")
+            ),
         ),
         vision_api=VisionAPIConfig(
             host=os.environ.get("VISION_API_HOST", "0.0.0.0"),
